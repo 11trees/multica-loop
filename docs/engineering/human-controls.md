@@ -80,7 +80,8 @@ Kernel tests cover repository preflight and interrupted development recovery.
 The shared component is wired into Web and Desktop issue detail; the packaged
 desktop app has not been exercised. Automatic development handoff and answered
 question continuation and [bounded implementation rework](rework.md) are connected.
-Specification-failure reanalysis/arbitration, the remaining command chains,
+[Specification-failure reanalysis](analysis.md#specification-failure-reanalysis) is connected.
+System arbitration, the remaining command chains,
 remote repository mapping, and real business/provider acceptance remain pending.
 SQLite checkpoints, PostgreSQL queue admission, and filesystem checks are separate
 operations; these controls do not establish a cross-database transaction or global

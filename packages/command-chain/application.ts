@@ -11,7 +11,7 @@ import { commandReceiptSchema, createDevelopmentHandlers, compileDevelopmentConc
 import { git, repositorySnapshot as snapshot, repositoryFingerprint, repositoryCommonDirectory, repositoryBranch, captureRepositoryOverlays } from "./repository";
 import { artifactBlock } from "./artifacts";
 import { decisionProposalSchema } from "./decisions";
-import { analysisContractSchema, analysisProfile, analysisPolicies, deliveryUnitSchema, createAnalysisHandlers, compileAnalysisConclusion } from "./analysis";
+import { analysisContractSchema, analysisProfile, analysisPolicies, deliveryUnitSchema, createAnalysisHandlers, createAnalysisRework, compileAnalysisConclusion } from "./analysis";
 
 const text = z.string().trim().min(1);
 const sequence = z.number().int().nonnegative();
@@ -50,8 +50,8 @@ const recordSchema = z.strictObject({
   ...scope, agentId: z.uuid(), repositoryPath: text, draftId: z.uuid(),
   createdBy: z.uuid(), definitionSource: text, autoContinue: z.boolean().optional().default(false),
   rootRevision: z.number().int().positive().optional(), reworkRound: sequence.optional().default(0), reworkLimit: sequence.max(10).optional().default(0),
-  reworkFrom: z.strictObject({ revision: z.number().int().positive(), draftId: z.uuid() }).optional(),
-  failure: z.strictObject({ signature: text, codeTree: text, decision: z.enum(["rework", "analysis", "stagnant", "budget", "manual"]) }).optional(),
+  reworkFrom: z.strictObject({ revision: z.number().int().positive(), draftId: z.uuid(), kind: z.enum(["implementation","specification"]).optional().default("implementation") }).optional(),
+  failure: z.strictObject({ signature: text, codeTree: text, decision: z.enum(["rework", "reanalysis", "analysis", "stagnant", "budget", "manual"]) }).optional(),
   contract: verificationContractSchema,
   development: z.strictObject({ agentId: z.uuid(), draftId: z.uuid(), definitionSource: text, baseCodeVersion: text, implementationGuidance: text.optional(), handoff: z.boolean(), conclusion: z.json().optional() }).optional(),
   analysis: z.strictObject({agentId:z.uuid(),draftId:z.uuid(),definitionSource:text,contract:analysisContractSchema,handoff:z.boolean(),conclusion:z.json().optional()}).optional(),
@@ -145,7 +145,12 @@ export class EngineeringApplication {
     if(execution){const code=snapshot(execution.repositoryPath,true,execution.overlays);if(code.codeVersion !== analysis.contract.binding.codeVersion)throw new DraftConflictError("Analysis repository changed from the frozen snapshot");}
     const engine=new CommandChainEngine(this.drafts,createAnalysisHandlers(analysis.contract));let draft=await this.drafts.read(analysis.draftId);
     if(action === "start" && actor.kind === "task"){
-      if(!draft)draft=await engine.create({id:analysis.draftId,chain:parseCommandChainDefinition(analysis.definitionSource,analysisProfile),binding:analysis.contract.binding,attemptId:actor.attemptId});
+      if(!draft && record.reworkFrom?.kind === "specification"){
+        const previous=this.revision(record.workspaceId,record.issueId,record.reworkFrom.revision);
+        if(!previous?.analysis)throw new Error("Reanalysis history is unavailable");
+        draft=createAnalysisRework(this.storedDraft(previous.analysis.draftId),previous.analysis.contract,analysis.contract,analysis.draftId,actor.attemptId);
+        await this.drafts.create(draft);
+      }else if(!draft)draft=await engine.create({id:analysis.draftId,chain:parseCommandChainDefinition(analysis.definitionSource,analysisProfile),binding:analysis.contract.binding,attemptId:actor.attemptId});
       else if(draft.status === "abandoned")throw new Error("Analysis was abandoned; freeze a new revision");
       else if(draft.status !== "completed" && draft.attemptId !== actor.attemptId)draft=await engine.resume(draft.id,draft.sequence,actor.attemptId);
     }else if(action !== "read"){
@@ -165,7 +170,14 @@ export class EngineeringApplication {
     return {chain:"analysis",agentId:analysis.agentId,repositoryPath:execution?.repositoryPath ?? record.repositoryPath,contract:analysis.contract,draft:draft ?? null,
       instructions:phase?.type === "builtin" ? `${phase.builtin}: Read the frozen delivery unit and sources. Use decision.propose in proposal; decision.ask/resolve/reopen in resolution. Never impersonate a human selection. ${analysisPolicies[analysis.contract.decisionMode]}` : phase?.instructions,
       decisionSchema:z.toJSONSchema(decisionProposalSchema),decisionCommands:[{type:"decision.propose",decision:"See decisionSchema"},{type:"decision.ask",key:"<decision key>"},{type:"decision.resolve",key:"<decision key>",option:"<option id>",authority:"user | upstream | project_evidence | agent_authority",decision:"<decision text>",rationale:"<why>",evidence:"<source>"},{type:"decision.reopen",key:"<decision key>"}],
-      conclusion,receipts:[],rework:this.reworkView(record)};
+      conclusion,receipts:[],rework:this.reworkView(record),recovery:record.reworkFrom?.kind === "specification" ? this.analysisRecovery(record) : null};
+  }
+
+  private analysisRecovery(record:Record) {
+    const previous=this.revision(record.workspaceId,record.issueId,record.reworkFrom!.revision);
+    if(!previous?.analysis)throw new Error("Reanalysis history is unavailable");
+    const draft=this.storedDraft(record.reworkFrom!.draftId);
+    return {previousSpec:previous.analysis.conclusion,verification:compileVerificationConclusion(draft,previous.contract),artifacts:draft.artifacts.filter(item=>item.ref !== "verification.sources")};
   }
 
   private revision(workspaceId: string, issueId: string, revision: number): Record | undefined {
@@ -189,7 +201,7 @@ export class EngineeringApplication {
   private reworkView(record: Record) {
     return {
       root_revision: record.rootRevision ?? record.contract.binding.revision, round: record.reworkRound, limit: record.reworkLimit,
-      stop_reason: record.failure && record.failure.decision !== "rework" ? record.failure.decision : null,
+      stop_reason: record.failure && !["rework","reanalysis"].includes(record.failure.decision) ? record.failure.decision : null,
       history: this.failureHistory(record).map(item => {
         const draft = this.storedDraft(item.draftId);
         return { revision: item.contract.binding.revision, draft_id: draft.id, code_version: item.contract.binding.codeVersion, decision: item.failure!.decision, conclusion: compileVerificationConclusion(draft, item.contract),
@@ -199,7 +211,7 @@ export class EngineeringApplication {
   }
 
   private recoverySources(record: Record) {
-    if (!record.reworkFrom) return [];
+    if (!record.reworkFrom || record.reworkFrom.kind === "specification") return [];
     const previous = this.revision(record.workspaceId, record.issueId, record.reworkFrom.revision);
     if (!previous) throw new Error("Rework contract history is unavailable");
     const draft = this.storedDraft(record.reworkFrom.draftId);
@@ -217,18 +229,25 @@ export class EngineeringApplication {
     if (conclusion.verdict !== "failed") return;
     const codeTree = git(record.repositoryPath, ["rev-parse", `${record.contract.binding.codeVersion}^{tree}`]);
     const normalized = (value: string) => value.replace(/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, "<uuid>").replace(/\b(?:0x)?[0-9a-f]{12,}\b/gi, "<id>").replace(/\s+/g, " ").trim();
-    const signature = createHash("sha256").update(JSON.stringify({ sources: record.contract.sources, failures: conclusion.results.filter(result => result.status === "failed")
+    const signature = createHash("sha256").update(JSON.stringify({ sources: record.contract.sources.map(source=>({kind:source.kind,description:source.description,oracle:source.oracle,key:normalized(source.key),sourceRef:normalized(source.sourceRef)})), failures: conclusion.results.filter(result => result.status === "failed")
       .map(result => ({ key: result.key, kind: result.failureKind, actual: normalized(result.actualBehavior ?? "") })).sort((a, b) => a.key.localeCompare(b.key)) })).digest("hex");
     const previous = this.failureHistory(record).at(-1)?.failure;
-    const decision = conclusion.failureKind === "specification" ? "analysis" : !record.autoContinue || !record.development || !record.reworkLimit ? "manual" :
-      previous?.signature === signature && previous.codeTree === codeTree ? "stagnant" : record.reworkRound >= record.reworkLimit ? "budget" : "rework";
+    const specification=conclusion.failureKind === "specification";
+    const authorized=record.autoContinue && record.development && record.reworkLimit && (!specification || record.analysis);
+    const decision = !authorized ? specification ? "analysis" : "manual" :
+      previous?.signature === signature && previous.codeTree === codeTree ? "stagnant" : record.reworkRound >= record.reworkLimit ? "budget" : specification ? "reanalysis" : "rework";
     record.failure = { signature, codeTree, decision };
     const revision = record.contract.binding.revision + 1;
-    const next = decision === "rework" ? recordSchema.parse({ ...record, failure: undefined, delivery: undefined, verificationExecution: undefined,
+    const binding={...record.contract.binding,revision};
+    const sources=decision === "reanalysis" ? record.analysis!.contract.sources : record.contract.sources;
+    binding.contractVersion=createHash("sha256").update(JSON.stringify({workspaceId:record.workspaceId,issueId:record.issueId,revision,sources})).digest("hex");
+    const next = ["rework","reanalysis"].includes(decision) ? recordSchema.parse({ ...record, failure: undefined, delivery: undefined, verificationExecution: undefined,
       rootRevision: record.rootRevision ?? record.contract.binding.revision, reworkRound: record.reworkRound + 1,
-      reworkFrom: { revision: record.contract.binding.revision, draftId: draft.id }, draftId: randomUUID(),
-      contract: { ...record.contract, binding: { ...record.contract.binding, revision, contractVersion: createHash("sha256").update(JSON.stringify({ workspaceId: record.workspaceId, issueId: record.issueId, revision, sources: record.contract.sources })).digest("hex") } },
-      development: { ...record.development!, draftId: randomUUID(), baseCodeVersion: record.contract.binding.codeVersion, handoff: false, conclusion: undefined },
+      reworkFrom: { revision: record.contract.binding.revision, draftId: draft.id,kind:specification ? "specification" : "implementation" }, draftId: randomUUID(),
+      contract: { binding,sources },
+      ...(decision === "reanalysis" ? {analysis:{...record.analysis!,draftId:randomUUID(),handoff:false,conclusion:undefined,contract:{...record.analysis!.contract,binding}}} : {}),
+      development: { ...record.development!, draftId: randomUUID(), baseCodeVersion: record.contract.binding.codeVersion, handoff: false, conclusion: undefined,
+        ...(decision === "reanalysis" ? {implementationGuidance:undefined} : {}) },
     }) : undefined;
     this.db.exec("BEGIN IMMEDIATE");
     try {
@@ -330,7 +349,7 @@ export class EngineeringApplication {
       const role=this.activeRole(record),development=role.chain === "development";
       const draftId=role.draftId;
       const draft = await this.drafts.read(draftId);
-      const reason = !draft && development && record.reworkRound > 0 ? "verification_rework" : !draft && role.chain !== "analysis" && record.analysis?.handoff && !record.development?.handoff ? "analysis_handoff" : !draft && record.development?.handoff ? "development_handoff" :
+      const reason = !draft && role.chain === "analysis" && record.reworkFrom?.kind === "specification" ? "verification_reanalysis" : !draft && development && record.reworkRound > 0 ? "verification_rework" : !draft && role.chain !== "analysis" && record.analysis?.handoff && !record.development?.handoff ? "analysis_handoff" : !draft && record.development?.handoff ? "development_handoff" :
         draft?.status === "waiting_for_answers" && draft.runtimeInputs.some(input => input.active) && draft.runtimeInputs.every(input => !input.active || input.answer !== null) ? "human_answers" : null;
       if (!reason) continue;
       const sequence = draft?.sequence ?? 0;
@@ -520,7 +539,7 @@ export class EngineeringApplication {
       else if (code.codeVersion !== record.contract.binding.codeVersion) throw new Error("Repository commit changed; freeze a new verification revision");
     }
     if (action === "start" && actor.kind === "task") {
-      if (!draft && !development && record.reworkFrom) {
+      if (!draft && !development && record.reworkFrom?.kind === "implementation") {
         const previous = this.revision(record.workspaceId, record.issueId, record.reworkFrom.revision);
         const failed = await this.drafts.read(record.reworkFrom.draftId);
         if (!previous || !failed) throw new Error("Recheck history is unavailable");
@@ -533,7 +552,7 @@ export class EngineeringApplication {
       if (!draft) throw new Error("Start the verification draft before editing or answering");
       if (action === "command" && actor.kind === "task") {
         const command = z.strictObject({ expected_sequence: sequence, command: chainCommandSchema }).parse(request.payload);
-        if (!development && record.reworkFrom && command.command.type === "phase.rewind") {
+        if (!development && record.reworkFrom?.kind === "implementation" && command.command.type === "phase.rewind") {
           const target = command.command.to;
           const phases = Object.entries(draft.definition.phases);
           const execute = phases.findIndex(([_, phase]) => phase.type === "builtin" && phase.builtin === "verification-execution");

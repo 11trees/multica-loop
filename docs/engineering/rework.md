@@ -1,7 +1,8 @@
 # Verification failure and bounded rework
 
 The local fork can return an independently observed implementation failure to
-development and recheck the resulting commit. New configurations expose an
+development and recheck the resulting commit. When a separate analyst is configured,
+a specification failure can return to fresh analysis within the same budget. New configurations expose an
 **Automatic rework limit**, defaulting to three additional development rounds
 when development and automatic continuation are enabled. The accepted range is
 0–10; zero disables rework. CLI configurations opt in with `max_reworks` plus
@@ -17,9 +18,10 @@ decision. A task exit or development's check receipt cannot trigger it.
 | Conclusion or condition | Result |
 | --- | --- |
 | Implementation failure within the authorized budget | Create a new development generation and queue it after all existing issue runs finish |
-| Specification failure, including mixed specification/implementation failures | Stop for specification review; do not send it to development |
+| Specification failure, including mixed specification/implementation failures, with an analyst and authorized budget | Create a fresh analysis generation; do not send the failed specification directly to development |
 | Same failed scenarios/attribution/normalized actual behavior and same code tree as the previous failed round | Stop for human review |
 | Rework budget exhausted, even if code changed | Stop for human review |
+| Specification failure without an authorized analyst/budget | Stop for manual specification review |
 | Automatic continuation/development/rework not authorized | Retain the failed report for manual action |
 | Environment or inconclusive observation | Keep the existing blocked verification checkpoint; resolve runtime input before concluding |
 
@@ -35,8 +37,8 @@ correct. The absolute budget bounds changing failures as well.
 The failed draft remains completed with its actual commit, plan, observations,
 review, run identity, and events. The host records the failure decision and,
 when authorized, inserts the next execution revision in one SQLite transaction.
-The root revision identifies the human-frozen scope and budget. An automatic
-execution revision copies that scope and guidance without changing its oracles;
+The root revision identifies the human-frozen scope and budget. An implementation-rework
+revision copies that scope and guidance without changing its oracles;
 its developer starts from the failed delivery commit, including in worktree mode
 where the registered checkout may still be at its original HEAD.
 
@@ -56,20 +58,44 @@ Only a fresh current passed conclusion can satisfy the issue completion gate.
 
 The shared issue panel shows the round/budget, stop reason, and prior failed
 reports with their commits and observations. Before an unstarted generation is
-queued, a human can freeze a replacement configuration. Stopped specification,
-stagnation, or budget cases require human action; the [forward analysis chain](analysis.md) is connected, while automatic
-specification-failure reanalysis and the system arbitration agent remain pending. An explicit new human configuration
+queued, a human can freeze a replacement configuration. Stopped specification (no authorized analyst),
+stagnation, or budget cases require human action. [Specification reanalysis](analysis.md#specification-failure-reanalysis)
+uses the configured analyst and the same bounded policy. System arbitration remains pending. An explicit new human configuration
 starts a new root and budget; it does not erase stored prior revisions.
 
 ![Failed verification retained while rework waits](assets/rework-pending.png)
 
 ![Fresh recheck passed with failure history retained](assets/rework-verified.png)
 
+## Specification reanalysis
+
+A validated specification failure creates a fresh analyst draft at the failed
+commit, clears the old analysis artifacts and conclusions, and supplies the
+actual failed report and previous spec as read-only recovery context. Original
+human-frozen sources, the unit, dependency versions and authority policy remain
+unchanged. Previously authenticated human choices remain resolved with their
+original answer/question provenance. Other decisions return to proposed.
+Changing an answered choice requires reopening and a fresh explicit human answer;
+proposal edits/removal cannot silently replace or delete it.
+
+The revised analysis may replace derived guardrails, verification focus and
+implementation guidance. It cannot replace the original acceptance/oracle scope.
+After handoff, development starts with fresh claims/checks at the failed commit.
+The verifier gets a fresh plan against the revised specification rather than
+reusing contradictory scenarios as binding oracles. Old plans/results remain in
+the immutable failure history; none become evidence for the new pass. An
+implementation failure on that new specification still retains its own frozen
+plan on the subsequent implementation recheck.
+
+Both routes consume the same round count and limit. Stable source references
+ignore generated analysis draft IDs for stagnation comparison; regenerating an
+identical spec cannot create progress by changing provenance alone.
+
 ## Verification and limits
 
 `application-rework.test.ts` covers failed-to-passed rework, fresh development
 evidence, retained plans with cleared observations, empty-commit stagnation,
-budget exhaustion, specification stops, explicit policy validation, storage
+budget exhaustion, specification fallback/reanalysis, inherited human choices, new-plan verification, explicit policy validation, storage
 reopen, worktree commit selection, and settlement of a persisted terminal draft
 after a crash before its host transition. The existing native coordinator still
 checks lifecycle, membership/invocation, project/runtime mapping, and unfinished
@@ -85,6 +111,6 @@ owned fixture metadata; no installed agent CLI or model is executed.
 
 The SQLite transition is separate from native task admission and filesystem
 effects. This does not establish a cross-database transaction, external-effect
-deduplication, or complete failure arbitration. Requirement planning, specification-failure reanalysis,
+deduplication, or complete failure arbitration. Requirement planning, system arbitration,
 final review, remaining chains, other provider receipt adapters, and real
 business/provider acceptance remain required for the full migration.

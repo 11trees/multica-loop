@@ -8,19 +8,22 @@ import { afterEach, beforeEach, expect, it } from "vitest";
 import { EngineeringApplication, type ApplicationRequest } from "./application";
 
 const human = { kind: "human" as const, userId: "019a0000-0000-7000-8000-000000000001", workspaceId: "019a0000-0000-7000-8000-000000000002", issueId: "019a0000-0000-7000-8000-000000000003" };
+const analyst = "019a0000-0000-7000-8000-000000000006";
+const unit={key:"heading",title:"Heading",actor:"Reader",trigger:"Open page",observableOutcome:"Exact Ready heading",acceptance:"Ready heading",sourceRefs:[{key:"ac1",kind:"acceptance",content:"Ready heading",sourceRef:"FIXTURE:heading:r1"}],dependsOn:[]};
 const developer = "019a0000-0000-7000-8000-000000000004", verifier = "019a0000-0000-7000-8000-000000000005";
 const sources = [{ key: "ac1", kind: "acceptance", description: "Ready heading", oracle: "Heading is exactly Ready", sourceRef: "FIXTURE:heading:r1" }];
 let mode: "in_place" | "worktree";
-let directory: string, repository: string, database: string, app: EngineeringApplication, verificationSource: string, developmentSource: string;
+let directory: string, repository: string, database: string, app: EngineeringApplication, verificationSource: string, developmentSource: string, analysisSource:string;
 function git(...args: string[]) { return execFileSync("git", ["-C", repository, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim(); }
-function reopen() { app = new EngineeringApplication(database, verificationSource, developmentSource); }
+function reopen() { app = new EngineeringApplication(database, verificationSource, developmentSource, analysisSource); }
 beforeEach(async () => {
   mode = "in_place";
   directory = await mkdtemp(join(tmpdir(), "engineering-rework-")); repository = join(directory, "repo"); database = join(directory, "engineering.sqlite");
   execFileSync("git", ["init", "-q", repository]); git("config", "user.name", "Rework fixture"); git("config", "user.email", "fixture@example.invalid");
   await writeFile(join(repository, "index.html"), "<h1>Initial</h1>"); git("add", "."); git("commit", "-qm", "Initialize fixture");
   verificationSource = await readFile(new URL("./definitions/verification.yaml", import.meta.url), "utf8");
-  developmentSource = await readFile(new URL("./definitions/development.yaml", import.meta.url), "utf8"); reopen();
+  developmentSource = await readFile(new URL("./definitions/development.yaml", import.meta.url), "utf8");
+  analysisSource=await readFile(new URL("./definitions/analysis.yaml",import.meta.url),"utf8");reopen();
 });
 afterEach(async () => { app.close(); await rm(directory, { recursive: true, force: true }); });
 const actor = (agentId: string, round: number) => ({ kind: "task" as const, workspaceId: human.workspaceId, issueId: human.issueId, agentId, attemptId: `${agentId}:${round}` });
@@ -53,10 +56,10 @@ async function develop(round: number, change = true, emptyCommit = false) {
   await command({ type: "phase.complete", confirmation: "Commit checked" }); await command({ type: "phase.complete", confirmation: "Evidence checked" });
   return state;
 }
-async function verify(round: number, verdict: "passed" | "failed", failureKind = "implementation") {
+async function verify(round: number, verdict: "passed" | "failed", failureKind = "implementation",freshPlan=false) {
   const { owner, state: initial } = await start(verifier, round); let state = initial;
   const command = async (command: unknown) => { state = await invoke(owner, "command", { expected_sequence: state.draft!.sequence, command }); };
-  if (round === 0) {
+  if (round === 0 || freshPlan) {
     await command({ type: "phase.complete" });
     await command({ type: "artifact.put", ref: "verification.scenarios", key: "s1", content: "channel: frontend\ntitle: Heading\nsetup: Open fixture\nsteps: Observe heading\nexpected: Ready\ncoverageRefs: [ac1]" }); await command({ type: "phase.complete" });
   } else {
@@ -131,3 +134,60 @@ it("does not settle legacy manual failures during background continuation after 
   const prior=JSON.parse(String(row.payload));delete prior.failure;db.prepare("UPDATE engineering_contract SET payload=? WHERE revision=1").run(JSON.stringify(prior));db.close();
   await rm(repository,{recursive:true,force:true});reopen();expect(await pending()).toEqual([]);
 });
+
+function configureAnalysis(limit=2){return invoke(human,"configure",{expected_revision:0,agent_id:verifier,developer_agent_id:developer,analyst_agent_id:analyst,unit,repository_path:repository,sources,auto_continue:true,max_reworks:limit});}
+async function analyze(round:number){
+  let {owner,state}=await start(analyst,round);
+  const command=async(command:unknown)=>{state=await invoke(owner,"command",{expected_sequence:state.draft!.sequence,command});};
+  expect(state.draft!.artifacts).toEqual([]);
+  if(round>0){expect(state.draft!.decisions!.find(node=>node.key === "technical")!).toMatchObject({status:"proposed"});expect(state.draft!.decisions!.find(node=>node.key === "technical")!.resolution).toBeUndefined();expect(state).toMatchObject({recovery:{verification:{verdict:"failed",failureKind:"specification"}}});expect(state.draft!.decisions![0]!.resolution).toMatchObject({option:"exact",userId:human.userId});}
+  await command({type:"phase.complete"});await command({type:"artifact.put",ref:"delivery-analysis.impacts",key:"heading",content:"area: Heading\nfinding: Exact text needs preserving\ndisposition: change\nevidence: index.html:1\ndecision: exact-text"});await command({type:"phase.complete"});
+  const proposal={key:"exact-text",type:"business",title:"Heading text",question:"Which heading?",impact:"Observable reader result",options:[{id:"exact",label:"Ready",consequence:"Exact text"},{id:"other",label:"Almost ready",consequence:"Different text"}],recommendation:{option:"exact",reason:"Original acceptance",authority:"user"},dependencies:[]};
+  if(round === 0){await command({type:"decision.propose",decision:proposal});await command({type:"decision.propose",decision:{...proposal,key:"technical",type:"technical",title:"Markup choice"}});}
+  else {await expect(command({type:"decision.propose",decision:proposal})).rejects.toThrow(/Reopen/);await expect(command({type:"decision.remove",key:proposal.key})).rejects.toThrow(/proposed decision/);}
+  await command({type:"phase.complete"});
+  if(round === 0){
+    await command({type:"decision.ask",key:proposal.key});await command({type:"phase.complete"});
+    await invoke(human,"answer",{expected_sequence:state.draft!.sequence,request_id:state.draft!.runtimeInputs[0]!.id,answer:"",selected_option:"exact"});
+    ({owner,state}=await start(analyst,100));
+    await command({type:"decision.resolve",key:proposal.key,option:"exact",authority:"user",decision:"Exact Ready",rationale:"Authenticated selection",evidence:state.draft!.runtimeInputs[0]!.id});
+  }
+  await command({type:"decision.resolve",key:"technical",option:"exact",authority:"agent_authority",decision:"Semantic heading",rationale:"Rechecked equivalent internal markup",evidence:`index.html review ${round}`});
+  await command({type:"phase.complete"});await command({type:"artifact.put",ref:"delivery-analysis.answer-review",content:"Exact human choice and original acceptance align"});await command({type:"phase.complete"});
+  await command({type:"artifact.put",ref:"delivery-analysis.summary",content:"Exact Ready heading"});await command({type:"artifact.put",ref:"delivery-analysis.contract",content:`Implement exact Ready heading; analysis round ${round}`});await command({type:"phase.complete"});await command({type:"phase.complete",confirmation:"Scope and choices reviewed"});
+  return state;
+}
+
+it("returns specification failures to fresh analysis, preserves human choices and accepts only a newly planned independent pass",async()=>{
+  await configureAnalysis();const firstAnalysis=await analyze(0);await develop(0);const failed=await verify(0,"failed","specification");
+  expect(failed.rework).toMatchObject({round:1,stop_reason:null,history:[{decision:"reanalysis",draft_id:failed.draft!.id}]});
+  expect(await pending()).toEqual([expect.objectContaining({reason:"verification_reanalysis",agent_id:analyst,expected_revision:2})]);
+  await expect(start(developer,1)).rejects.toThrow(/Analysis has not handed off/);
+  await expect(app.invoke({actor:{kind:"host",workspaceId:human.workspaceId,issueId:human.issueId},action:"completion"})).rejects.toThrow(/Complete delivery analysis/);
+  app.close();reopen();const next=await analyze(1);expect(next.draft!.id).not.toBe(firstAnalysis.draft!.id);expect(next.contract.sources).toEqual(sources);
+  expect(next.draft!.runtimeInputs[0]!.answer).toEqual(firstAnalysis.draft!.runtimeInputs[0]!.answer);expect(next.draft!.runtimeInputs[0]!.active).toBe(false);
+  await develop(1);const passed=await verify(1,"passed","implementation",true);expect(passed.rework.history[0]!.conclusion).toMatchObject({verdict:"failed",failureKind:"specification"});
+  expect(await app.invoke({actor:{kind:"host",workspaceId:human.workspaceId,issueId:human.issueId},action:"completion"})).toMatchObject({allowed:true});
+},15000);
+
+it.each([[false,"budget"],[true,"stagnant"]] as const)("bounds repeated specification failure (unchanged=%s)",async(unchanged,stop)=>{
+  await configureAnalysis(1);await analyze(0);await develop(0);await verify(0,"failed","specification");await analyze(1);await develop(1,!unchanged,unchanged);
+  const failed=await verify(1,"failed","specification",true);expect(failed.rework.stop_reason).toBe(stop);expect(await pending()).toEqual([]);
+},15000);
+
+it("recovers specification routing once from a persisted terminal verifier checkpoint",async()=>{
+  await configureAnalysis();await analyze(0);await develop(0);await verify(0,"failed","specification");app.close();
+  const db=new DatabaseSync(database),row=db.prepare("SELECT payload FROM engineering_contract WHERE revision=1").get()!;const previous=JSON.parse(String(row.payload));delete previous.failure;
+  db.prepare("DELETE FROM engineering_contract WHERE revision=2").run();db.prepare("UPDATE engineering_contract SET payload=? WHERE revision=1").run(JSON.stringify(previous));db.close();reopen();
+  const expected=[expect.objectContaining({reason:"verification_reanalysis",expected_revision:2})];expect(await pending()).toEqual(expected);expect(await pending()).toEqual(expected);
+},15000);
+
+
+it("binds worktree reanalysis to the failed delivery commit rather than the original checkout",async()=>{
+  await configureAnalysis();await analyze(0);const registered=repository,original=git("rev-parse","HEAD"),worktree=join(directory,"analyzed-delivery");
+  git("worktree","add","-qb","spec-recovery",worktree);repository=worktree;mode="worktree";
+  await develop(0);const failedCommit=git("rev-parse","HEAD");await verify(0,"failed","specification");
+  expect(execFileSync("git",["-C",registered,"rev-parse","HEAD"],{encoding:"utf8"}).trim()).toBe(original);
+  expect(await app.invoke({actor:actor(analyst,1),action:"selection"})).toMatchObject({configured:true,chain:"analysis",code_version:failedCommit});
+  const recovered=await analyze(1);expect(recovered.contract.binding.codeVersion).toBe(failedCommit);
+},15000);

@@ -2,7 +2,7 @@ import { z } from "zod";
 import { parse } from "yaml";
 import { verificationContractSchema } from "./verification";
 import { decisionGraphErrors } from "./decisions";
-import { PhaseValidationError, type BuiltinHandlers, type ChainDraft, type ChainCommand } from "./runtime";
+import { draftSchema, PhaseValidationError, type BuiltinHandlers, type ChainDraft, type ChainCommand } from "./runtime";
 import type { CommandChainProfile } from "./definition";
 
 const text=z.string().trim().min(1);
@@ -48,12 +48,16 @@ function resolve(draft:ChainDraft,command:ChainCommand,contract:AnalysisContract
   const nodes=draft.decisions ??= [];
   if(command.type === "decision.propose"){
     const index=nodes.findIndex(node=>node.key === command.decision.key);
+    if(index >= 0 && nodes[index]!.status !== "proposed")throw new Error("Reopen the decision before changing its proposal");
     const node={...command.decision,status:"proposed" as const,humanRequested:Boolean(nodes[index]?.humanRequested || draft.runtimeInputs.some(input=>input.decisionKey === command.decision.key))};
     if(index<0)nodes.push(node);else nodes[index]=node;return;
   }
   if(!("key" in command))throw new Error("Expected a decision command");
   const node=nodes.find(node=>node.key === command.key);if(!node)throw new Error("Decision is missing");
-  if(command.type === "decision.remove") { draft.decisions=nodes.filter(item=>item !== node);for(const input of draft.runtimeInputs)if(input.decisionKey === node.key)input.active=false;return; }
+  if(command.type === "decision.remove") {
+    if(node.status !== "proposed")throw new Error("Only a proposed decision can be removed");
+    if(draft.runtimeInputs.some(input=>input.decisionKey === node.key && input.answer))throw new Error("Answered human decisions must be reopened and answered, not removed");
+    draft.decisions=nodes.filter(item=>item !== node);for(const input of draft.runtimeInputs)if(input.decisionKey === node.key)input.active=false;return; }
   if(command.type === "decision.reopen") { node.status="proposed";delete node.resolution;for(const input of draft.runtimeInputs)if(input.decisionKey === node.key)input.active=false;return; }
   if(command.type === "decision.ask"){
     if(contract.decisionMode === "fully_autonomous")throw new Error("Fully autonomous analysis cannot ask human decisions");
@@ -94,4 +98,16 @@ export function compileAnalysisConclusion(draft:Readonly<ChainDraft>,input:Analy
   return {kind:"analysis" as const,draftId:draft.id,attemptId:draft.attemptId,sequence:draft.sequence,binding:structuredClone(draft.binding),unit:structuredClone(contract.unit),
     acceptances:structuredClone(contract.sources.filter(source=>source.kind === "acceptance")),summary:value("summary")!,impacts:rows(draft,"impacts"),decisions:structuredClone(draft.decisions ?? []),answerReview:value("answer-review")!,
     handoff:{implementationGuidance:value("contract")!,guardrails:rows(draft,"guardrails"),verificationFocus:rows(draft,"verification-focus")}};
+}
+
+/** Host-only: retain authenticated choices, clear conclusions and implementation assumptions. */
+export function createAnalysisRework(previous:Readonly<ChainDraft>,previousContract:AnalysisContract,contract:AnalysisContract,id:string,attemptId:string):ChainDraft {
+  compileAnalysisConclusion(previous,previousContract);
+  if(JSON.stringify({...previousContract,binding:contract.binding}) !== JSON.stringify(contract))throw new Error("Reanalysis cannot replace the frozen unit, policy, dependencies, or original sources");
+  return draftSchema.parse({...structuredClone(previous),id,binding:contract.binding,attemptId,sequence:0,status:"editing",phase:Object.keys(previous.definition.phases)[0],
+    artifacts:[],frozen:[],writeRules:[],completedPhases:[],
+    decisions:(previous.decisions ?? []).map(node=>node.resolution?.authority === "user" ? node : {...node,status:"proposed",resolution:undefined}),
+    runtimeInputs:previous.runtimeInputs.map(input=>({...input,active:false})),
+    events:[{sequence:0,attemptId,command:"analysis.rework",phase:Object.keys(previous.definition.phases)[0],reason:`Reassess failed specification from analysis ${previous.id}`}],
+  });
 }
