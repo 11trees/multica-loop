@@ -105,6 +105,55 @@ frozen sources rather than trusting embedded source text from the planner.
 Coverage is checked per source key. The host does not prove that a unit covers
 every semantic clause inside a source or that units are independently useful.
 
+## Native unit publication
+
+After the plan completes and all parent runs finish, choose **Publish units**.
+The human endpoint accepts only the current revision and sequence. It compiles
+units from the stored completed plan, assigns stable native issue IDs, and
+freezes each unit's sources, exact original acceptance oracles, provenance and
+prerequisites before any native child is created. Each unit also has a host-owned
+`unit:` acceptance from its planned acceptance meaning. Change/preserve/technical
+planning references remain analysis inputs on the frozen unit, not improvised
+verification oracles. Analysis later derives verification focus and guardrails.
+Long source keys retain
+the full planning reference; a deterministic bounded key identifies that source
+inside the existing verification contract.
+
+The equivalent native CLI command is:
+
+```sh
+multica engineering publish-units <requirement-issue-id> --payload '{"expected_revision":1,"expected_sequence":42}'
+```
+
+The snapshot owner can retry an interrupted publication. Each child uses the
+normal IssueService creation pipeline for workspace/project/parent validation,
+issue limits, numbering, properties, events and analytics. Its frozen native ID
+and flat engineering origin metadata (`engineering.plan`, `engineering.unit`,
+`engineering.revision`, `engineering.contract`) are stored in the same PostgreSQL creation
+transaction. A replay reuses that identity after verifying its parent, project,
+creator and origin; it does not allocate another issue number or adopt an
+unrelated task with the same title. Each successful child is acknowledged in
+SQLite. Pending children remain retryable after interruption. If a previously
+acknowledged native child was deleted, retry requires reconciliation rather than
+silently recreating it.
+
+Publication freezes the requirement generation against replacement. Revising a
+published plan needs a future explicit reconciliation path; creating a new root
+must not silently orphan published units. Native children remain unassigned in
+Todo, with automatic PR completion disabled. Their engineering panel shows the
+frozen unit and prerequisites and links back to the requirement. Generic
+configuration cannot replace their managed scope, and their done-status gate
+rejects completion before independent verification. Publishing units does not
+start a provider, prove prerequisite delivery, or complete the requirement.
+
+SQLite intent, native PostgreSQL creation, and per-child acknowledgement remain
+separate commits. Their persisted identities make publication retries reusable;
+this is not a cross-database transaction or a general external-effects guarantee.
+
+![Plan published as native child issues](assets/requirement-published.png)
+
+![Managed child with original acceptance oracle](assets/requirement-published-unit.png)
+
 ## Verification and remaining integration
 
 Kernel tests use real SQLite and temporary Git repositories to cover human
@@ -117,14 +166,18 @@ context/planner claim instructions and planner visibility before worker access.
 `e2e/engineering-requirement.spec.ts` configures the parent workflow through the
 actual UI, observes the repository in Chromium, supplies a human option answer,
 resumes through the native scheduler/CLI/worker, publishes acceptance identities,
-and plans two dependent units. Its task claims are owned fixture metadata; it
+plans two dependent units, publishes them as actual native children, replays
+publication without duplicates, opens a child through the real UI, and proves
+that parent and child completion remain blocked before delivery. Its task claims are owned fixture metadata; it
 does not launch an installed provider or call a model.
 
-Native child-issue publication, scheduling units from their verified prerequisite
-versions, and requirement-level final review are the next integration steps.
+Native child-issue publication is connected. Selecting execution roles, scheduling
+units from their verified prerequisite versions, and requirement-level final
+review are the next integration steps.
 They are not implemented by compiling a plan. The completion gate rejects a
 requirement issue until actual delivery and final review are connected and
-passed. The current UI shows planned units and acceptance revisions without
+passed. Managed children are also blocked until their execution/verification
+contracts are connected. The current UI shows planned units and acceptance revisions without
 offering another run for a terminal plan. Web/Desktop share these controls;
 packaged Desktop and real-provider acceptance remain unverified. Mobile retains
 its independent interface.

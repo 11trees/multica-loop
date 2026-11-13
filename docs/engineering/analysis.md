@@ -161,7 +161,7 @@ explicit verifier judgment, not an automatic semantic proof by the host.
 
 ## Remaining migration
 
-Specification failures without an authorized analyst/budget stop for human review. [Requirement context/planning](requirements.md) are connected through a compiled parent plan. Native child publication, multi-unit orchestration, final review/arbitration, remaining
+Specification failures without an authorized analyst/budget stop for human review. [Requirement context/planning](requirements.md) are connected through a compiled parent plan. Native child publication is connected; managed-unit execution, multi-unit orchestration, final review/arbitration, remaining
 workflow paths, historical cutover, and real business/provider acceptance remain
 required for the full migration. A completed analysis is a frozen delivery spec,
 not evidence that implementation or independent verification passed.

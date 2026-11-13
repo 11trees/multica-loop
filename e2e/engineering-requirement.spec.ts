@@ -48,5 +48,15 @@ test("requirement context preserves a human choice and hands stable acceptances 
     const screenshot=testInfo.outputPath("requirement-plan.png");await panel.screenshot({path:screenshot});await testInfo.attach("Frozen context and planned dependent units",{path:screenshot,contentType:"image/png"});
     await page.setViewportSize({width:390,height:1200});const narrow=testInfo.outputPath("requirement-plan-narrow.png");await panel.screenshot({path:narrow});await testInfo.attach("Requirement plan narrow layout",{path:narrow,contentType:"image/png"});
     await expect(api.updateIssue(backlog.issueId,{status:"done",suppress_run:true})).rejects.toThrow(/409.*final review/i);
+    await page.setViewportSize({width:1280,height:1600});await panel.getByRole("button",{name:"Publish units",exact:true}).click();await expect(panel.getByText("Units published. Delivery and final review are still required.",{exact:true})).toBeVisible();
+    const children=await api.publishedEngineeringIssues(backlog.issueId);expect(children.map(issue=>issue.title).sort()).toEqual(["Continue action","Ready heading"]);expect(children.every(issue=>issue.assignee_id === null)).toBe(true);
+    await api.publishEngineeringUnits(backlog.issueId,{expected_revision:1,expected_sequence:state.draft.sequence});expect((await api.publishedEngineeringIssues(backlog.issueId)).map(issue=>issue.id).sort()).toEqual(children.map(issue=>issue.id).sort());
+    const publicationScreenshot=testInfo.outputPath("requirement-published.png");await panel.screenshot({path:publicationScreenshot});await testInfo.attach("Plan published as stable native child issues",{path:publicationScreenshot,contentType:"image/png"});
+    const heading=children.find(issue=>issue.title === "Ready heading")!;await panel.getByRole("link",{name:"Ready heading",exact:true}).click();await expect(page).toHaveURL(new RegExp(`/issues/${heading.id}$`));
+    const childPanel=page.getByRole("region",{name:"Engineering delivery"});await expect(childPanel.getByText("This unit is bound to its requirement plan. Delivery execution has not started.",{exact:true})).toBeVisible();await expect(childPanel.getByRole("button",{name:/Configure delivery|Plan requirement/})).toHaveCount(0);
+    await childPanel.getByText("Frozen scope",{exact:true}).click();await expect(childPanel.getByText("Browser sees exact Ready",{exact:true})).toBeVisible();
+    const childScreenshot=testInfo.outputPath("requirement-published-unit.png");await childPanel.screenshot({path:childScreenshot});await testInfo.attach("Native child bound to the frozen plan",{path:childScreenshot,contentType:"image/png"});
+    await expect(api.updateIssue(heading.id,{status:"done",suppress_run:true})).rejects.toThrow(/409.*independent verification/i);
+
   }finally{await context.close();await browser.close();await api.cleanup();await rm(directory,{recursive:true,force:true});}
 });

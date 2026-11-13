@@ -19,6 +19,7 @@ func init() {
 		{"status", "/api/engineering/verification", "Read this run's engineering checkpoint"},
 		{"command", "/api/engineering/verification/commands", "Execute a JSON phase/artifact/runtime-input command"},
 		{"configure <issue-id>", "configure", "Freeze a delivery contract and clean repository commit (human only)"},
+		{"publish-units <issue-id>", "publish-units", "Publish a frozen requirement plan as native child issues (human only)"},
 		{"inspect <issue-id>", "inspect", "Read the issue's contract and questions (human only)"},
 		{"answer <issue-id>", "answer", "Answer a pending runtime input (human only)"},
 		{"abandon <issue-id>", "abandon", "Abandon an active verification draft (human only)"},
@@ -40,6 +41,9 @@ func init() {
 			path := op.path
 			if path[0] != '/' {
 				path = "/api/issues/" + url.PathEscape(args[0]) + "/engineering/verification/"
+				if op.path == "publish-units" {
+					path = "/api/issues/" + url.PathEscape(args[0]) + "/engineering/publication"
+				}
 				if op.path == "answer" {
 					path += "answers"
 				}

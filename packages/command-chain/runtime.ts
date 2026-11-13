@@ -135,7 +135,7 @@ export type ChainCommand = z.infer<typeof chainCommandSchema>;
 function itemKey(draft: ChainDraft, ref: string, key?: string): string {
   const block = artifactBlock(draft.definition, ref);
   if (block.cardinality === "many") {
-    if (!key?.trim() || key.length > 120) throw new Error(`Artifact ${ref} requires a stable item key`);
+    if (!key?.trim() || key.length > (block.writable ? 120 : 240)) throw new Error(`Artifact ${ref} requires a stable item key`);
     return key;
   }
   if (key !== undefined) throw new Error(`Singleton artifact ${ref} does not accept an item key`);
