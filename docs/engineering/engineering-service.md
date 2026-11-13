@@ -82,8 +82,11 @@ multica engineering command --payload '{"expected_sequence":0,"command":{"type":
 
 The response includes the frozen contract, draft/sequence/phase, schemas,
 instructions, questions, artifacts, and final conclusion when ready. Every agent
-operation rechecks the clean repository commit. Version or dirty-tree errors need
-an explicit new revision, not a rewritten oracle.
+operation rechecks the repository binding. Development can resume its partial
+uncommitted edits; review/check evidence remains tied to the actual tree, and
+final handoff requires a clean commit. Verification requires its pinned clean
+commit. A changed frozen version needs an explicit new revision, not a rewritten
+oracle.
 
 Runtime-input commands persist questions; `phase.complete` then suspends the
 unfinished phase. The agent must return control when `waiting_for_answers`.
@@ -99,8 +102,9 @@ An answer payload has `expected_sequence`, `request_id`, and `answer`.
 An abandon payload has `expected_sequence` and `reason`. The answering/abandoning
 user is derived from the session/PAT, never a JSON field. A new run of the same
 verifier uses `start` to resume after all answers arrive. Answers do not make
-blocked observations pass. Starting the new run is currently manual through
-Multica; automatic continuation and the question UI remain pending.
+blocked observations pass. The [shared issue controls](human-controls.md) expose
+configuration, answers, progress, and explicit Run/Continue actions. Starting a
+new run is manual; automatic continuation remains pending.
 
 ## Verification and limits
 
@@ -128,7 +132,7 @@ passed current independent verification is required for a registered issue's
 done-category write. Native execution now requires a project local-directory
 resource and a runtime-owned [repository binding](repository-binding.md); both
 in-place and pinned-worktree modes are supported on the API host. The other
-chains, additional provider receipt adapters, automated run continuation, UI,
+chains, additional provider receipt adapters, automated run continuation,
 remote clone mapping, and cross-database handoff
 acceptance remain required for cutover. Successful process exit is not evidence
 of engineering delivery.

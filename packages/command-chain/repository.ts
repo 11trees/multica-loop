@@ -22,7 +22,7 @@ function headFile(path: string, ref: string, relative: string) {
 export function repositoryCommonDirectory(path: string) { return realpathSync(git(path, ["rev-parse", "--path-format=absolute", "--git-common-dir"])); }
 export function repositoryBranch(path: string) { return git(path, ["symbolic-ref", "--quiet", "HEAD"]); }
 
-export function captureRepositoryOverlays(path: string, input: { path: string; hash: string }[]): RepositoryOverlay[] {
+export function captureRepositoryOverlays(path: string, input: { path: string; hash: string }[], clean = true): RepositoryOverlay[] {
   const root = repositorySnapshot(path, false).repositoryPath;
   const overlays: RepositoryOverlay[] = [];
   for (const item of input) {
@@ -34,7 +34,7 @@ export function captureRepositoryOverlays(path: string, input: { path: string; h
     const original = headFile(root, "HEAD", name);
     overlays.push({ path: name, hash: item.hash, executable: Boolean(lstatSync(absolute).mode & 0o111), originalHash: original.hash, originalExecutable: original.executable });
   }
-  repositorySnapshot(root, true, overlays);
+  repositorySnapshot(root, clean, overlays);
   return overlays;
 }
 

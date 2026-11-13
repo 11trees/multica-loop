@@ -38,7 +38,8 @@ not expose it. A human-facing integration must authenticate a real member and
 derive their user ID before answering; local single-user login supplies that
 identity through the normal session. The [engineering service](engineering-service.md)
 now exposes authenticated human answer APIs and uses an actual Git-backed binding.
-New-run scheduling and the question UI remain pending.
+The [shared issue controls](human-controls.md) now show questions and manually
+queue continuation; automatic scheduling remains pending.
 
 ## Verification and remaining boundary
 
@@ -69,5 +70,5 @@ An HTTP context read and kernel write are separate operations. Other Multica
 endpoints retain their existing task-token policy; this endpoint does not
 globally revoke old credentials. The local application adds native CLI execution,
 durable contracts, claim instructions, and a separate synchronous
-[issue completion check](issue-completion.md). Role/question UI, automatic
+[issue completion check](issue-completion.md). Automatic
 continuation, and cross-database handoff acceptance remain required before cutover.
