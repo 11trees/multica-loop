@@ -6,7 +6,7 @@ export type {
   LoadedCommandChain,
 } from "./definition";
 export { artifactBlock, validateArtifactContent } from "./artifacts";
-export { CommandChainEngine, DraftConflictError, PhaseValidationError, draftSchema } from "./runtime";
+export { CommandChainEngine, DraftConflictError, PhaseValidationError, draftSchema, pendingRuntimeInputs } from "./runtime";
 export type {
   ArtifactItem,
   ArtifactWrite,
@@ -18,6 +18,7 @@ export type {
   ChainDraft,
   DraftStore,
   MutationContext,
+  RuntimeInput,
 } from "./runtime";
 export { createVerificationHandlers, compileVerificationConclusion } from "./verification";
 export type { VerificationContract } from "./verification";

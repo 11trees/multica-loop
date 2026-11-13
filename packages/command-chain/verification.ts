@@ -1,7 +1,7 @@
 import { parse, stringify } from "yaml";
 import { z } from "zod";
 import { artifactBlock } from "./artifacts";
-import { draftSchema, PhaseValidationError, type BuiltinHandlers, type ChainDraft } from "./runtime";
+import { draftSchema, PhaseValidationError, type BuiltinHandler, type BuiltinHandlers, type ChainDraft } from "./runtime";
 
 const text = z.string().trim().min(1);
 const sourceSchema = z.strictObject({
@@ -39,6 +39,10 @@ const contractSchema = z.strictObject({
 });
 
 export type VerificationContract = z.infer<typeof contractSchema>;
+
+function withRuntimeInputs(handler: BuiltinHandler): BuiltinHandler {
+  return Object.assign(handler, { runtimeInputs: true });
+}
 
 function rows<T>(draft: Readonly<ChainDraft>, ref: string, schema: z.ZodType<T>) {
   return draft.artifacts.filter(item => item.ref === ref).map(item => ({ key: item.key, value: schema.parse(parse(item.content)) }));
@@ -130,21 +134,21 @@ export function createVerificationHandlers(input: VerificationContract): Builtin
         freeze: ["verification.sources"],
       };
     },
-    "verification-plan": draft => ({
+    "verification-plan": withRuntimeInputs(draft => ({
       errors: [
         ...planErrors(draft, contract),
         ...(draft.artifacts.some(item => item.ref === "verification.results") ? ["Observed results cannot precede the frozen verification plan"] : []),
       ],
       freeze: ["verification.scenarios"],
       writeRules: [{ ref: "verification.scenarios", mode: "append-only" }],
-    }),
-    "verification-execution": draft => ({
+    })),
+    "verification-execution": withRuntimeInputs(draft => ({
       errors: executionErrors(draft, contract),
       writeRules: [
         { ref: "verification.scenarios", mode: "sealed" },
         { ref: "verification.results", mode: "sealed" },
       ],
-    }),
+    })),
     "verification-finalize": draft => ({
       errors: finalErrors(draft, contract),
       writeRules: [{ ref: "verification.evidence-review", mode: "sealed" }],
