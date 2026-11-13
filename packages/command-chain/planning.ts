@@ -2,10 +2,11 @@ import { parse, stringify } from "yaml";
 import { z } from "zod";
 import { draftSchema, PhaseValidationError, type ChainDraft, type BuiltinHandlers } from "./runtime";
 import type { CommandChainProfile } from "./definition";
+import {feedbackWorkScopeSchema} from "./feedback";
 
 const text=z.string().trim().min(1);
 export const planningSourceSchema=z.strictObject({key:text.max(240),kind:z.enum(["change","preserve","technical","acceptance"]),content:text.max(4000),sourceRef:text.max(500),oracle:text.max(4000).optional()});
-export const planningContractSchema=z.strictObject({binding:draftSchema.shape.binding,sources:z.array(planningSourceSchema).min(1),existingKeys:z.array(text).default([]),reproduction:z.strictObject({draftId:text,sequence:z.number().int().nonnegative(),codeVersion:text,report:text}).optional()})
+export const planningContractSchema=z.strictObject({binding:draftSchema.shape.binding,sources:z.array(planningSourceSchema).min(1),existingKeys:z.array(text).default([]),feedback:feedbackWorkScopeSchema.optional(),reproduction:z.strictObject({draftId:text,sequence:z.number().int().nonnegative(),codeVersion:text,report:text}).optional()})
   .refine(value=>new Set(value.sources.map(item=>item.key)).size === value.sources.length,"Planning source keys must be unique");
 export type PlanningContract=z.infer<typeof planningContractSchema>;
 export const planningProfile:CommandChainProfile={id:"delivery-plan",agent:"story-splitter-agent",requiredBuiltins:["delivery-plan-inputs","delivery-plan-finalize"],builtins:{"delivery-plan-inputs":{acceptsArtifacts:false},"delivery-plan-finalize":{acceptsArtifacts:false}},metadataKeys:[],repositoryAdapters:[]};

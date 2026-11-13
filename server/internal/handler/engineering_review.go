@@ -238,7 +238,7 @@ func (h *Handler) dispatchRequirementReview(ctx context.Context, item engineerin
 	if err != nil || !idle {
 		return err
 	}
-	if item.Reason == "review_forward" {
+	if item.Reason == "review_forward" || item.Reason == "feedback_forward" {
 		return h.publishEngineeringUnits(ctx, parent, item.UserID, item.ExpectedRevision, item.ExpectedSequence)
 	}
 	units, err := h.loadReviewUnits(ctx, parent, true)

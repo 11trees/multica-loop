@@ -14,10 +14,12 @@ import (
 
 type nativeFeedbackFixture struct {
 	requirementReviewFixture
-	payload  map[string]any
-	reopen   bool
-	allow    bool
-	restored bool
+	payload     map[string]any
+	reopen      bool
+	allow       bool
+	restored    bool
+	work        bool
+	workPayload map[string]any
 }
 
 func (f *nativeFeedbackFixture) Call(ctx context.Context, input any) (json.RawMessage, error) {
@@ -29,6 +31,10 @@ func (f *nativeFeedbackFixture) Call(ctx context.Context, input any) (json.RawMe
 		result = map[string]any{"configured": true, "batch_id": "019a0000-0000-7000-8000-000000000071", "reopen_required": f.reopen}
 	case "cancel-feedback":
 		result = map[string]bool{"cancelled": true}
+	case "authorize-feedback-work":
+		f.work = true
+		f.workPayload = value["payload"].(map[string]any)
+		result = map[string]bool{"authorized": true}
 	case "feedback-restored":
 		f.restored = true
 		result = map[string]bool{"acknowledged": true}
@@ -36,6 +42,9 @@ func (f *nativeFeedbackFixture) Call(ctx context.Context, input any) (json.RawMe
 		result = map[string]any{"configured": true, "allowed": f.allow, "review_units": f.units}
 	case "selection":
 		result = map[string]any{"configured": true, "chain": "feedback-triage", "repository_path": "/fixture/repository", "code_version": strings.Repeat("a", 40), "review_units": f.units}
+		if f.work {
+			result = map[string]any{"configured": true, "chain": "planning", "feedback_group_id": "group", "repository_path": "/fixture/repository", "code_version": strings.Repeat("a", 40), "review_units": f.units}
+		}
 	default:
 		return f.requirementReviewFixture.Call(ctx, input)
 	}
@@ -103,6 +112,20 @@ func TestEngineeringFeedbackCapturesNativeCommentsReopensAndRestoresOnlyAfterCom
 	}
 	testutil.Call(t, h.CancelEngineeringFeedback, request(map[string]any{"batch_id": "019a0000-0000-7000-8000-000000000071", "expected_version": 1, "reason": "Stop"})).Want(http.StatusConflict)
 	dbfx.Exec(t, "UPDATE agent_task_queue SET status='completed',completed_at=now() WHERE id=$1", taskID)
+	workInput := map[string]any{"batch_id": "019a0000-0000-7000-8000-000000000071", "expected_version": 1, "planner_agent_id": agentID}
+	workSpoof := map[string]any{"batch_id": workInput["batch_id"], "expected_version": 1, "planner_agent_id": agentID, "execution_resources": []string{"/forged"}}
+	testutil.Call(t, h.AuthorizeEngineeringFeedbackWork, request(workSpoof)).Want(http.StatusBadRequest)
+	testutil.Call(t, h.AuthorizeEngineeringFeedbackWork, request(workInput)).Want(http.StatusOK)
+	if worker.workPayload["planner_agent_id"] != agentID || len(worker.workPayload["execution_resources"].([]map[string]string)) != 1 || worker.workPayload["native_unit_ids"].([]string)[0] != childID {
+		t.Fatal("feedback work did not use native role resources and child proofs")
+	}
+	planningTaskID := dbfx.Task(t, agentID, testutil.Cols{"runtime_id": runtimeID, "issue_id": parentID, "status": "dispatched", "dispatched_at": testutil.Raw("now()")})
+	planningTask, _ := h.Queries.GetAgentTask(ctx, parseUUID(planningTaskID))
+	planningResponse, _, _, _, _, planningFailure := h.buildClaimedTaskResponse(newRequest(http.MethodPost, "/claim", nil), &planningTask, runtime, runtimeID, testWorkspaceID)
+	if planningFailure != nil || planningResponse.EngineeringChain != "planning" || !strings.Contains(planningResponse.Agent.Instructions, "readonly feedback group") {
+		t.Fatal("native feedback planning claim lost its scoped instructions")
+	}
+	dbfx.Exec(t, "UPDATE agent_task_queue SET status='completed',completed_at=now() WHERE id=$1", planningTaskID)
 	item := engineeringContinuation{WorkspaceID: testWorkspaceID, IssueID: parentID, UserID: testUserID, AgentID: agentID, FeedbackBatchID: "019a0000-0000-7000-8000-000000000071", ExpectedSequence: 1}
 	if err := h.restoreEngineeringFeedback(ctx, item); err == nil {
 		t.Fatal("unresolved feedback allowed native Done")

@@ -18,6 +18,8 @@ export const feedbackTriageContractSchema=z.strictObject({binding:draftSchema.sh
     if(new Set(value.units.map(item=>item.key)).size !== value.units.length || value.units.some((item,index)=>item.index !== index+1))ctx.addIssue({code:"custom",message:"Frozen delivery units need unique keys and contiguous source indexes"});
   });
 export type FeedbackTriageContract=z.infer<typeof feedbackTriageContractSchema>;
+export const feedbackWorkScopeSchema=z.strictObject({batchId:text,groupId:text,group:feedbackGroupSchema,comments:z.array(feedbackCommentSchema).min(1),context:feedbackContextSchema,units:z.array(unitSchema)});
+export type FeedbackWorkScope=z.infer<typeof feedbackWorkScopeSchema>;
 export const feedbackWorkEvidenceSchema=z.strictObject({kind:z.enum(["delivery","report"]),ref:text,version:text,codeVersion:text,content:text});
 export const feedbackVerifyContractSchema=z.strictObject({binding:draftSchema.shape.binding,batchId:text,groupId:text,group:feedbackGroupSchema,comment:feedbackCommentSchema,context:feedbackContextSchema,work:feedbackWorkEvidenceSchema})
   .superRefine((value,ctx)=>{
