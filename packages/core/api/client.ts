@@ -1,7 +1,7 @@
-import { RequirementReviewConfiguredSchema, RequirementReviewAcknowledgedSchema, EngineeringDeliveryAuthorizationSchema, EngineeringPublicationSchema } from "../issues/engineering-schema";
+import { FeedbackCaptureSchema, FeedbackCancelledSchema, RequirementReviewConfiguredSchema, RequirementReviewAcknowledgedSchema, EngineeringDeliveryAuthorizationSchema, EngineeringPublicationSchema } from "../issues/engineering-schema";
 import type { ZodType } from "zod";
 import { EngineeringOverviewSchema, EngineeringWriteSchema } from "./schemas";
-import type { RequirementReviewConfiguration, RequirementReviewAcknowledgement, RequirementDeliveryConfiguration, EngineeringCheckpoint, RequirementConfiguration, EngineeringConfiguration, EngineeringOverview } from "../issues/engineering-schema";
+import type { FeedbackCapture, FeedbackCancellation, RequirementReviewConfiguration, RequirementReviewAcknowledgement, RequirementDeliveryConfiguration, EngineeringCheckpoint, RequirementConfiguration, EngineeringConfiguration, EngineeringOverview } from "../issues/engineering-schema";
 import { AgentRuntimeSchema, EMPTY_RUNTIME } from "../runtimes/schema";
 import type { IssueWakeup, IssueWakeupInput, IssueWakeupSummaryRow, PausedWakeup, SystemWakeup, WakeupRun, WorkspaceSystemWakeup } from "../types/issue-wakeup";
 import type { WorkspaceWakeupPage, WorkspaceWakeupFilters } from "../types/issue-wakeup";
@@ -3041,6 +3041,14 @@ export class ApiClient {
     if(!parseWithFallback(raw,EngineeringDeliveryAuthorizationSchema,null,{endpoint:"POST /api/issues/:id/engineering/delivery"}))throw new Error("Invalid delivery authorization response");
   }
 
+  async beginEngineeringFeedback(issueId:string,input:FeedbackCapture):Promise<void>{
+    const raw=await this.fetch<unknown>(`/api/issues/${issueId}/engineering/feedback`,{method:"POST",body:JSON.stringify({request_id:input.requestId,expected_revision:input.expectedRevision,expected_sequence:input.expectedSequence,expected_batch_number:input.expectedBatchNumber,agent_id:input.agentId,verifier_id:input.verifierId,comment_ids:input.commentIds})});
+    if(!parseWithFallback(raw,FeedbackCaptureSchema,null,{endpoint:"POST /api/issues/:id/engineering/feedback"}))throw new Error("Invalid feedback capture response");
+  }
+  async cancelEngineeringFeedback(issueId:string,input:FeedbackCancellation):Promise<void>{
+    const raw=await this.fetch<unknown>(`/api/issues/${issueId}/engineering/feedback/cancel`,{method:"POST",body:JSON.stringify({batch_id:input.batchId,expected_version:input.expectedVersion,reason:input.reason})});
+    if(!parseWithFallback(raw,FeedbackCancelledSchema,null,{endpoint:"POST /api/issues/:id/engineering/feedback/cancel"}))throw new Error("Invalid feedback cancellation response");
+  }
   async configureRequirementReview(issueId:string,input:RequirementReviewConfiguration):Promise<void>{
     const raw=await this.fetch<unknown>(`/api/issues/${issueId}/engineering/review`,{method:"POST",body:JSON.stringify({expected_revision:input.expectedRevision,expected_sequence:input.expectedSequence,agent_id:input.reviewerId})});
     if(!parseWithFallback(raw,RequirementReviewConfiguredSchema,null,{endpoint:"POST /api/issues/:id/engineering/review"}))throw new Error("Invalid requirement review configuration response");
