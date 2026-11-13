@@ -305,6 +305,15 @@ export class TestApiClient {
     }
   }
 
+  async queuedEngineeringRun(issueId: string, agentId: string): Promise<string | null> {
+    if (!this.createdIssueIds.includes(issueId) || !this.engineeringRuns.some(run => run.agentId === agentId)) throw new Error("Not an owned engineering fixture");
+    const client = new pg.Client(DATABASE_URL); await client.connect();
+    try {
+      const result = await client.query<{id:string}>("SELECT id FROM agent_task_queue WHERE issue_id=$1 AND agent_id=$2 AND status='queued' ORDER BY created_at DESC LIMIT 1", [issueId,agentId]);
+      return result.rows[0]?.id ?? null;
+    } finally { await client.end(); }
+  }
+
   async finishEngineeringRun(taskId: string) {
     if (!this.engineeringRuns.some(run => run.taskId === taskId)) throw new Error("Not an owned engineering fixture");
     const client = new pg.Client(DATABASE_URL); await client.connect();

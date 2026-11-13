@@ -8,6 +8,8 @@ import { pathToFileURL } from "node:url";
 import { TestApiClient } from "./fixtures";
 
 for (const mode of ["in_place", "worktree"] as const) test(`a ${mode} development commit is handed to independent browser verification with captured checks`, async ({}, testInfo) => {
+  test.setTimeout(120000);
+  const automatic = mode === "in_place";
   test.skip(!process.env.MULTICA_ENGINEERING_BROWSER || !process.env.MULTICA_ENGINEERING_CLI || process.env.MULTICA_ENGINEERING_ENABLED !== "true", "Requires the local engineering service, test-built CLI, and explicit browser binary");
   const api = new TestApiClient(); await api.loginLocally();
   const workspace = (await api.getWorkspaces()).find(value => value.slug === "loopwork-local")!;
@@ -31,9 +33,14 @@ for (const mode of ["in_place", "worktree"] as const) test(`a ${mode} developmen
   };
   const cleanRuntime = async () => { await writeFile(join(repository, "AGENTS.md"), "User guidance\n"); await rm(join(repository, ".multica/task-fixture.json")); };
   try {
-    const dev = await api.seedEngineeringRun(); const verifier = await api.seedEngineeringRun(dev.issueId);
+    const dev = await api.seedEngineeringRun(); let verifier = await api.seedEngineeringRun(dev.issueId);
+    if (automatic) {
+      await api.finishEngineeringRun(verifier.taskId);
+      const project = await api.createProject(`Automatic delivery ${dev.issueId}`);
+      await api.attachEngineeringProject(verifier.taskId, project.id, registeredRepository);
+    }
     await api.engineeringVerification(dev.issueId, "configure", {
-      expected_revision: 0, agent_id: verifier.agentId, developer_agent_id: dev.agentId, repository_path: repository,
+      auto_continue: automatic, expected_revision: 0, agent_id: verifier.agentId, developer_agent_id: dev.agentId, repository_path: repository,
       implementation_guidance: "Show the required Ready heading in the page. Keep the acceptance oracle unchanged.",
       sources: [{ key: "ac1", kind: "acceptance", description: "The page displays Ready", oracle: "A browser sees an h1 with exact text Ready", sourceRef: "FIXTURE:heading:r1" }],
     });
@@ -71,6 +78,12 @@ for (const mode of ["in_place", "worktree"] as const) test(`a ${mode} developmen
     expect(state.conclusion.commit).toBe(commit);
     await expect(api.updateIssue(dev.issueId, { status: "done", suppress_run: true })).rejects.toThrow(/409.*Complete independent verification/);
     await cleanRuntime();
+    if (automatic) {
+      expect(await api.queuedEngineeringRun(dev.issueId, verifier.agentId)).toBeNull();
+      await api.finishEngineeringRun(dev.taskId);
+      await expect.poll(() => api.queuedEngineeringRun(dev.issueId, verifier.agentId), { timeout: 40000 }).not.toBeNull();
+      verifier = await api.claimEngineeringRun((await api.queuedEngineeringRun(dev.issueId, verifier.agentId))!);
+    }
     if (mode === "worktree") {
       const path = join(directory, "verification"); git("worktree", "add", "-b", "engineering-verification", path, commit);
       registeredGit("worktree", "remove", repository); repository = path;
@@ -80,6 +93,20 @@ for (const mode of ["in_place", "worktree"] as const) test(`a ${mode} developmen
     owner = verifier; state = cli("start");
     expect(state.chain).toBe("verification"); expect(state.contract.binding.codeVersion).toBe(commit);
     command({ type: "phase.complete" });
+    if (automatic) {
+      command({ type: "runtime-input.put", key: "entry", title: "Verification entry", question: "Which fixture?", why: "Need isolated data", recommendation: "Use the local fixture" });
+      command({ type: "phase.complete" });
+      const pausedId = state.draft.id;
+      await api.engineeringVerification(dev.issueId, "answer", { expected_sequence: state.draft.sequence, request_id: state.draft.runtimeInputs[0].id, answer: "Use the committed local fixture" });
+      expect(await api.queuedEngineeringRun(dev.issueId, verifier.agentId)).toBeNull();
+      await api.finishEngineeringRun(verifier.taskId);
+      await expect.poll(() => api.queuedEngineeringRun(dev.issueId, verifier.agentId), { timeout: 40000 }).not.toBeNull();
+      verifier = await api.claimEngineeringRun((await api.queuedEngineeringRun(dev.issueId, verifier.agentId))!);
+      await api.bindEngineeringRepository(verifier.taskId, repository, mode, await prepareRuntime(verifier.taskId));
+      owner = verifier; state = cli("start");
+      expect(state.draft.id).toBe(pausedId); expect(state.draft.phase).toBe("plan");
+      expect(state.draft.runtimeInputs[0].answer.text).toBe("Use the committed local fixture");
+    }
     command({ type: "artifact.put", ref: "verification.scenarios", key: "s1", content: "channel: frontend\ntitle: Heading visible\nsetup: Open the committed fixture page\nsteps: Observe the h1 in a browser\nexpected: Exact text Ready\ncoverageRefs: [ac1]" });
     command({ type: "phase.complete" });
     const browser = await chromium.launch({ executablePath: process.env.MULTICA_ENGINEERING_BROWSER });

@@ -104,7 +104,10 @@ user is derived from the session/PAT, never a JSON field. A new run of the same
 verifier uses `start` to resume after all answers arrive. Answers do not make
 blocked observations pass. The [shared issue controls](human-controls.md) expose
 configuration, answers, progress, and explicit Run/Continue actions. Starting a
-new run is manual; automatic continuation remains pending.
+new run is manual unless the contract enables `auto_continue`. With that policy,
+the [host coordinator](automatic-continuation.md) queues the verifier after
+development handoff and resumes fully answered question batches. Existing
+contracts and CLI payloads that omit the field remain manual.
 
 ## Verification and limits
 
@@ -132,7 +135,7 @@ passed current independent verification is required for a registered issue's
 done-category write. Native execution now requires a project local-directory
 resource and a runtime-owned [repository binding](repository-binding.md); both
 in-place and pinned-worktree modes are supported on the API host. The other
-chains, additional provider receipt adapters, automated run continuation,
+chains, additional provider receipt adapters, automated failure/rework,
 remote clone mapping, and cross-database handoff
 acceptance remain required for cutover. Successful process exit is not evidence
 of engineering delivery.

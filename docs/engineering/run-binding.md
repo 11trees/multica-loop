@@ -38,8 +38,8 @@ not expose it. A human-facing integration must authenticate a real member and
 derive their user ID before answering; local single-user login supplies that
 identity through the normal session. The [engineering service](engineering-service.md)
 now exposes authenticated human answer APIs and uses an actual Git-backed binding.
-The [shared issue controls](human-controls.md) now show questions and manually
-queue continuation; automatic scheduling remains pending.
+The [shared issue controls](human-controls.md) now show questions and support both manual and authorized
+[automatic continuation](automatic-continuation.md).
 
 ## Verification and remaining boundary
 
@@ -71,4 +71,4 @@ endpoints retain their existing task-token policy; this endpoint does not
 globally revoke old credentials. The local application adds native CLI execution,
 durable contracts, claim instructions, and a separate synchronous
 [issue completion check](issue-completion.md). Automatic
-continuation, and cross-database handoff acceptance remain required before cutover.
+failure/rework, and cross-database handoff acceptance remain required before cutover.

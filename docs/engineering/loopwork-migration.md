@@ -101,7 +101,10 @@ The kernel can suspend a question batch, persist authenticated human answers,
 and resume the same phase on a new run attempt after all answers arrive. It
 preserves questions superseded by rewind and does not convert answers into
 passing evidence. Human authentication and answer/abandon APIs are connected;
-[shared issue controls](human-controls.md) now expose questions, answers, and manual continuation; automatic continuation remains pending.
+[shared issue controls](human-controls.md) expose questions, answers, and manual
+continuation. An authorized [coordinator](automatic-continuation.md) also queues
+development handoff and fully answered question batches; automatic failure/rework
+remains pending.
 
 Development gates now cover frozen scope, implementation claims, recovery
 resolutions, code review, current captured command checks, and clean commits.
@@ -143,7 +146,7 @@ The first synchronous [issue completion boundary](issue-completion.md) now check
 ordinary/description/batch updates, PR automation, and workflow remaps against
 the latest passed verification and current clean commit. It preserves the
 existing non-atomic batch semantics and does not supply a cross-database handoff
-transaction. Final review, automatic continuation, remote repository mapping,
+transaction. Final review, automatic failure/rework, remote repository mapping,
 remaining chains, and real delivery acceptance are still pending. These local
 integration steps do not complete milestone 2 or the migration.
 

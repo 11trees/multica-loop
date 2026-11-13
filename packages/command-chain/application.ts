@@ -17,10 +17,11 @@ const human = z.strictObject({ kind: z.literal("human"), userId: z.uuid(), ...sc
 const task = z.strictObject({ kind: z.literal("task"), agentId: z.uuid(), attemptId: text, ...scope });
 const daemon = task.extend({ kind: z.literal("daemon") });
 const host = z.strictObject({ kind: z.literal("host"), ...scope });
-const actor = z.discriminatedUnion("kind", [human, task, daemon, host]);
+const coordinator = z.strictObject({ kind: z.literal("coordinator") });
+const actor = z.discriminatedUnion("kind", [human, task, daemon, host, coordinator]);
 export const applicationRequestSchema = z.strictObject({
   actor,
-  action: z.enum(["configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run"]),
+  action: z.enum(["configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations"]),
   payload: z.unknown().optional(),
 });
 export type ApplicationRequest = z.infer<typeof applicationRequestSchema>;
@@ -29,6 +30,7 @@ const configuration = z.strictObject({
   agent_id: z.uuid(), repository_path: text,
   developer_agent_id: z.uuid().optional(),
   implementation_guidance: text.optional(),
+  auto_continue: z.boolean().optional().default(false),
   sources: verificationContractSchema.shape.sources,
 });
 const executionSchema = z.strictObject({
@@ -39,7 +41,7 @@ const executionSchema = z.strictObject({
 type Execution = z.infer<typeof executionSchema>;
 const recordSchema = z.strictObject({
   ...scope, agentId: z.uuid(), repositoryPath: text, draftId: z.uuid(),
-  createdBy: z.uuid(), definitionSource: text,
+  createdBy: z.uuid(), definitionSource: text, autoContinue: z.boolean().optional().default(false),
   contract: verificationContractSchema,
   development: z.strictObject({ agentId: z.uuid(), draftId: z.uuid(), definitionSource: text, baseCodeVersion: text, implementationGuidance: text, handoff: z.boolean(), conclusion: z.json().optional() }).optional(),
   delivery: executionSchema.optional(), verificationExecution: executionSchema.optional(),
@@ -147,7 +149,7 @@ export class EngineeringApplication {
     const definition = draft?.definition ?? parseCommandChainDefinition(development ? record.development!.definitionSource : record.definitionSource, development ? developmentProfile : profile).definition;
     const conclusion = draft?.status === "completed" ? development ? record.development?.conclusion : compileVerificationConclusion(draft, record.contract) : undefined;
     return {
-      enabled: true, configured: true, chain: development ? "development" : "verification",
+      enabled: true, configured: true, auto_continue: record.autoContinue, chain: development ? "development" : "verification",
       agent_id: development ? record.development!.agentId : record.agentId,
       revision: record.contract.binding.revision, code_version: record.contract.binding.codeVersion,
       repository_path: record.repositoryPath, draft_id: draft?.id ?? null, sequence: draft?.sequence ?? 0,
@@ -161,9 +163,36 @@ export class EngineeringApplication {
     };
   }
 
+  private async continuations() {
+    const rows = this.db.prepare(`SELECT c.payload FROM engineering_contract c
+      WHERE c.revision = (SELECT MAX(latest.revision) FROM engineering_contract latest WHERE latest.workspace_id = c.workspace_id AND latest.issue_id = c.issue_id)`).all();
+    const pending = [];
+    for (const row of rows) {
+      const record = recordSchema.parse(JSON.parse(String(row.payload)));
+      if (!record.autoContinue) continue;
+      const development = Boolean(record.development && !record.development.handoff);
+      const draftId = development ? record.development!.draftId : record.draftId;
+      const draft = await this.drafts.read(draftId);
+      const reason = !draft && record.development?.handoff ? "development_handoff" :
+        draft?.status === "waiting_for_answers" && draft.runtimeInputs.some(input => input.active) && draft.runtimeInputs.every(input => !input.active || input.answer !== null) ? "human_answers" : null;
+      if (!reason) continue;
+      const sequence = draft?.sequence ?? 0;
+      const hash = createHash("sha256").update(`multica:engineering:continuation:${draftId}:${sequence}`).digest("hex");
+      const taskId = `${hash.slice(0, 8)}-${hash.slice(8, 12)}-5${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
+      pending.push({ workspace_id: record.workspaceId, issue_id: record.issueId, agent_id: development ? record.development!.agentId : record.agentId,
+        user_id: record.createdBy, task_id: taskId, expected_revision: record.contract.binding.revision, expected_sequence: sequence, reason });
+    }
+    return pending;
+  }
+
   async invoke(input: ApplicationRequest) {
     const request = applicationRequestSchema.parse(input);
     const { actor, action } = request;
+    if (actor.kind === "coordinator") {
+      if (action !== "continuations") throw new Error("Coordinator credentials cannot edit engineering state");
+      return this.continuations();
+    }
+    if (action === "continuations") throw new Error("Only the host coordinator can list continuations");
     let record = this.current(actor.workspaceId, actor.issueId);
     if (action === "overview" || action === "prepare-run") {
       if (actor.kind !== "human") throw new Error("A human actor is required for engineering controls");
@@ -227,7 +256,7 @@ export class EngineeringApplication {
         binding: { workspaceId: actor.workspaceId, issueId: actor.issueId, revision, contractVersion, codeVersion: code.codeVersion }, sources,
       });
       record = recordSchema.parse({ workspaceId: actor.workspaceId, issueId: actor.issueId, agentId: config.agent_id,
-        repositoryPath: code.repositoryPath, draftId: randomUUID(), createdBy: actor.userId,
+        repositoryPath: code.repositoryPath, draftId: randomUUID(), createdBy: actor.userId, autoContinue: config.auto_continue,
         definitionSource: this.definitionSource, contract,
         ...(config.developer_agent_id ? { development: { agentId: config.developer_agent_id, draftId: randomUUID(), definitionSource: this.developmentSource, baseCodeVersion: code.codeVersion, implementationGuidance: config.implementation_guidance, handoff: false } } : {}),
       });
