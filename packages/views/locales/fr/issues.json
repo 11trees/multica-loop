@@ -1942,6 +1942,11 @@
     "copy_failed": "Impossible de copier l'URL"
   },
   "engineering": {
+    "publish_units": "Publier les unités",
+    "retry_publication": "Réessayer la publication",
+    "units_published_notice": "Unités publiées. La livraison et la revue finale restent nécessaires.",
+    "managed_unit_pending": "Cette unité est liée au plan du besoin. Son exécution n’a pas commencé.",
+    "parent_requirement": "Besoin parent",
     "plan_requirement": "Planifier le besoin",
     "requirement_notice": "Fige la demande initiale pour le contexte et la planification. Le plan terminé nécessite encore la livraison et la revue finale.",
     "requirement_input": "Demande initiale",

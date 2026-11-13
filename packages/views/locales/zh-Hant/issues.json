@@ -1867,6 +1867,11 @@
     "copy_failed": "無法複製位址"
   },
   "engineering": {
+    "publish_units": "發布單元",
+    "retry_publication": "重試發布",
+    "units_published_notice": "交付單元已發布，仍需執行交付與最終審查。",
+    "managed_unit_pending": "此單元已綁定需求計畫，尚未啟動交付執行。",
+    "parent_requirement": "所屬需求",
     "plan_requirement": "規劃需求",
     "requirement_notice": "凍結原始輸入，用於需求脈絡和交付規劃。計畫完成後仍需實際交付與最終審查。",
     "requirement_input": "原始需求",

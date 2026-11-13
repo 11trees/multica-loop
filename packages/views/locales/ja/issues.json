@@ -1867,6 +1867,11 @@
     "copy_failed": "URL をコピーできませんでした"
   },
   "engineering": {
+    "publish_units": "単位を作成",
+    "retry_publication": "作成を再試行",
+    "units_published_notice": "実装単位を作成しました。実装と最終レビューが必要です。",
+    "managed_unit_pending": "この単位は要件計画に紐付いています。実装はまだ開始していません。",
+    "parent_requirement": "親要件",
     "plan_requirement": "要件を計画",
     "requirement_notice": "現状整理と計画のために元の要件を固定します。計画後も実装と最終レビューが必要です。",
     "requirement_input": "元の要件",

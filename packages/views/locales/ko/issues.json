@@ -1867,6 +1867,11 @@
     "copy_failed": "URL을 복사할 수 없습니다"
   },
   "engineering": {
+    "publish_units": "단위 게시",
+    "retry_publication": "게시 재시도",
+    "units_published_notice": "구현 단위가 게시되었습니다. 구현과 최종 검토가 필요합니다.",
+    "managed_unit_pending": "이 단위는 요구사항 계획에 연결되어 있습니다. 구현은 아직 시작되지 않았습니다.",
+    "parent_requirement": "상위 요구사항",
     "plan_requirement": "요구사항 계획",
     "requirement_notice": "현황 정리와 계획을 위해 원래 입력을 고정합니다. 계획 후에도 구현과 최종 검토가 필요합니다.",
     "requirement_input": "원래 요구사항",

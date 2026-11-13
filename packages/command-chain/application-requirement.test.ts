@@ -20,7 +20,7 @@ afterEach(async()=>{app.close();await rm(directory,{recursive:true,force:true});
 async function invoke(actor:ApplicationRequest["actor"],action:ApplicationRequest["action"],payload?:unknown){const result=await app.invoke({actor,action,payload});if(!("draft" in result) || "rework" in result)throw new Error("Expected requirement checkpoint");return result;}
 const configure=(extra={})=>invoke(human,"configure",{kind:"requirement",expected_revision:0,agent_id:backlog,planner_agent_id:planner,repository_path:repository,input:"A reader sees Ready and can activate Continue",auto_continue:true,...extra});
 async function start(agentId=backlog,round=0){const actor=task(agentId,round);await app.invoke({actor:{...actor,kind:"daemon"},action:"bind",payload:{work_dir:repository,mode:"in_place",overlays:[]}});let state=await invoke(actor,"start");return {actor,get state(){return state;},command:async(command:unknown)=>{state=await invoke(actor,"command",{expected_sequence:state.draft!.sequence,command});return state;}};}
-async function context(options:{kind?:string;expected?:boolean;conflict?:boolean;ask?:boolean;revision?:number;oracle?:string;removeAction?:boolean}={}){
+async function context(options:{kind?:string;expected?:boolean;conflict?:boolean;ask?:boolean;revision?:number;oracle?:string;removeAction?:boolean;headingKey?:string}={}){
   await configure({item_kind:options.kind ?? "requirement",expected_revision:options.revision ?? 0});let session=await start();const put=(block:string,key:string,value:unknown)=>session.command({type:"artifact.put",ref:`requirement-context.${block}`,...(key ? {key} : {}),content:typeof value === "string" ? value : stringify(value)});
   await put("intent","","Enable the reader's next action");await put("assertions","actual",{perspective:"actual",statement:"Reader sees Initial",evidence:options.conflict ? "conflicted" : "observed",source:"README.md:1"});
   if(options.expected)await put("assertions","expected",{perspective:"expected",statement:"Existing rules require Initial",evidence:"reported",source:"Existing business specification"});await session.command({type:"phase.complete"});
@@ -31,12 +31,12 @@ async function context(options:{kind?:string;expected?:boolean;conflict?:boolean
   await put("assertions","target",{perspective:"target",statement:"Reader sees Ready and can Continue",evidence:"decided",source:"Frozen input",...(options.ask ? {decision:"button"} : {})});await session.command({type:"phase.complete"});
   await put("change-summary","","Change heading and add the action");await put("impacts","heading",{statement:"Show Ready and Continue",disposition:"change",rationale:"Observable reader outcome",source:"Frozen requirement"});await session.command({type:"phase.complete"});
   await put("scope","included",{direction:"included",content:"Heading and Continue"});await session.command({type:"phase.complete"});
-  await session.command({type:"acceptance.put",acceptance:{key:"heading",statement:"Heading is Ready",oracle:options.oracle ?? "Browser sees exact Ready",source:"Frozen input"}});
+  await session.command({type:"acceptance.put",acceptance:{key:options.headingKey ?? "heading",statement:"Heading is Ready",oracle:options.oracle ?? "Browser sees exact Ready",source:"Frozen input"}});
   if(!options.removeAction)await session.command({type:"acceptance.put",acceptance:{key:"action",statement:"Continue is available",oracle:"Browser activates Continue",source:"Frozen input"}});
   await session.command({type:"phase.complete"});return session;
 }
-async function plan(){const session=await start(planner);await session.command({type:"phase.complete"});await session.command({type:"artifact.put",ref:"delivery-plan.rationale",content:"Separate two independently observable reader outcomes"});await session.command({type:"phase.complete"});
-  const units=[{key:"heading",title:"Ready heading",actor:"Reader",trigger:"Open page",observableOutcome:"Heading shows Ready",acceptance:"Exact Ready",sourceRefs:["impact:heading","acceptance:heading"],dependsOn:[] as string[]},{key:"action",title:"Continue action",actor:"Reader",trigger:"Activate Continue",observableOutcome:"Next reading step",acceptance:"Continue activates",sourceRefs:["acceptance:action"],dependsOn:["heading"]}];
+async function plan(headingKey="heading"){const session=await start(planner);await session.command({type:"phase.complete"});await session.command({type:"artifact.put",ref:"delivery-plan.rationale",content:"Separate two independently observable reader outcomes"});await session.command({type:"phase.complete"});
+  const units=[{key:"heading",title:"Ready heading",actor:"Reader",trigger:"Open page",observableOutcome:"Heading shows Ready",acceptance:"Exact Ready",sourceRefs:["impact:heading",`acceptance:${headingKey}`],dependsOn:[] as string[]},{key:"action",title:"Continue action",actor:"Reader",trigger:"Activate Continue",observableOutcome:"Next reading step",acceptance:"Continue activates",sourceRefs:["acceptance:action"],dependsOn:["heading"]}];
   const put=async(unit:typeof units[number])=>{const {key,...value}=unit;return session.command({type:"artifact.put",ref:"delivery-plan.units",key,content:stringify(value)});};
   for(const unit of units)await put(unit);await session.command({type:"phase.complete"});await session.command({type:"artifact.put",ref:"delivery-plan.coverage",content:"All changes and requirement acceptances are assigned"});await session.command({type:"artifact.put",ref:"delivery-plan.ordering",content:"Action needs the heading delivered first"});
   return {...session,units,put,finish:async()=>{await session.command({type:"phase.complete"});return session.command({type:"phase.complete"});}};
@@ -80,4 +80,28 @@ it("rebuilds the readonly acceptance projection after revisiting the acceptance 
   await expect(session.command({type:"acceptance.put",acceptance:{key:"unit:reserved",statement:"Invalid",oracle:"Invalid",source:"Input"}})).rejects.toThrow(/reserved/);
   await session.command({type:"acceptance.remove",key:"action"});await session.command({type:"phase.complete"});await session.command({type:"phase.complete"});
   expect(await app.invoke({actor:human,action:"overview"})).toMatchObject({requirement:{context:{acceptances:[{key:"heading"}]}}});
+},15000);
+
+
+it("freezes stable child identities and oracles before publication, resumes partial acknowledgements and blocks unverified children",async()=>{
+ const contextSession=await context();await contextSession.command({type:"phase.complete"});const planning=await plan(),done=await planning.finish(),payload={expected_revision:1,expected_sequence:done.draft!.sequence};
+ const publish=()=>app.invoke({actor:human,action:"publication",payload});let publication=await publish();if(!("units" in publication))throw new Error("Expected publication");
+ expect(publication.units).toHaveLength(2);const [first,second]=publication.units;expect(first!.sources.every(source=>source.kind === "acceptance")).toBe(true);expect(first!.unit.sourceRefs.some(source=>source.kind === "change")).toBe(true);expect(first!.sources).toEqual(expect.arrayContaining([expect.objectContaining({kind:"acceptance",oracle:"Browser sees exact Ready",sourceRef:expect.stringMatching(/^ACCEPTANCE:/)})]));expect(second!.unit.dependsOn).toEqual(["heading"]);
+ app.close();reopen();expect(await publish()).toEqual(publication);
+ expect(await app.invoke({actor:{...human,issueId:first!.issueId},action:"overview"})).toMatchObject({configured:false,managed_unit:{parentIssueId:human.issueId}});
+ await expect(app.invoke({actor:{kind:"host",workspaceId:human.workspaceId,issueId:first!.issueId},action:"completion"})).rejects.toThrow(/independent verification/);
+ await expect(app.invoke({actor:{...human,issueId:first!.issueId},action:"configure",payload:{}})).rejects.toThrow(/frozen by/);
+ await expect(app.invoke({actor:human,action:"publication-ack",payload:{issue_id:first!.issueId,contract_hash:first!.contractHash}})).rejects.toThrow(/Only the host/);
+ await expect(app.invoke({actor:{kind:"host",workspaceId:human.workspaceId,issueId:human.issueId},action:"publication-ack",payload:{issue_id:first!.issueId,contract_hash:"wrong"}})).rejects.toThrow(/does not match/);
+ await app.invoke({actor:{kind:"host",workspaceId:human.workspaceId,issueId:human.issueId},action:"publication-ack",payload:{issue_id:first!.issueId,contract_hash:first!.contractHash}});
+ publication=await publish();expect(publication).toMatchObject({units:[{issueId:first!.issueId,published:true},{issueId:second!.issueId,published:false}]});
+ await expect(configure({expected_revision:1})).rejects.toThrow(/reconciled/);
+},15000);
+it("rejects a stale publication without creating child bindings",async()=>{
+ const session=await context();await session.command({type:"phase.complete"});const planning=await plan();await planning.finish();await expect(app.invoke({actor:human,action:"publication",payload:{expected_revision:1,expected_sequence:0}})).rejects.toThrow(/plan changed/);
+ const db=new DatabaseSync(database);expect(db.prepare("SELECT count(*) AS count FROM requirement_unit").get()!.count).toBe(0);db.close();
+},15000);
+it("preserves valid long acceptance keys through readonly planning projection and child scope",async()=>{
+ const key="a".repeat(120),session=await context({headingKey:key});await session.command({type:"phase.complete"});const planning=await plan(key),done=await planning.finish();
+ const result=await app.invoke({actor:human,action:"publication",payload:{expected_revision:1,expected_sequence:done.draft!.sequence}});if(!("units" in result))throw new Error("Expected publication");expect(result.units[0]!.sources.every(source=>source.key.length<=120)).toBe(true);expect(result.units[0]!.unit.sourceRefs.some(source=>source.key === `acceptance:${key}`)).toBe(true);
 },15000);

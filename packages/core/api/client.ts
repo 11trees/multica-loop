@@ -1,3 +1,4 @@
+import { EngineeringPublicationSchema } from "../issues/engineering-schema";
 import type { ZodType } from "zod";
 import { EngineeringOverviewSchema, EngineeringWriteSchema } from "./schemas";
 import type { EngineeringCheckpoint, RequirementConfiguration, EngineeringConfiguration, EngineeringOverview } from "../issues/engineering-schema";
@@ -3028,6 +3029,11 @@ export class ApiClient {
 
   async configureRequirementEngineering(issueId:string,input:RequirementConfiguration):Promise<void>{
     await this.writeEngineering(issueId,"",{kind:"requirement",expected_revision:input.expectedRevision,agent_id:input.contextAgentId,planner_agent_id:input.plannerAgentId,repository_path:input.repositoryPath,input:input.input,item_kind:input.kind,decision_mode:input.decisionMode,auto_continue:input.autoContinue});
+  }
+
+  async publishEngineeringUnits(issueId:string,input:EngineeringCheckpoint):Promise<void>{
+    const raw=await this.fetch<unknown>(`/api/issues/${issueId}/engineering/publication`,{method:"POST",body:JSON.stringify({expected_revision:input.expectedRevision,expected_sequence:input.expectedSequence})});
+    if(!parseWithFallback(raw,EngineeringPublicationSchema,null,{endpoint:"POST /api/issues/:id/engineering/publication"}))throw new Error("Invalid publication response");
   }
 
   async answerEngineering(issueId: string, input: { expectedSequence: number; requestId: string; answer: string; selectedOption?:string }): Promise<void> {

@@ -1942,6 +1942,11 @@
     "copy_failed": "Couldn't copy the URL"
   },
   "engineering": {
+    "publish_units": "Publish units",
+    "retry_publication": "Retry publication",
+    "units_published_notice": "Units published. Delivery and final review are still required.",
+    "managed_unit_pending": "This unit is bound to its requirement plan. Delivery execution has not started.",
+    "parent_requirement": "Parent requirement",
     "plan_requirement": "Plan requirement",
     "requirement_notice": "Freeze the original input for context and planning. A finished plan still requires delivery and final review.",
     "requirement_input": "Original requirement",

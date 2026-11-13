@@ -98,6 +98,10 @@ type IssueCreateParams struct {
 	// Its immutable snapshot and cloned attachment rows commit in the same
 	// transaction as the new issue.
 	SourceContext *SourceContextCapture
+
+	// Frozen publication identity is supplied only by CreateEngineeringUnit.
+	engineeringID     pgtype.UUID
+	engineeringOrigin *EngineeringUnitOrigin
 }
 
 // IssueCreateOpts groups optional knobs for IssueService.Create. Most
@@ -416,11 +420,15 @@ func (s *IssueService) createOnce(ctx context.Context, p IssueCreateParams, opts
 		return IssueCreateResult{}, fmt.Errorf("next top position: %w", err)
 	}
 
+	issueID := dbid.NewV7()
+	if p.engineeringOrigin != nil {
+		issueID = p.engineeringID
+	}
 	var issue db.Issue
 	var assignedTask db.AgentTaskQueue
 	if p.OriginType.Valid {
 		issue, err = qtx.CreateIssueWithOrigin(ctx, db.CreateIssueWithOriginParams{
-			ID:            dbid.NewV7(),
+			ID:            issueID,
 			WorkspaceID:   p.WorkspaceID,
 			Title:         p.Title,
 			Description:   p.Description,
@@ -443,7 +451,7 @@ func (s *IssueService) createOnce(ctx context.Context, p IssueCreateParams, opts
 		})
 	} else {
 		issue, err = qtx.CreateIssue(ctx, db.CreateIssueParams{
-			ID:            dbid.NewV7(),
+			ID:            issueID,
 			WorkspaceID:   p.WorkspaceID,
 			Title:         p.Title,
 			Description:   p.Description,
@@ -472,6 +480,25 @@ func (s *IssueService) createOnce(ctx context.Context, p IssueCreateParams, opts
 		// whether to heal and retry, and the transport reports a board-integrity
 		// problem instead of a generic create failure.
 		return IssueCreateResult{}, classifyIssueNumberCollision(fmt.Errorf("create issue: %w", err), issueNumber)
+	}
+
+	if p.engineeringOrigin != nil {
+		encoded, err := json.Marshal(p.engineeringOrigin)
+		if err != nil {
+			return IssueCreateResult{}, err
+		}
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(encoded, &fields); err != nil {
+			return IssueCreateResult{}, err
+		}
+		for key, value := range fields {
+			marker, err := qtx.SetIssueMetadataKey(ctx, db.SetIssueMetadataKeyParams{ID: issue.ID, WorkspaceID: issue.WorkspaceID, Key: key, Value: value})
+			if err != nil {
+				return IssueCreateResult{}, fmt.Errorf("persist engineering origin: %w", err)
+			}
+			issue.Metadata = marker.Metadata
+			issue.Revision = marker.Revision
+		}
 	}
 
 	if p.PRAutoCompleteDisabled {

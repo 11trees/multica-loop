@@ -44,3 +44,35 @@ func TestEngineeringCommandPreservesJSONEscapes(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestEngineeringPublicationUsesFrozenCheckpoint(t *testing.T) {
+	t.Chdir(t.TempDir())
+	clearDaemonTaskEnv(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/issues/parent/engineering/publication" {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		var body map[string]int
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		if body["expected_revision"] != 1 || body["expected_sequence"] != 9 {
+			t.Error("publication checkpoint changed")
+		}
+		fmt.Fprint(w, `{"published":true}`)
+	}))
+	defer server.Close()
+	setCLITestServerEnv(t, server.URL)
+	cmd, _, err := engineeringCmd.Find([]string{"publish-units"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd.SetContext(context.Background())
+	if err := cmd.Flags().Set("payload", `{"expected_revision":1,"expected_sequence":9}`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cmd.Flags().Set("payload", "") })
+	if _, err := captureStdout(t, func() error { return cmd.RunE(cmd, []string{"parent"}) }); err != nil {
+		t.Fatal(err)
+	}
+}

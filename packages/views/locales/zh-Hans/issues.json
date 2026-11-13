@@ -1867,6 +1867,11 @@
     "copy_failed": "无法复制地址"
   },
   "engineering": {
+    "publish_units": "发布单元",
+    "retry_publication": "重试发布",
+    "units_published_notice": "交付单元已发布，仍需执行交付与最终审查。",
+    "managed_unit_pending": "此单元已绑定需求计划，尚未启动交付执行。",
+    "parent_requirement": "所属需求",
     "plan_requirement": "规划需求",
     "requirement_notice": "冻结原始输入，用于需求上下文和交付规划。计划完成后仍需实际交付与最终审查。",
     "requirement_input": "原始需求",

@@ -9,13 +9,16 @@ import { compileContextConclusion, contextContractSchema, contextProfile, create
 import { compilePlanningConclusion, planningContractSchema, planningProfile, createPlanningHandlers } from "./planning";
 import { decisionModeSchema, decisionPolicies, decisionProposalSchema } from "./decisions";
 import { captureRepositoryOverlays, repositoryCommonDirectory, repositorySnapshot } from "./repository";
+import { deliveryUnitSchema } from "./analysis";
+import { verificationContractSchema } from "./verification";
 import { artifactBlock } from "./artifacts";
 
 const text=z.string().trim().min(1),sequence=z.number().int().nonnegative();
 const configuration=z.strictObject({kind:z.literal("requirement"),expected_revision:sequence,agent_id:z.uuid(),planner_agent_id:z.uuid(),repository_path:text,input:text.max(40000),item_kind:z.enum(["requirement","bug"]).default("requirement"),decision_mode:decisionModeSchema.default("balanced"),auto_continue:z.boolean().default(false)});
 const acceptanceSchema=z.strictObject({id:z.uuid(),key:text,scope:z.literal("requirement"),statement:text,oracle:text,sourceRef:text,revision:z.number().int().positive(),active:z.boolean()});
-const recordSchema=z.strictObject({workspaceId:z.uuid(),issueId:z.uuid(),createdBy:z.uuid(),repositoryPath:text,agentId:z.uuid(),plannerAgentId:z.uuid(),autoContinue:z.boolean(),contextDraftId:z.uuid(),planDraftId:z.uuid(),contextSource:text,planningSource:text,contextContract:contextContractSchema,contextHandoff:z.boolean(),planningContract:planningContractSchema.optional(),acceptances:z.array(acceptanceSchema).default([])});
+const recordSchema=z.strictObject({workspaceId:z.uuid(),issueId:z.uuid(),createdBy:z.uuid(),repositoryPath:text,agentId:z.uuid(),plannerAgentId:z.uuid(),autoContinue:z.boolean(),contextDraftId:z.uuid(),planDraftId:z.uuid(),contextSource:text,planningSource:text,contextContract:contextContractSchema,contextHandoff:z.boolean(),planningContract:planningContractSchema.optional(),acceptances:z.array(acceptanceSchema).default([]),publicationRequestedBy:z.uuid().optional()});
 type Record=z.infer<typeof recordSchema>;
+const managedUnitSchema=z.strictObject({workspaceId:z.uuid(),issueId:z.uuid(),parentIssueId:z.uuid(),parentRevision:z.number().int().positive(),planDraftId:z.uuid(),planSequence:sequence,unit:deliveryUnitSchema,sources:verificationContractSchema.shape.sources,contractHash:text,published:z.boolean()});
 const executionSchema=z.strictObject({repositoryPath:text,overlays:z.array(z.strictObject({path:text,hash:text,executable:z.boolean(),originalHash:text.nullable(),originalExecutable:z.boolean()}))});
 export type RequirementDefinitions={context:string;planning:string};
 
@@ -27,9 +30,37 @@ export class RequirementApplication {
     db.exec("CREATE TABLE IF NOT EXISTS requirement_contract (workspace_id TEXT NOT NULL,issue_id TEXT NOT NULL,revision INTEGER NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(workspace_id,issue_id,revision))");
     db.exec("CREATE TABLE IF NOT EXISTS requirement_acceptance (workspace_id TEXT NOT NULL,issue_id TEXT NOT NULL,acceptance_key TEXT NOT NULL,revision INTEGER NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(workspace_id,issue_id,acceptance_key,revision))");
     db.exec("CREATE TABLE IF NOT EXISTS requirement_execution (workspace_id TEXT NOT NULL,issue_id TEXT NOT NULL,revision INTEGER NOT NULL,agent_id TEXT NOT NULL,attempt_id TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(workspace_id,issue_id,revision,agent_id,attempt_id))");
+    db.exec("CREATE TABLE IF NOT EXISTS requirement_unit (workspace_id TEXT NOT NULL,issue_id TEXT NOT NULL,parent_issue_id TEXT NOT NULL,unit_index INTEGER NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(workspace_id,issue_id))");
     if(definitions){parseCommandChainDefinition(definitions.context,contextProfile);parseCommandChainDefinition(definitions.planning,planningProfile);}
   }
   current(workspaceId:string,issueId:string){const row=this.db.prepare("SELECT payload FROM requirement_contract WHERE workspace_id=? AND issue_id=? ORDER BY revision DESC LIMIT 1").get(workspaceId,issueId);return row ? recordSchema.parse(JSON.parse(String(row.payload))) : undefined;}
+  managedUnit(workspaceId:string,issueId:string){const row=this.db.prepare("SELECT payload FROM requirement_unit WHERE workspace_id=? AND issue_id=?").get(workspaceId,issueId);return row ? managedUnitSchema.parse(JSON.parse(String(row.payload))) : undefined;}
+  private publication(record:Record){return {requested_by:record.publicationRequestedBy ?? null,units:this.db.prepare("SELECT payload FROM requirement_unit WHERE workspace_id=? AND parent_issue_id=? ORDER BY unit_index").all(record.workspaceId,record.issueId).map(row=>managedUnitSchema.parse(JSON.parse(String(row.payload))))};}
+  private async publish(record:Record,request:ApplicationRequest){
+    if(request.actor.kind !== "human")throw new Error("Only a human can publish planned delivery units");
+    const expected=z.strictObject({expected_revision:sequence,expected_sequence:sequence}).parse(request.payload),draft=await this.drafts.read(record.planDraftId);
+    if(expected.expected_revision !== record.contextContract.binding.revision || expected.expected_sequence !== draft?.sequence)throw new DraftConflictError("Requirement plan changed; reload before publication");
+    if(!record.contextHandoff || !draft || !record.planningContract)throw new Error("Complete requirement planning before publication");
+    const plan=compilePlanningConclusion(draft,record.planningContract);
+    if(record.publicationRequestedBy){if(record.publicationRequestedBy !== request.actor.userId)throw new Error("Resume publication as its original human owner");return this.publication(record);}
+    const units=plan.units.map(unit=>{
+      const sources=unit.sourceRefs.filter(source=>source.kind === "acceptance").map(source=>{
+        const oracle=record.planningContract!.sources.find(item=>item.key === source.key)!.oracle;if(!oracle)throw new Error("Requirement acceptance is missing its original oracle");
+        return {key:source.key.length<=120 ? source.key : `source:${createHash("sha256").update(source.key).digest("hex").slice(0,24)}`,kind:"acceptance" as const,description:source.content,oracle,sourceRef:source.sourceRef};
+      });
+      sources.push({key:`unit:${createHash("sha256").update(`${draft.id}:${unit.key}`).digest("hex").slice(0,20)}`,kind:"acceptance",description:unit.acceptance,oracle:unit.acceptance,sourceRef:`DELIVERY_PLAN:${draft.id}:unit:${unit.key}`});
+      const value={workspaceId:record.workspaceId,issueId:stableId(`multica:delivery-unit:${record.issueId}:${draft.id}:${unit.key}`),parentIssueId:record.issueId,parentRevision:record.contextContract.binding.revision,planDraftId:draft.id,planSequence:draft.sequence,unit,sources,published:false};
+      return managedUnitSchema.parse({...value,contractHash:createHash("sha256").update(JSON.stringify(value)).digest("hex")});
+    });
+    this.db.exec("BEGIN IMMEDIATE");
+    try{
+      const current=this.current(record.workspaceId,record.issueId)!;if(current.contextContract.binding.revision !== expected.expected_revision || current.publicationRequestedBy)throw new DraftConflictError("Requirement publication changed");
+      record.publicationRequestedBy=request.actor.userId;this.save(record);
+      for(const [index,unit] of units.entries())this.db.prepare("INSERT INTO requirement_unit(workspace_id,issue_id,parent_issue_id,unit_index,payload) VALUES(?,?,?,?,?)").run(record.workspaceId,unit.issueId,record.issueId,index,JSON.stringify(unit));
+      this.db.exec("COMMIT");
+    }catch(error){this.db.exec("ROLLBACK");throw error;}
+    return this.publication(record);
+  }
   private save(record:Record){this.db.prepare("UPDATE requirement_contract SET payload=? WHERE workspace_id=? AND issue_id=? AND revision=?").run(JSON.stringify(record),record.workspaceId,record.issueId,record.contextContract.binding.revision);}
   private role(record:Record){return record.contextHandoff ? {chain:"planning",agentId:record.plannerAgentId,draftId:record.planDraftId,contract:record.planningContract!,source:record.planningSource,profile:planningProfile} : {chain:"context",agentId:record.agentId,draftId:record.contextDraftId,contract:record.contextContract,source:record.contextSource,profile:contextProfile};}
   private latestAcceptances(record:Record){return this.db.prepare("SELECT a.payload FROM requirement_acceptance a WHERE workspace_id=? AND issue_id=? AND revision=(SELECT MAX(v.revision) FROM requirement_acceptance v WHERE v.workspace_id=a.workspace_id AND v.issue_id=a.issue_id AND v.acceptance_key=a.acceptance_key)").all(record.workspaceId,record.issueId).map(row=>acceptanceSchema.parse(JSON.parse(String(row.payload))));}
@@ -60,7 +91,7 @@ export class RequirementApplication {
       sources:record.planningContract?.sources.map(item=>({key:item.key,kind:item.kind,description:item.content,oracle:item.oracle ?? item.content,source_ref:item.sourceRef})) ?? [],
       artifacts:draft?.artifacts.map(item=>({...item,title:artifactBlock(draft.definition,item.ref).title})) ?? [],decisions:draft?.decisions ?? contextDraft?.decisions ?? [],
       questions:[...(contextDraft?.runtimeInputs.map(item=>({...item,active:false})) ?? []),...(draft?.runtimeInputs ?? [])].map(item=>({...item,decision_key:item.decisionKey,recommendation_option:item.recommendationOption,answer:item.answer ? {text:item.answer.text,user_id:item.answer.userId,sequence:item.answer.sequence,selected_option:item.answer.selectedOption} : null})),
-      requirement:{kind:record.contextContract.kind,input:record.contextContract.input,context:context ? {intent:context.intent,changeSummary:context.changeSummary,acceptances:record.acceptances} : null,plan},result:null,
+      requirement:{kind:record.contextContract.kind,input:record.contextContract.input,context:context ? {intent:context.intent,changeSummary:context.changeSummary,acceptances:record.acceptances} : null,plan,publication:record.publicationRequestedBy ? this.publication(record) : null},result:null,
     };
   }
   async continuations(){
@@ -79,6 +110,7 @@ export class RequirementApplication {
       const config=configuration.parse(request.payload);if(!this.definitions)throw new Error("Requirement definitions are unavailable");
       if(config.agent_id === config.planner_agent_id)throw new Error("Context and planning require separate agents");
       if(config.expected_revision !== (record?.contextContract.binding.revision ?? 0))throw new DraftConflictError("Requirement revision changed; reload before configuring");
+      if(record?.publicationRequestedBy)throw new Error("Published unit bindings must be reconciled before replacing this requirement plan");
       if(record){const draft=await this.drafts.read(this.role(record).draftId);if(draft && !["completed","abandoned"].includes(draft.status))throw new Error("Abandon the active requirement draft before replacing its input");}
       const code=repositorySnapshot(config.repository_path),revision=config.expected_revision+1;
       record=recordSchema.parse({workspaceId:actor.workspaceId,issueId:actor.issueId,createdBy:actor.userId,repositoryPath:code.repositoryPath,agentId:config.agent_id,plannerAgentId:config.planner_agent_id,autoContinue:config.auto_continue,contextDraftId:randomUUID(),planDraftId:randomUUID(),contextSource:this.definitions.context,planningSource:this.definitions.planning,contextHandoff:false,
@@ -88,6 +120,13 @@ export class RequirementApplication {
       return this.view(record);
     }
     if(!record)throw new Error("Requirement is not configured");
+    if(action === "publication")return this.publish(record,request);
+    if(action === "publication-ack"){
+      if(actor.kind !== "host")throw new Error("Only the host can acknowledge native publication");
+      const payload=z.strictObject({issue_id:z.uuid(),contract_hash:text}).parse(request.payload),unit=this.managedUnit(record.workspaceId,payload.issue_id);
+      if(!record.publicationRequestedBy || !unit || unit.parentIssueId !== record.issueId || unit.parentRevision !== record.contextContract.binding.revision || unit.contractHash !== payload.contract_hash)throw new DraftConflictError("Native publication does not match the frozen plan");
+      unit.published=true;this.db.prepare("UPDATE requirement_unit SET payload=? WHERE workspace_id=? AND issue_id=?").run(JSON.stringify(unit),unit.workspaceId,unit.issueId);return {acknowledged:true};
+    }
     const role=this.role(record);
     if(action === "completion" || action === "verified-binding")throw new DraftConflictError("Requirement delivery and final review must complete; a context or plan is not delivered work");
     if(action === "overview"){if(actor.kind !== "human")throw new Error("A human actor is required");return this.overview(record);}

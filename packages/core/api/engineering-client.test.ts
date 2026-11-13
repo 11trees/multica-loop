@@ -82,3 +82,14 @@ it("sends a distinct requirement configuration without inventing delivery source
   await new ApiClient("https://api.example.test").configureRequirementEngineering("issue",{expectedRevision:0,contextAgentId:"backlog",plannerAgentId:"planner",repositoryPath:"/fixture",input:"Original request",kind:"bug",decisionMode:"balanced",autoContinue:true});
   expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]![1]?.body))).toEqual({kind:"requirement",expected_revision:0,agent_id:"backlog",planner_agent_id:"planner",repository_path:"/fixture",input:"Original request",item_kind:"bug",decision_mode:"balanced",auto_continue:true});
 });
+
+
+it("publishes only the frozen checkpoint and refuses malformed success responses",async()=>{
+ respond({published:true});await new ApiClient("https://api.example.test").publishEngineeringUnits("parent",{expectedRevision:1,expectedSequence:9});expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]![1]?.body))).toEqual({expected_revision:1,expected_sequence:9});
+ respond({published:false});await expect(new ApiClient("https://api.example.test").publishEngineeringUnits("parent",{expectedRevision:1,expectedSequence:9})).rejects.toThrow(/Invalid publication/);
+});
+it("decodes immutable managed-unit scope and fails closed on malformed publication identities",async()=>{
+ const unit={key:"heading",title:"Heading",actor:"Reader",trigger:"Open",observableOutcome:"Ready",acceptance:"Exact Ready",sourceRefs:[],dependsOn:[]};
+ respond({enabled:true,configured:false,managed_unit:{parentIssueId:"parent",parentRevision:1,planDraftId:"plan",published:true,unit,sources:[]}});expect(await new ApiClient("https://api.example.test").getEngineeringOverview("child")).toMatchObject({managedUnit:{parentIssueId:"parent",unit:{key:"heading"}}});
+ respond({...body,chain:"planning",requirement:{kind:"requirement",input:"Request",context:null,plan:null,publication:{requested_by:"human",units:[{published:true,unit}]}}});await expect(new ApiClient("https://api.example.test").getEngineeringOverview("parent")).rejects.toThrow(/Invalid engineering overview/);
+});

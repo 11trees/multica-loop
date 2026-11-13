@@ -576,6 +576,21 @@ export class TestApiClient {
     return res.json();
   }
 
+  async publishEngineeringUnits(parentId:string,payload:unknown){
+    if(!this.createdIssueIds.includes(parentId))throw new Error("Not an owned requirement fixture");const response=await this.authedFetch(`/api/issues/${parentId}/engineering/publication`,{method:"POST",body:JSON.stringify(payload)});if(!response.ok)throw new Error(`Publication failed: ${response.status} ${await response.text()}`);return response.json();
+  }
+
+  async publishedEngineeringIssues(parentId:string){
+    if(!this.createdIssueIds.includes(parentId) || !process.env.MULTICA_ENGINEERING_DATABASE)throw new Error("Not an owned requirement fixture");
+    const {DatabaseSync}=await import("node:sqlite"),database=new DatabaseSync(process.env.MULTICA_ENGINEERING_DATABASE);let ids:string[];
+    try{ids=database.prepare("SELECT issue_id FROM requirement_unit WHERE workspace_id=? AND parent_issue_id=?").all(this.workspaceId,parentId).map(row=>String(row.issue_id));}finally{database.close();}
+    const response=await this.authedFetch(`/api/issues/${parentId}/children`);if(!response.ok)throw new Error("Unable to read native child issues");
+    const body=await response.json() as {issues:{id:string;title:string;parent_issue_id:string;assignee_id:string|null;metadata:Record<string,unknown>}[]};
+    const issues=body.issues.filter(issue=>ids.includes(issue.id) && issue.parent_issue_id === parentId);
+    for(const issue of issues)if(!this.createdIssueIds.includes(issue.id))this.createdIssueIds.push(issue.id);
+    return issues;
+  }
+
   /** Clean up all issues created during this test. */
   async cleanup() {
     if (process.env.MULTICA_ENGINEERING_DATABASE && this.createdIssueIds.length && this.workspaceId) {
@@ -585,6 +600,7 @@ export class TestApiClient {
         if(database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='requirement_contract'").get())for(const issueId of this.createdIssueIds){
           const rows=database.prepare("SELECT payload FROM requirement_contract WHERE workspace_id=? AND issue_id=?").all(this.workspaceId,issueId);
           for(const row of rows){const record=JSON.parse(String(row.payload));for(const id of [record.contextDraftId,record.planDraftId])database.prepare("DELETE FROM chain_drafts WHERE id=?").run(id);}
+          database.prepare("DELETE FROM requirement_unit WHERE workspace_id=? AND (issue_id=? OR parent_issue_id=?)").run(this.workspaceId,issueId,issueId);
           for(const table of ["requirement_execution","requirement_acceptance","requirement_contract"])database.prepare(`DELETE FROM ${table} WHERE workspace_id=? AND issue_id=?`).run(this.workspaceId,issueId);
         }
         if (database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'engineering_contract'").get()) for (const issueId of this.createdIssueIds) {

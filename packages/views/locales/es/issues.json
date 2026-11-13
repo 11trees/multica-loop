@@ -1942,6 +1942,11 @@
     "copy_failed": "No se pudo copiar la URL"
   },
   "engineering": {
+    "publish_units": "Publicar unidades",
+    "retry_publication": "Reintentar publicación",
+    "units_published_notice": "Unidades publicadas. Aún se requieren entrega y revisión final.",
+    "managed_unit_pending": "Esta unidad está vinculada al plan del requisito. La ejecución aún no ha comenzado.",
+    "parent_requirement": "Requisito principal",
     "plan_requirement": "Planificar requisito",
     "requirement_notice": "Fija la entrada original para el contexto y la planificación. Un plan terminado aún requiere entrega y revisión final.",
     "requirement_input": "Requisito original",

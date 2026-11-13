@@ -25,7 +25,7 @@ const coordinator = z.strictObject({ kind: z.literal("coordinator") });
 const actor = z.discriminatedUnion("kind", [human, task, daemon, host, coordinator]);
 export const applicationRequestSchema = z.strictObject({
   actor,
-  action: z.enum(["configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations", "verified-binding"]),
+  action: z.enum(["configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations", "verified-binding", "publication", "publication-ack"]),
   payload: z.unknown().optional(),
 });
 export type ApplicationRequest = z.infer<typeof applicationRequestSchema>;
@@ -372,6 +372,14 @@ export class EngineeringApplication {
       return [...await this.requirements.continuations(),...await this.continuations()];
     }
     if (action === "continuations") throw new Error("Only the host coordinator can list continuations");
+    const managedUnit=this.requirements.managedUnit(actor.workspaceId,actor.issueId);
+    if(managedUnit){
+      if(action === "completion" || action === "verified-binding")throw new DraftConflictError("Managed delivery has not completed independent verification");
+      if(action === "configure")throw new Error("Managed unit scope is frozen by its requirement plan");
+      if(action === "overview" && actor.kind === "human")return {enabled:true,configured:false,managed_unit:managedUnit};
+      if(action === "selection")return {configured:false};
+      throw new Error("Managed delivery execution has not been configured yet");
+    }
     const requirement=this.requirements.current(actor.workspaceId,actor.issueId);
     const mode=z.object({kind:z.string().optional()}).passthrough().safeParse(request.payload);
     if(action === "configure" && mode.success && mode.data.kind === "requirement"){

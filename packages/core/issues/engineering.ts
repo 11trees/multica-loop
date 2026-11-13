@@ -20,8 +20,9 @@ export function useEngineeringActions(workspaceId: string, issueId: string) {
   ]);
   const configure = useMutation({ mutationFn: (input: EngineeringConfiguration) => api.configureEngineering(issueId, input), onSettled: refresh });
   const configureRequirement=useMutation({mutationFn:(input:RequirementConfiguration)=>api.configureRequirementEngineering(issueId,input),onSettled:refresh});
+  const publish=useMutation({mutationFn:(input:EngineeringCheckpoint)=>api.publishEngineeringUnits(issueId,input),onSettled:()=>Promise.all([refresh(),client.invalidateQueries({queryKey:issueKeys.children(workspaceId,issueId)}),client.invalidateQueries({queryKey:issueKeys.detail(workspaceId,issueId)}),client.invalidateQueries({queryKey:issueKeys.childrenByParentsAll(workspaceId)})])});
   const answer = useMutation({ mutationFn: (input: { expectedSequence: number; requestId: string; answer: string; selectedOption?:string }) => api.answerEngineering(issueId, input), onSettled: refresh });
   const abandon = useMutation({ mutationFn: (input: { expectedSequence: number; reason: string }) => api.abandonEngineering(issueId, input), onSettled: refresh });
   const run = useMutation({ mutationFn: (input: EngineeringCheckpoint) => api.runEngineering(issueId, input), onSettled: refresh });
-  return { configure, configureRequirement, answer, abandon, run };
+  return { configure, configureRequirement, publish, answer, abandon, run };
 }

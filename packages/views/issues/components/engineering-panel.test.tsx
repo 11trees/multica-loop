@@ -8,7 +8,7 @@ import type { EngineeringOverview } from "@multica/core/issues";
 import { renderWithI18n } from "../../test/i18n";
 import { EngineeringPanel } from "./engineering-panel";
 
-const endpoints = vi.hoisted(() => ({ getEngineeringOverview: vi.fn(), listAgents: vi.fn(), answerEngineering: vi.fn(), abandonEngineering: vi.fn(), configureEngineering: vi.fn(), configureRequirementEngineering:vi.fn(), runEngineering: vi.fn() }));
+const endpoints = vi.hoisted(() => ({ getEngineeringOverview: vi.fn(), listAgents: vi.fn(), answerEngineering: vi.fn(), abandonEngineering: vi.fn(), configureEngineering: vi.fn(), configureRequirementEngineering:vi.fn(), publishEngineeringUnits:vi.fn(),runEngineering: vi.fn() }));
 vi.mock("@multica/core/api", async importOriginal => ({ ...await importOriginal<typeof import("@multica/core/api")>(), api: endpoints }));
 vi.mock("@multica/core/hooks", async importOriginal => ({ ...await importOriginal<typeof import("@multica/core/hooks")>(), useWorkspaceId: () => "workspace" }));
 const issue = { id: "issue", title: "Fixture delivery", revision: 4 } as Issue;
@@ -18,7 +18,7 @@ const initial: EngineeringOverview = {
   phases: [{ id: "inputs", status: "completed" }, { id: "plan", status: "current" }],
   sources: [{ key: "ac1", kind: "acceptance", description: "Survives reload", oracle: "Title visible", sourceRef: "ISSUE:fixture" }],
   questions: [{ id: "q1", title: "Fixture entry", question: "Which entry should be verified?", why: "Need isolated data", recommendation: "Use the local fixture", options:[],recommendationOption:"", active: true, phase: "plan", answer: null }],
-  artifacts: [], result: null, rework: null, analysis:null, requirement:null, decisions:[],
+  artifacts: [], result: null, rework: null, analysis:null, requirement:null, managedUnit:null, decisions:[],
 };
 let state: EngineeringOverview;
 let client: QueryClient;
@@ -136,6 +136,13 @@ it("requires an explicit structured choice and never submits the recommendation 
 
 it("shows planned units and requirement acceptances without offering to rerun a finished plan",async()=>{
   state.chain="planning";state.status="completed";state.questions=[];
-  state.requirement={kind:"requirement",input:"Original request",context:{intent:"Reader continues",changeSummary:"New action",acceptances:[{id:"acceptance",key:"heading",statement:"Shows Ready",oracle:"Exact visible Ready",sourceRef:"Input",revision:1}]},plan:{rationale:"Two observable outcomes",coverage:"Complete",units:[{key:"action",title:"Continue action",actor:"Reader",trigger:"Click",observableOutcome:"Next page",acceptance:"Continue works",sourceRefs:[],dependsOn:["heading"]}]}};
+  state.requirement={publication:null,kind:"requirement",input:"Original request",context:{intent:"Reader continues",changeSummary:"New action",acceptances:[{id:"acceptance",key:"heading",statement:"Shows Ready",oracle:"Exact visible Ready",sourceRef:"Input",revision:1}]},plan:{rationale:"Two observable outcomes",coverage:"Complete",units:[{key:"action",title:"Continue action",actor:"Reader",trigger:"Click",observableOutcome:"Next page",acceptance:"Continue works",sourceRefs:[],dependsOn:["heading"]}]}};
   const user=userEvent.setup();renderPanel();await screen.findByText("Plan ready. Delivery and final review are still required.");expect(screen.queryByRole("button",{name:/Start run|Continue run/})).not.toBeInTheDocument();await user.click(screen.getByText("Requirement acceptances",{exact:true}));await screen.findByText("Exact visible Ready");await screen.findByText("Prerequisites: heading");
+});
+
+
+it("keeps a failed publication retryable and freezes the plan after publication intent exists",async()=>{
+ state.chain="planning";state.status="completed";state.questions=[];state.requirement={publication:null,kind:"requirement",input:"Request",context:null,plan:{rationale:"One outcome",coverage:"Complete",units:[]}};
+ const user=userEvent.setup();vi.mocked(api.publishEngineeringUnits).mockRejectedValueOnce(new Error("Publication interrupted; retry"));renderPanel();await user.click(await screen.findByRole("button",{name:"Publish units"}));await screen.findByText("Publication interrupted; retry");
+ vi.mocked(api.publishEngineeringUnits).mockImplementationOnce(async()=>{state.requirement!.publication={requestedBy:"human",units:[{issueId:"child",published:true,unit:{key:"heading",title:"Heading"}}]};});await user.click(screen.getByRole("button",{name:"Publish units"}));await screen.findByText("Units published. Delivery and final review are still required.");expect(api.publishEngineeringUnits).toHaveBeenLastCalledWith("issue",{expectedRevision:2,expectedSequence:7});expect(screen.queryByRole("button",{name:"New revision"})).not.toBeInTheDocument();
 });
