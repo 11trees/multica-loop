@@ -1,12 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
+import { existsSync } from "node:fs";
 import { z } from "zod";
 import { parseCommandChainDefinition, type CommandChainProfile } from "./definition";
 import { CommandChainEngine, DraftConflictError, chainCommandSchema, type ChainDraft } from "./runtime";
 import { SqliteDraftStore } from "./sqlite-store";
 import { compileVerificationConclusion, createVerificationHandlers, verificationContractSchema } from "./verification";
 import { commandReceiptSchema, createDevelopmentHandlers, compileDevelopmentConclusion, type CommandReceipt } from "./development";
-import { git, repositorySnapshot as snapshot, repositoryFingerprint } from "./repository";
+import { git, repositorySnapshot as snapshot, repositoryFingerprint, repositoryCommonDirectory, repositoryBranch, captureRepositoryOverlays } from "./repository";
 
 const text = z.string().trim().min(1);
 const sequence = z.number().int().nonnegative();
@@ -18,7 +19,7 @@ const host = z.strictObject({ kind: z.literal("host"), ...scope });
 const actor = z.discriminatedUnion("kind", [human, task, daemon, host]);
 export const applicationRequestSchema = z.strictObject({
   actor,
-  action: z.enum(["configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion"]),
+  action: z.enum(["configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind"]),
   payload: z.unknown().optional(),
 });
 export type ApplicationRequest = z.infer<typeof applicationRequestSchema>;
@@ -29,11 +30,18 @@ const configuration = z.strictObject({
   implementation_guidance: text.optional(),
   sources: verificationContractSchema.shape.sources,
 });
+const executionSchema = z.strictObject({
+  repositoryPath: text, mode: z.enum(["in_place", "worktree"]), branchRef: z.string(),
+  agentId: z.uuid(), attemptId: text,
+  overlays: z.array(z.strictObject({ path: text, hash: text, executable: z.boolean(), originalHash: text.nullable(), originalExecutable: z.boolean() })),
+});
+type Execution = z.infer<typeof executionSchema>;
 const recordSchema = z.strictObject({
   ...scope, agentId: z.uuid(), repositoryPath: text, draftId: z.uuid(),
   createdBy: z.uuid(), definitionSource: text,
   contract: verificationContractSchema,
   development: z.strictObject({ agentId: z.uuid(), draftId: z.uuid(), definitionSource: text, baseCodeVersion: text, implementationGuidance: text, handoff: z.boolean(), conclusion: z.json().optional() }).optional(),
+  delivery: executionSchema.optional(), verificationExecution: executionSchema.optional(),
 });
 type Record = z.infer<typeof recordSchema>;
 const profile: CommandChainProfile = {
@@ -74,6 +82,7 @@ export class EngineeringApplication {
     )`);
     this.drafts = new SqliteDraftStore(database);
     this.db.exec("CREATE TABLE IF NOT EXISTS engineering_receipt (draft_id TEXT NOT NULL, receipt_id TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY (draft_id, receipt_id))");
+    this.db.exec("CREATE TABLE IF NOT EXISTS engineering_execution (workspace_id TEXT NOT NULL, issue_id TEXT NOT NULL, revision INTEGER NOT NULL, agent_id TEXT NOT NULL, attempt_id TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY (workspace_id, issue_id, revision, agent_id, attempt_id))");
   }
 
   private current(workspaceId: string, issueId: string): Record | undefined {
@@ -85,22 +94,44 @@ export class EngineeringApplication {
     return { ...record.contract, implementationGuidance: record.development!.implementationGuidance, binding: { ...record.contract.binding, codeVersion: record.development!.baseCodeVersion } };
   }
 
-  private runtime(record: Record) {
+  private execution(record: Record, actor: z.infer<typeof task> | z.infer<typeof daemon>): Execution {
+    const row = this.db.prepare("SELECT payload FROM engineering_execution WHERE workspace_id = ? AND issue_id = ? AND revision = ? AND agent_id = ? AND attempt_id = ?")
+      .get(record.workspaceId, record.issueId, record.contract.binding.revision, actor.agentId, actor.attemptId);
+    if (!row) throw new Error("The runtime must bind its actual repository before engineering commands");
+    return executionSchema.parse(JSON.parse(String(row.payload)));
+  }
+
+  private selectionCommit(record: Record) {
+    if (!record.development || record.development.handoff) return record.contract.binding.codeVersion;
+    const row = this.db.prepare("SELECT payload FROM engineering_execution WHERE workspace_id = ? AND issue_id = ? AND revision = ? AND agent_id = ? ORDER BY rowid DESC LIMIT 1")
+      .get(record.workspaceId, record.issueId, record.contract.binding.revision, record.development.agentId);
+    const previous = row ? executionSchema.parse(JSON.parse(String(row.payload))) : undefined;
+    const commit = previous?.mode === "worktree" && previous.branchRef ? git(record.repositoryPath, ["rev-parse", "--verify", previous.branchRef]) : snapshot(record.repositoryPath, false).codeVersion;
+    git(record.repositoryPath, ["merge-base", "--is-ancestor", record.development.baseCodeVersion, commit]);
+    return commit;
+  }
+
+  private save(record: Record) {
+    this.db.prepare("UPDATE engineering_contract SET payload = ? WHERE workspace_id = ? AND issue_id = ? AND revision = ?")
+      .run(JSON.stringify(record), record.workspaceId, record.issueId, record.contract.binding.revision);
+  }
+
+  private runtime(record: Record, execution?: Execution) {
     return {
       receipts: (): CommandReceipt[] => this.db.prepare("SELECT payload FROM engineering_receipt WHERE draft_id = ?").all(record.development!.draftId).map(row => commandReceiptSchema.parse(JSON.parse(String(row.payload)))),
-      fingerprint: () => repositoryFingerprint(record.repositoryPath),
+      fingerprint: () => repositoryFingerprint(execution?.repositoryPath ?? record.repositoryPath, execution?.overlays),
     };
   }
 
-  private engine(record: Record, development = false) {
-    return new CommandChainEngine(this.drafts, development ? createDevelopmentHandlers(this.devContract(record), this.runtime(record)) : createVerificationHandlers(record.contract));
+  private engine(record: Record, development = false, execution?: Execution) {
+    return new CommandChainEngine(this.drafts, development ? createDevelopmentHandlers(this.devContract(record), this.runtime(record, execution)) : createVerificationHandlers(record.contract));
   }
 
-  private view(record: Record, draft: ChainDraft | undefined, development = false) {
+  private view(record: Record, draft: ChainDraft | undefined, development = false, execution?: Execution) {
     const phase = draft?.phase ? draft.definition.phases[draft.phase] : undefined;
     return {
       chain: development ? "development" : "verification",
-      agentId: development ? record.development!.agentId : record.agentId, repositoryPath: record.repositoryPath, contract: development ? this.devContract(record) : record.contract,
+      agentId: development ? record.development!.agentId : record.agentId, repositoryPath: execution?.repositoryPath ?? record.repositoryPath, contract: development ? this.devContract(record) : record.contract,
       draft: draft ?? null,
       instructions: phase?.type === "builtin" ? instructions[phase.builtin] : phase?.instructions,
       receipts: development ? this.runtime(record).receipts() : [],
@@ -120,14 +151,24 @@ export class EngineeringApplication {
       if (!draft || draft.status !== "completed") throw new DraftConflictError("Complete independent verification before marking this issue done");
       const conclusion = compileVerificationConclusion(draft, record.contract);
       if (conclusion.verdict !== "passed") throw new DraftConflictError(`Independent verification failed; return to ${conclusion.rewindTo}`);
-      const code = snapshot(record.repositoryPath);
-      if (code.codeVersion !== record.contract.binding.codeVersion) throw new DraftConflictError("Repository commit changed after verification; freeze and verify a new revision");
+      if (!record.verificationExecution) throw new DraftConflictError("Verification has no runtime repository binding; freeze and verify a new revision");
+      if (existsSync(record.verificationExecution.repositoryPath)) {
+        const tested = snapshot(record.verificationExecution.repositoryPath, true, record.verificationExecution.overlays);
+        if (tested.codeVersion !== record.contract.binding.codeVersion) throw new DraftConflictError("Repository commit changed after verification; freeze and verify a new revision");
+      } else if (record.verificationExecution.mode === "in_place") throw new DraftConflictError("Verified in-place repository is unavailable");
+      if (record.delivery?.mode === "worktree") {
+        if (git(record.repositoryPath, ["rev-parse", "--verify", record.delivery.branchRef]) !== record.contract.binding.codeVersion) throw new DraftConflictError("Delivered branch changed after verification; freeze and verify a new revision");
+      } else {
+        const code = snapshot(record.repositoryPath, true, record.verificationExecution.mode === "in_place" ? record.verificationExecution.overlays : []);
+        if (code.codeVersion !== record.contract.binding.codeVersion) throw new DraftConflictError("Repository commit changed after verification; freeze and verify a new revision");
+      }
       return { configured: true, allowed: true, binding: conclusion.binding };
     }
     if (actor.kind === "host") throw new Error("Host completion credentials cannot edit chain state");
     if (action === "selection") return {
       configured: actor.kind === "task" && (record?.development && !record.development.handoff ? record.development.agentId === actor.agentId : record?.agentId === actor.agentId),
       chain: record?.development && !record.development.handoff ? "development" : "verification",
+      ...(record ? { repository_path: record.repositoryPath, code_version: this.selectionCommit(record) } : {}),
     };
     if (action === "configure") {
       if (actor.kind !== "human") throw new Error("Only a human can freeze verification contracts");
@@ -156,12 +197,36 @@ export class EngineeringApplication {
       return this.view(record, undefined, Boolean(record.development));
     }
     if (!record) throw new Error("No verification contract is configured for this issue");
+    if (action === "bind") {
+      if (actor.kind !== "daemon") throw new Error("Only the runtime can bind execution repositories");
+      const development = Boolean(record.development && !record.development.handoff && actor.agentId === record.development.agentId);
+      if (!development && actor.agentId === record.agentId && record.development && !record.development.handoff) throw new Error("Development has not handed off a verified commit yet");
+      if (!development && actor.agentId !== record.agentId) throw new Error("Run agent does not own this verification role");
+      const payload = z.strictObject({ work_dir: text, mode: z.enum(["in_place", "worktree"]), overlays: z.array(z.strictObject({ path: text, hash: z.string().regex(/^[a-f0-9]{64}$/) })).max(5000) }).parse(request.payload);
+      const code = snapshot(payload.work_dir, false);
+      if (repositoryCommonDirectory(code.repositoryPath) !== repositoryCommonDirectory(record.repositoryPath)) throw new Error("Execution repository is not a worktree of the registered repository");
+      if (payload.mode === "in_place" && code.repositoryPath !== record.repositoryPath) throw new Error("In-place execution must use the registered repository");
+      const overlays = captureRepositoryOverlays(code.repositoryPath, payload.overlays);
+      if (development) git(code.repositoryPath, ["merge-base", "--is-ancestor", record.development!.baseCodeVersion, code.codeVersion]);
+      else if (code.codeVersion !== record.contract.binding.codeVersion) throw new Error("Verification execution is not at the frozen delivery commit");
+      const branchRef = git(code.repositoryPath, ["rev-parse", "--abbrev-ref", "HEAD"]) === "HEAD" ? "" : repositoryBranch(code.repositoryPath);
+      if (development && payload.mode === "worktree" && !branchRef) throw new Error("Worktree development requires a durable branch");
+      const execution = executionSchema.parse({ repositoryPath: code.repositoryPath, mode: payload.mode, branchRef, agentId: actor.agentId, attemptId: actor.attemptId, overlays });
+      const previous = this.db.prepare("SELECT payload FROM engineering_execution WHERE workspace_id = ? AND issue_id = ? AND revision = ? AND agent_id = ? AND attempt_id = ?")
+        .get(record.workspaceId, record.issueId, record.contract.binding.revision, actor.agentId, actor.attemptId);
+      const identity = (value: Execution) => ({ ...value, overlays: value.overlays.map(({ hash: _hash, ...overlay }) => overlay).sort((a, b) => a.path.localeCompare(b.path)) });
+      if (previous && JSON.stringify(identity(executionSchema.parse(JSON.parse(String(previous.payload))))) !== JSON.stringify(identity(execution))) throw new DraftConflictError("Execution binding changed; start a fresh runtime claim");
+      this.db.prepare("INSERT INTO engineering_execution (workspace_id, issue_id, revision, agent_id, attempt_id, payload) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(workspace_id, issue_id, revision, agent_id, attempt_id) DO UPDATE SET payload = excluded.payload")
+        .run(record.workspaceId, record.issueId, record.contract.binding.revision, actor.agentId, actor.attemptId, JSON.stringify(execution));
+      return { bound: true, repository_path: execution.repositoryPath };
+    }
     if (action === "receipt") {
       if (actor.kind !== "daemon") throw new Error("Only the runtime can capture command receipts");
       if (!record.development || actor.agentId !== record.development.agentId || record.development.handoff) return { ignored: true };
+      const execution = this.execution(record, actor);
       const payload = z.strictObject({ id: text, sequence, command: text, cwd: text, status: text, exit_code: z.number().int().nullable() }).parse(request.payload);
       if (payload.command.toLowerCase().includes("multica") && payload.command.includes(" engineering ")) return { ignored: true };
-      if (snapshot(payload.cwd, false).repositoryPath !== record.repositoryPath) throw new Error("Command receipt belongs to another repository");
+      if (snapshot(payload.cwd, false).repositoryPath !== execution.repositoryPath) throw new Error("Command receipt belongs to another execution repository");
       const id = `${actor.attemptId}:${payload.id}`;
       const previous = this.runtime(record).receipts().find(item => item.id === id);
       if (previous) {
@@ -170,7 +235,7 @@ export class EngineeringApplication {
       }
       const receipt = commandReceiptSchema.parse({ id, attemptId: actor.attemptId, sequence: payload.sequence, command: payload.command,
         commandHash: createHash("sha256").update(JSON.stringify([payload.command, payload.cwd])).digest("hex"), cwd: payload.cwd,
-        status: payload.status, exitCode: payload.exit_code, fingerprint: repositoryFingerprint(record.repositoryPath) });
+        status: payload.status, exitCode: payload.exit_code, fingerprint: repositoryFingerprint(execution.repositoryPath, execution.overlays) });
       this.db.prepare("INSERT INTO engineering_receipt (draft_id, receipt_id, payload) VALUES (?, ?, ?) ON CONFLICT DO NOTHING").run(record.development.draftId, receipt.id, JSON.stringify(receipt));
       return { captured: receipt.id };
     }
@@ -180,12 +245,13 @@ export class EngineeringApplication {
     if (actor.kind === "task" && !development && record.development && !record.development.handoff) throw new Error("Development has not handed off a verified commit yet");
     if (actor.kind === "human" && action !== "read" && action !== "answer" && action !== "abandon") throw new Error("This operation requires the configured run credential");
     if (actor.kind === "task" && action !== "read" && action !== "start" && action !== "command") throw new Error("This operation requires a human actor");
-    const engine = this.engine(record, development);
+    const execution = actor.kind === "task" ? this.execution(record, actor) : undefined;
+    const engine = this.engine(record, development, execution);
     const draftId = development ? record.development!.draftId : record.draftId;
     let draft = await this.drafts.read(draftId);
     if (actor.kind === "task") {
-      const code = snapshot(record.repositoryPath, !development);
-      if (development) git(record.repositoryPath, ["merge-base", "--is-ancestor", record.development!.baseCodeVersion, code.codeVersion]);
+      const code = snapshot(execution!.repositoryPath, !development, execution!.overlays);
+      if (development) git(execution!.repositoryPath, ["merge-base", "--is-ancestor", record.development!.baseCodeVersion, code.codeVersion]);
       else if (code.codeVersion !== record.contract.binding.codeVersion) throw new Error("Repository commit changed; freeze a new verification revision");
     }
     if (action === "start" && actor.kind === "task") {
@@ -196,7 +262,7 @@ export class EngineeringApplication {
       if (!draft) throw new Error("Start the verification draft before editing or answering");
       if (action === "command" && actor.kind === "task") {
         const command = z.strictObject({ expected_sequence: sequence, command: chainCommandSchema }).parse(request.payload);
-        if (development && command.command.type === "phase.complete" && (draft.phase === "commit" || draft.phase === "finalize")) snapshot(record.repositoryPath);
+        if (development && command.command.type === "phase.complete" && (draft.phase === "commit" || draft.phase === "finalize")) snapshot(execution!.repositoryPath, true, execution!.overlays);
         draft = await engine.execute(draft.id, { attemptId: actor.attemptId, expectedSequence: command.expected_sequence }, command.command);
       } else if (action === "answer" && actor.kind === "human") {
         const answer = z.strictObject({ expected_sequence: sequence, request_id: text, answer: text }).parse(request.payload);
@@ -206,16 +272,20 @@ export class EngineeringApplication {
         draft = await engine.abandon(draft.id, abandon.expected_sequence, abandon.reason, actor.userId);
       }
     }
-    if (development && draft?.status === "completed" && !record.development!.handoff) {
-      const code = snapshot(record.repositoryPath);
-      const conclusion = compileDevelopmentConclusion(draft, this.devContract(record), this.runtime(record));
+    if (actor.kind === "task" && development && draft?.status === "completed" && !record.development!.handoff) {
+      const code = snapshot(execution!.repositoryPath, true, execution!.overlays);
+      const conclusion = compileDevelopmentConclusion(draft, this.devContract(record), this.runtime(record, execution));
       record.development!.conclusion = JSON.parse(JSON.stringify({ ...conclusion, commit: code.codeVersion }));
       record.development!.handoff = true;
       record.contract.binding.codeVersion = code.codeVersion;
-      this.db.prepare("UPDATE engineering_contract SET payload = ? WHERE workspace_id = ? AND issue_id = ? AND revision = ?")
-        .run(JSON.stringify(record), actor.workspaceId, actor.issueId, record.contract.binding.revision);
+      record.delivery = execution;
+      this.save(record);
     }
-    const view = this.view(record, draft, development);
+    if (actor.kind === "task" && !development && draft?.status === "completed") {
+      record.verificationExecution = execution;
+      this.save(record);
+    }
+    const view = this.view(record, draft, development, execution);
     return actor.kind === "human" ? { ...view, developmentConclusion: record.development?.conclusion ?? null } : view;
   }
 

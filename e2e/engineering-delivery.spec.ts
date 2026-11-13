@@ -1,23 +1,35 @@
 import { test, expect, chromium } from "@playwright/test";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { TestApiClient } from "./fixtures";
 
-test("a development commit is handed to independent browser verification with captured checks", async ({}, testInfo) => {
+for (const mode of ["in_place", "worktree"] as const) test(`a ${mode} development commit is handed to independent browser verification with captured checks`, async ({}, testInfo) => {
   test.skip(!process.env.MULTICA_ENGINEERING_BROWSER || !process.env.MULTICA_ENGINEERING_CLI || process.env.MULTICA_ENGINEERING_ENABLED !== "true", "Requires the local engineering service, test-built CLI, and explicit browser binary");
   const api = new TestApiClient(); await api.loginLocally();
   const workspace = (await api.getWorkspaces()).find(value => value.slug === "loopwork-local")!;
   api.setWorkspaceId(workspace.id); api.setWorkspaceSlug(workspace.slug);
   const directory = await mkdtemp(join(tmpdir(), "engineering-delivery-"));
-  const repository = join(directory, "repository");
+  let repository = join(directory, "repository");
+  const registeredRepository = repository;
   execFileSync("git", ["init", "-q", repository]);
   const git = (...args: string[]) => execFileSync("git", ["-C", repository, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  const registeredGit = (...args: string[]) => execFileSync("git", ["-C", registeredRepository, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
   git("config", "user.name", "Delivery fixture"); git("config", "user.email", "fixture@example.invalid");
   await writeFile(join(repository, "index.html"), "<!doctype html><h1>Not ready</h1>");
+  await writeFile(join(repository, "AGENTS.md"), "User guidance\n");
   git("add", "."); git("commit", "-qm", "Initialize fixture");
+  const baseCommit = git("rev-parse", "HEAD");
+  const prepareRuntime = async (id: string) => {
+    const content = `User guidance\n\nFixture runtime ${id}\n`, marker = JSON.stringify({ id });
+    await writeFile(join(repository, "AGENTS.md"), content); await mkdir(join(repository, ".multica"), { recursive: true });
+    const path = join(repository, ".multica/task-fixture.json"); await writeFile(path, marker);
+    return [{ path: join(repository, "AGENTS.md"), hash: createHash("sha256").update(content).digest("hex") }, { path, hash: createHash("sha256").update(marker).digest("hex") }];
+  };
+  const cleanRuntime = async () => { await writeFile(join(repository, "AGENTS.md"), "User guidance\n"); await rm(join(repository, ".multica/task-fixture.json")); };
   try {
     const dev = await api.seedEngineeringRun(); const verifier = await api.seedEngineeringRun(dev.issueId);
     await api.engineeringVerification(dev.issueId, "configure", {
@@ -25,6 +37,10 @@ test("a development commit is handed to independent browser verification with ca
       implementation_guidance: "Show the required Ready heading in the page. Keep the acceptance oracle unchanged.",
       sources: [{ key: "ac1", kind: "acceptance", description: "The page displays Ready", oracle: "A browser sees an h1 with exact text Ready", sourceRef: "FIXTURE:heading:r1" }],
     });
+    if (mode === "worktree") {
+      const path = join(directory, "development"); git("worktree", "add", "-b", "engineering-development", path, baseCommit); repository = path;
+    }
+    await api.bindEngineeringRepository(dev.taskId, repository, mode, await prepareRuntime(dev.taskId));
     let owner = dev;
     const cli = (name: string, payload?: unknown) => JSON.parse(execFileSync(resolve(process.env.MULTICA_ENGINEERING_CLI!), ["engineering", name, ...(payload ? ["--payload", JSON.stringify(payload)] : [])], {
       cwd: directory, encoding: "utf8", timeout: 20000, stdio: ["ignore", "pipe", "pipe"],
@@ -54,6 +70,13 @@ test("a development commit is handed to independent browser verification with ca
     command({ type: "phase.complete", confirmation: "Implementation, review, checks, and commit align" });
     expect(state.conclusion.commit).toBe(commit);
     await expect(api.updateIssue(dev.issueId, { status: "done", suppress_run: true })).rejects.toThrow(/409.*Complete independent verification/);
+    await cleanRuntime();
+    if (mode === "worktree") {
+      const path = join(directory, "verification"); git("worktree", "add", "-b", "engineering-verification", path, commit);
+      registeredGit("worktree", "remove", repository); repository = path;
+      expect(execFileSync("git", ["-C", registeredRepository, "rev-parse", "HEAD"], { encoding: "utf8" }).trim()).toBe(baseCommit);
+    }
+    await api.bindEngineeringRepository(verifier.taskId, repository, mode, await prepareRuntime(verifier.taskId));
     owner = verifier; state = cli("start");
     expect(state.chain).toBe("verification"); expect(state.contract.binding.codeVersion).toBe(commit);
     command({ type: "phase.complete" });
@@ -74,5 +97,12 @@ test("a development commit is handed to independent browser verification with ca
     expect((await api.updateIssue(dev.issueId, { status: "done", suppress_run: true })).status).toBe("done");
     await writeFile(join(repository, "index.html"), "<!doctype html><h1>Changed after verification</h1>");
     await expect(api.updateIssue(dev.issueId, { status: "done", suppress_run: true })).rejects.toThrow(/409.*uncommitted changes/);
+    if (mode === "worktree") {
+      await writeFile(join(repository, "index.html"), "<!doctype html><h1>Ready</h1>"); await cleanRuntime();
+      registeredGit("worktree", "remove", repository); repository = registeredRepository;
+      expect((await api.updateIssue(dev.issueId, { status: "done", suppress_run: true })).status).toBe("done");
+      git("update-ref", "refs/heads/engineering-development", baseCommit, commit);
+      await expect(api.updateIssue(dev.issueId, { status: "done", suppress_run: true })).rejects.toThrow(/409.*Delivered branch changed/);
+    }
   } finally { await api.cleanup(); await rm(directory, { recursive: true, force: true }); }
 });

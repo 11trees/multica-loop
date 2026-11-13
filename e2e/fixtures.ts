@@ -313,13 +313,21 @@ export class TestApiClient {
   }
 
   async captureEngineeringReceipt(taskId: string, receipt: unknown) {
+    return this.engineeringRuntimeRequest(taskId, "engineering-receipts", receipt);
+  }
+
+  async bindEngineeringRepository(taskId: string, workDir: string, mode: "in_place" | "worktree" = "in_place", overlays: { path: string; hash: string }[] = []) {
+    return this.engineeringRuntimeRequest(taskId, "engineering-repository", { work_dir: workDir, mode, overlays });
+  }
+
+  private async engineeringRuntimeRequest(taskId: string, operation: string, payload: unknown) {
     if (!this.engineeringRuns.some(run => run.taskId === taskId)) throw new Error("Not an owned engineering fixture");
     const client = new pg.Client(DATABASE_URL);
     await client.connect();
     try {
       const row = await client.query(`SELECT to_char(dispatched_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS generation FROM agent_task_queue WHERE id = $1`, [taskId]);
-      const result = await this.authedFetch(`/api/daemon/tasks/${taskId}/engineering-receipts`, { method: "POST", body: JSON.stringify({ dispatched_at: row.rows[0].generation, ...receipt as object }) });
-      if (!result.ok) throw new Error(`receipt capture failed: ${result.status} ${await result.text()}`);
+      const result = await this.authedFetch(`/api/daemon/tasks/${taskId}/${operation}`, { method: "POST", body: JSON.stringify({ dispatched_at: row.rows[0].generation, ...payload as object }) });
+      if (!result.ok) throw new Error(`${operation} failed: ${result.status} ${await result.text()}`);
       return result.json();
     } finally { await client.end(); }
   }
@@ -528,6 +536,7 @@ export class TestApiClient {
         if (database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'engineering_contract'").get()) for (const issueId of this.createdIssueIds) {
           const rows = database.prepare("SELECT payload FROM engineering_contract WHERE workspace_id = ? AND issue_id = ?").all(this.workspaceId, issueId);
           for (const row of rows) database.prepare("DELETE FROM chain_drafts WHERE id = ?").run(JSON.parse(String(row.payload)).draftId);
+          if (database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'engineering_execution'").get()) database.prepare("DELETE FROM engineering_execution WHERE workspace_id = ? AND issue_id = ?").run(this.workspaceId, issueId);
           for (const row of rows) {
             const development = JSON.parse(String(row.payload)).development;
             if (development) {

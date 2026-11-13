@@ -90,6 +90,8 @@ const (
 // LocalWorktreeParams describes the worktree Prepare should build for a
 // local_directory task running in worktree mode.
 type LocalWorktreeParams struct {
+	// PinnedCommit selects a frozen engineering snapshot instead of replaying user edits.
+	PinnedCommit string
 	// LocalPath is the user's configured directory. It may be the repo root
 	// or any subdirectory of it; the worktree always covers the whole repo,
 	// and the agent's cwd is the matching subdirectory inside it.
@@ -155,6 +157,8 @@ func localWorktreeConversation(params PrepareParams) (key, id string) {
 // LocalWorktree is a prepared worktree plus everything the daemon needs to
 // finalize it after the agent exits.
 type LocalWorktree struct {
+	// Pinned preserves the named engineering delivery even for an unchanged tree.
+	Pinned bool
 	// GitRoot is the user's repository root — the repo that owns the branch.
 	GitRoot string
 	// Path is the worktree root inside the env root.
@@ -381,6 +385,22 @@ func PrepareLocalWorktree(params LocalWorktreeParams, logger *slog.Logger) (*Loc
 	if err != nil {
 		return nil, fmt.Errorf("execenv: repository %q has no commit to branch from "+
 			"(worktree mode needs at least one commit; make an initial commit or switch the resource back to in_place): %w", gitRoot, err)
+	}
+	if params.PinnedCommit != "" {
+		decoded, decodeErr := hex.DecodeString(params.PinnedCommit)
+		if decodeErr != nil || (len(decoded) != 20 && len(decoded) != 32) {
+			return nil, errors.New("execenv: engineering snapshot requires a full commit hash")
+		}
+		commit, err := runGitTrimmed(gitRoot, "rev-parse", "--verify", params.PinnedCommit+"^{commit}")
+		if err != nil || commit != params.PinnedCommit {
+			return nil, errors.New("execenv: frozen engineering commit is unavailable")
+		}
+		plan := taskBranchPlan{name: fmt.Sprintf("agent/%s/%s", sanitizeName(params.AgentName), taskKey(params.TaskID)), base: commit}
+		branch, created, err := addLocalWorktree(gitRoot, worktreePath, plan, params.TaskID)
+		if err != nil {
+			return nil, err
+		}
+		return &LocalWorktree{GitRoot: gitRoot, Path: worktreePath, WorkDir: filepath.Join(worktreePath, rel), Branch: branch, BaseCommit: commit, Pinned: true, createdBranch: created, taskID: params.TaskID}, nil
 	}
 
 	// Refuse an untracked payload too large to reproduce BEFORE snapshotting it:
@@ -657,7 +677,7 @@ func (w *LocalWorktree) Finalize(logger *slog.Logger) (LocalWorktreeOutcome, err
 	// would take their work with it.
 	tip, err := runGitTrimmed(w.Path, "rev-parse", "--verify", "HEAD")
 	producedWork := err != nil || tip != w.BaseCommit
-	dropped := !producedWork && w.createdBranch
+	dropped := !producedWork && w.createdBranch && !w.Pinned
 
 	// A turn that started mid-merge only gets to advance the branch's recorded
 	// state if it committed something after resolving. When the branch is still

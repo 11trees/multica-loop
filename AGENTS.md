@@ -35,6 +35,7 @@ Use `Makefile`, workspace `package.json` files, and `pnpm-workspace.yaml` for cu
 - Use the checkout's managed environment: `make up`, `make status`, `make down`. `make down` preserves data; `make destroy` removes the environment and its data.
 - Local engineering mode is opt-in via `MULTICA_ENGINEERING_ENABLED`; managed API startup builds its private Node worker and assigns environment-owned SQLite storage. Keep authentication in Go and never send session/task tokens into the worker. See [engineering service](docs/engineering/engineering-service.md).
 - Issue writes into a done-category status must use the synchronous [engineering completion check](docs/engineering/issue-completion.md), including automated and administrative remaps. A successful task process or PR merge is not an engineering verdict.
+- Engineering runs require a daemon-owned [repository binding](docs/engineering/repository-binding.md). Keep generated-file normalization scoped to the native sidecar/brief digests; do not globally ignore instruction files or runtime directories in business evidence.
 - Worktrees share PostgreSQL but have isolated databases/ports. Use the environment scripts and `.env.worktree`; do not copy the main checkout's `.env` or manually create a database through an assumed PostgreSQL instance.
 - Regenerate sqlc with `make sqlc` after SQL changes.
 - Run the narrowest useful checks while iterating, then broaden when risk warrants it. Report what actually ran and any skipped checks.

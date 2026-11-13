@@ -7,10 +7,10 @@ the existing `configure` endpoint and adds `developer_agent_id` and
 two agent IDs must differ. The application freezes the clean base commit,
 guidance, sources, oracles, and revision before development starts.
 
-The initial implementation uses the same API-host repository path for both
-roles. Use a local in-place checkout matching the registered path. Native
-disposable worktrees and remote-daemon checkout mapping still need an explicit
-host mapping; they must not silently be treated as the registered checkout.
+The application now [binds the native execution repository](repository-binding.md)
+for each run. It supports local in-place execution and separate pinned native
+worktrees for development and verification. Their Git common directory must
+match the registered repository; remote-daemon clone mapping remains pending.
 
 ## Developer commands and gates
 
@@ -104,5 +104,5 @@ fixture control plane; actual provider/model execution remains unverified.
 
 Development plus verification is not the full migration: requirement context,
 planning/analysis, final review, other workflow paths, automatic continuation,
-question UI, workspace mapping, final-review integration, and cross-database
+question UI, remote repository mapping, final-review integration, and cross-database
 handoff acceptance remain.

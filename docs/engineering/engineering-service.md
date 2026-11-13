@@ -125,7 +125,10 @@ engineering history remains an application integration task.
 The service now [checks issue completion synchronously](issue-completion.md),
 including human/agent updates, batches, PR automation, and workflow remaps. A
 passed current independent verification is required for a registered issue's
-done-category write. The other chains, additional provider receipt adapters,
-automated run continuation, UI, repository mapping, and cross-database handoff
+done-category write. Native execution now requires a project local-directory
+resource and a runtime-owned [repository binding](repository-binding.md); both
+in-place and pinned-worktree modes are supported on the API host. The other
+chains, additional provider receipt adapters, automated run continuation, UI,
+remote clone mapping, and cross-database handoff
 acceptance remain required for cutover. Successful process exit is not evidence
 of engineering delivery.

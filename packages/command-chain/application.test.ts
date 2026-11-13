@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -23,6 +24,7 @@ beforeEach(async () => {
 });
 afterEach(async () => { app.close(); await rm(dir, { recursive: true, force: true }); });
 async function invoke(actor: ApplicationRequest["actor"], action: Exclude<ApplicationRequest["action"], "selection">, payload?: unknown) {
+  if (action === "start" && actor.kind === "task") await app.invoke({ actor: { ...actor, kind: "daemon" }, action: "bind", payload: { work_dir: repo, mode: "in_place", overlays: [] } });
   const result = await app.invoke({ actor, action, payload });
   if (!("draft" in result)) throw new Error("Expected application state");
   return result;
@@ -30,6 +32,35 @@ async function invoke(actor: ApplicationRequest["actor"], action: Exclude<Applic
 function configure() { return invoke(human, "configure", { expected_revision: 0, agent_id: task.agentId, repository_path: repo, sources }); }
 const host = { kind: "host" as const, workspaceId: human.workspaceId, issueId: human.issueId };
 function completion() { return app.invoke({ actor: host, action: "completion" }); }
+
+it("requires a runtime-owned repository binding and rejects an unrelated checkout or agent binding", async () => {
+  await configure();
+  await expect(app.invoke({ actor: task, action: "start" })).rejects.toThrow(/runtime must bind/);
+  await expect(app.invoke({ actor: task, action: "bind", payload: { work_dir: repo, mode: "in_place", overlays: [] } })).rejects.toThrow(/Only the runtime/);
+  const unrelated = join(dir, "unrelated"); execFileSync("git", ["clone", "-q", repo, unrelated]);
+  await expect(app.invoke({ actor: { ...task, kind: "daemon" }, action: "bind", payload: { work_dir: unrelated, mode: "worktree", overlays: [] } })).rejects.toThrow(/not a worktree/);
+  const worktree = join(dir, "worktree"); git("worktree", "add", "-qb", "verification-fixture", worktree);
+  await expect(app.invoke({ actor: { ...task, kind: "daemon" }, action: "bind", payload: { work_dir: worktree, mode: "in_place", overlays: [] } })).rejects.toThrow(/registered repository/);
+  await app.invoke({ actor: { ...task, kind: "daemon" }, action: "bind", payload: { work_dir: worktree, mode: "worktree", overlays: [] } });
+  const started = await app.invoke({ actor: task, action: "start" });
+  expect(started).toMatchObject({ repositoryPath: await import("node:fs/promises").then(fs => fs.realpath(worktree)) });
+  await expect(app.invoke({ actor: { ...task, kind: "daemon" }, action: "bind", payload: { work_dir: repo, mode: "in_place", overlays: [] } })).rejects.toThrow(/binding changed/);
+});
+
+it("lets the runtime refresh generated context without changing the repository identity or original projection", async () => {
+  await configure();
+  const file = join(repo, "AGENTS.md");
+  const bind = async (content: string) => {
+    await writeFile(file, content);
+    return app.invoke({ actor: { ...task, kind: "daemon" }, action: "bind", payload: { work_dir: repo, mode: "in_place", overlays: [{ path: file, hash: createHash("sha256").update(content).digest("hex") }] } });
+  };
+  await bind("Runtime initial session");
+  await app.invoke({ actor: task, action: "start" });
+  await bind("Runtime fresh session after resume rejection");
+  expect(await app.invoke({ actor: task, action: "read" })).toMatchObject({ chain: "verification" });
+  git("add", "AGENTS.md"); git("commit", "-qm", "Accidentally commit runtime context");
+  await expect(bind("Replaced context")).rejects.toThrow(/frozen delivery commit|binding changed/);
+});
 
 it("keeps issue completion host-owned and refuses pending, abandoned, or unhanded development", async () => {
   expect(await completion()).toEqual({ configured: false, allowed: true });
@@ -101,7 +132,7 @@ it("rejects a dirty or changed checkout instead of trusting a submitted version 
   await writeFile(join(repo, "README.md"), "Changed\n");
   await expect(invoke(task, "start")).rejects.toThrow(/uncommitted changes/);
   git("add", "README.md"); git("commit", "-qm", "Change fixture");
-  await expect(invoke(task, "start")).rejects.toThrow(/commit changed/);
+  await expect(invoke(task, "start")).rejects.toThrow(/frozen delivery commit/);
   expect((await invoke(human, "read")).draft).toBeNull();
 });
 
@@ -140,7 +171,7 @@ it("hands a committed development result and frozen oracles to a different verif
   await invoke(human, "configure", { expected_revision: 0, agent_id: verifier.agentId, developer_agent_id: task.agentId,
     implementation_guidance: "Implement the frozen fixture acceptance without changing its oracle", repository_path: repo, sources });
   await expect(invoke(verifier, "start")).rejects.toThrow(/not handed off/);
-  expect(await app.invoke({actor:task,action:"selection"})).toEqual({configured:true,chain:"development"});
+  expect(await app.invoke({actor:task,action:"selection"})).toMatchObject({configured:true,chain:"development"});
   let state = await invoke(task, "start");
   const command = async (value: unknown) => { state = await invoke(task, "command", { expected_sequence: state.draft!.sequence, command: value }); };
   await command({ type: "phase.complete" });
@@ -167,8 +198,8 @@ it("hands a committed development result and frozen oracles to a different verif
   expect(testing.contract.binding.codeVersion).toBe(git("rev-parse", "HEAD"));
   expect(testing.contract.sources).toEqual(sources);
   expect(testing.draft?.development).toBeUndefined();
-  expect(await app.invoke({actor:task,action:"selection"})).toEqual({configured:false,chain:"verification"});
-  expect(await app.invoke({actor:verifier,action:"selection"})).toEqual({configured:true,chain:"verification"});
+  expect(await app.invoke({actor:task,action:"selection"})).toMatchObject({configured:false,chain:"verification"});
+  expect(await app.invoke({actor:verifier,action:"selection"})).toMatchObject({configured:true,chain:"verification"});
 });
 
 it("rejects a superseded/changed captured check and preserves the original receipt on replay", async () => {

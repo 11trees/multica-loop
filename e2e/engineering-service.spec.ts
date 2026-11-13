@@ -25,6 +25,7 @@ test("the native CLI executes a host-owned verification contract and resumes aft
       sources: [{ key: "ac1", kind: "acceptance", description: "Fixture survives reload", oracle: "Title remains visible", sourceRef: "FIXTURE:ac1:r1" }],
     });
     expect(configured.contract.binding.codeVersion).toBe(git("rev-parse", "HEAD"));
+    await api.bindEngineeringRepository(run.taskId, repository);
     let token = run.taskToken;
     const cli = (name: string, payload?: unknown) => JSON.parse(execFileSync(resolve(process.env.MULTICA_ENGINEERING_CLI!), ["engineering", name, ...(payload ? ["--payload", JSON.stringify(payload)] : [])], {
       encoding: "utf8", cwd: dir, timeout: 20000,
@@ -45,6 +46,7 @@ test("the native CLI executes a host-owned verification contract and resumes aft
     expect(rejection.status).toBe(403);
     await api.engineeringVerification(run.issueId, "answer", { expected_sequence: state.draft.sequence, request_id: state.draft.runtimeInputs[0].id, answer: "Use the isolated fixture" });
     token = await api.reclaimEngineeringRun(run.taskId);
+    await api.bindEngineeringRepository(run.taskId, repository);
     state = cli("start");
     expect(state.draft.phase).toBe("plan");
     expect(state.draft.runtimeInputs[0].answer.userId).toBe(run.userId);

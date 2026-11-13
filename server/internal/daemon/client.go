@@ -642,6 +642,21 @@ func (c *Client) ReportEngineeringCommand(ctx context.Context, taskID, claim, id
 	}, nil)
 }
 
+func (c *Client) BindEngineeringRepository(ctx context.Context, task Task, workDir, mode string, overlays any) error {
+	var response struct {
+		Bound bool `json:"bound"`
+	}
+	if err := c.postJSON(ctx, fmt.Sprintf("/api/daemon/tasks/%s/engineering-repository", task.ID), map[string]any{
+		"dispatched_at": task.DispatchedAt, "work_dir": workDir, "mode": mode, "overlays": overlays,
+	}, &response); err != nil {
+		return err
+	}
+	if !response.Bound {
+		return errors.New("engineering repository binding was not acknowledged")
+	}
+	return nil
+}
+
 func (c *Client) CompleteTask(ctx context.Context, taskID, output, branchName, sessionID, workDir string, sessionRolloutMissing bool, retiredSessionID, durableWorkDir string) error {
 	return c.completeTaskWithRetrySchedule(ctx, taskID, output, branchName, sessionID, workDir, sessionRolloutMissing, retiredSessionID, durableWorkDir, defaultTerminalRetrySchedule)
 }
