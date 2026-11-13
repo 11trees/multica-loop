@@ -1,0 +1,53 @@
+version: 1
+id: feedback-verify
+agent: feedback-agent
+
+artifacts:
+  feedback:
+    type: builtin
+    title: 反馈验证
+    blocks:
+      target:
+        title: 冻结反馈目标
+        cardinality: one
+        format: yaml
+        writable: false
+        required: true
+        fields:
+          commentId: { type: string, required: true, label: 评论 ID }
+          groupId: { type: string, required: true, label: 工作组 ID }
+      summary:
+        title: 反馈验证摘要
+        cardinality: one
+        format: markdown
+        required: true
+      evidence:
+        title: 独立反馈证据
+        cardinality: many
+        format: text
+        required: true
+      conclusion:
+        title: 反馈验证结论
+        cardinality: one
+        format: yaml
+        required: true
+        fields:
+          verdict: { type: enum, required: true, values: [resolved, reopened], label: 验证结论 }
+          reason: { type: string, required: true, label: 原因 }
+
+phases:
+  # Freeze exactly one comment and its group.
+  inputs:
+    type: builtin
+    builtin: feedback-verify-inputs
+
+  # Independently observe the frozen requirement; do not modify historical artifacts.
+  verify:
+    type: artifact
+    artifacts: [feedback.summary, feedback.evidence, feedback.conclusion]
+    instructions: 只验证当前冻结评论。使用独立观察证据判断要求是否满足；resolved 表示已满足，reopened 表示仍未满足并将形成新的前向反馈批次。不要修改历史交付物或验证其他评论。
+
+  # Validate the frozen target, independent evidence and conclusion.
+  finalize:
+    type: builtin
+    builtin: feedback-verify-finalize

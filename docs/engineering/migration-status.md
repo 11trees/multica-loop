@@ -22,14 +22,16 @@ definitions and host application are the implementation evidence.
 | `development` | Implemented with provider limits | [Development gates](../../packages/command-chain/development.ts), actual commits and captured command receipts; trusted provider capture is currently the Codex adapter |
 | `verification` | Implemented with evidence limits | [Verification gates](../../packages/command-chain/verification.ts), frozen coverage/results and failure attribution; semantic evidence truth is still declared |
 | `review` | Normal closure implemented | [Review gates](../../packages/command-chain/review.ts), scoped fact reconciliation, forward units, history and authenticated report reading; report correction and arbitration remain absent |
-| `feedback-triage` | Not migrated | Native comments do not create LoopWork feedback batches/groups or authority-bound routing |
-| `feedback-verify` | Not migrated | No independent feedback-resolution verification or report-correction closure |
+| `feedback-triage` | Protocol and storage only | [Feedback gates/store](feedback.md) enforce frozen batches, full grouping and durable work dispositions; native comment capture, roles, queue and forward routing remain unconnected |
+| `feedback-verify` | Protocol and storage only | Frozen single-comment/work versions, independent-evidence fields and reopened history exist; a production work resolver, native verifier runs and closure integration remain absent |
 
 “Implemented” describes connected code and controlled fixture evidence. It does
 not imply real-provider acceptance, packaged Desktop verification, or historical
 data migration. The target [worker](../../packages/command-chain/worker.ts)
 currently embeds seven definitions; the other six default chains are not
 supplied by a generic agent prompt or by a successful native process exit.
+The two feedback definitions and their store are available for host integration,
+but are not embedded in that worker or exposed by native feedback controls.
 
 ## Complete user pipelines
 
@@ -67,7 +69,9 @@ Neither this checklist nor a green subset of tests closes the objective.
 
 ## Next increment: post-delivery feedback
 
-Migrate source feedback batches/groups, authority-bound triage and independent
-feedback verification. Preserve source versions and the distinction between new
+Connect the implemented feedback profiles and batch store to authenticated native
+comment capture, frozen roles and queue dispatch. Then resolve forward group
+work through real reproduction/planning/delivery or report correction, run
+single-comment verification, and regenerate/read the current final report. Preserve source versions and the distinction between new
 scope, contract revision, unresolved defects and report correction. Comments
 alone are not a verified feedback workflow. This is planned work.

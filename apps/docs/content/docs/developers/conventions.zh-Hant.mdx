@@ -30,6 +30,7 @@ monorepo 的包邊界是硬約束：
 | --- | --- | --- |
 | `packages/core` | 僅平臺無關基礎庫 | `react-dom`、`next/*`、UI 庫、`process.env`、直接使用 `localStorage`（持久化走 `StorageAdapter`） |
 | `packages/ui` | 無業務依賴 | `@multica/core`、業務邏輯 |
+| `packages/command-chain` | 平臺無關協議邏輯；application、repository、storage（含 `feedback-store.ts`）、worker 為 Node 專用檔案 | UI 套件匯入 Node 專用檔案；向 worker 傳入 bearer 憑證 |
 | `packages/views` | `core/`、`ui/` | `next/*`、`react-router-dom`、store 定義 |
 | `apps/web/platform/` | `next/*` | 其他 app |
 | `apps/desktop/.../platform/` | `react-router-dom`、electron | 其他 app |
