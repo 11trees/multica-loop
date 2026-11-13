@@ -122,8 +122,13 @@ analysis-derived guardrail/focus sources are appended with draft provenance.
 acceptance entities and compile source-covered ordered units on the requirement
 issue. They use native context/planner runs and authenticated human decisions.
 Native child-issue publication now persists frozen identities/sources and uses
-the native issue service with retryable acknowledgements. Execution-role
-selection, unit orchestration and final review remain pending.
+the native issue service with retryable acknowledgements. A separate human policy now freezes three delivery roles, per-unit rework budgets
+and execution mode. The native coordinator runs children serially from acknowledged
+predecessor commits, completes them through the synchronous Done gate, and records
+exact verification bindings on the parent. In-place and worktree kernel coverage
+and the native in-place requirement scenario validate the connected path. Final
+requirement review, managed recovery/reconciliation and cross-parent repository
+ownership remain pending; see [requirements](requirements.md#authorized-serial-execution).
 Other engineering builtin implementations are pending. The
 engine rejects completion of a builtin without its host handler. Generic
 runtime tests use explicit stubs; verification tests use its migrated gates.

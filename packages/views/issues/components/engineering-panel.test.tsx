@@ -8,7 +8,7 @@ import type { EngineeringOverview } from "@multica/core/issues";
 import { renderWithI18n } from "../../test/i18n";
 import { EngineeringPanel } from "./engineering-panel";
 
-const endpoints = vi.hoisted(() => ({ getEngineeringOverview: vi.fn(), listAgents: vi.fn(), answerEngineering: vi.fn(), abandonEngineering: vi.fn(), configureEngineering: vi.fn(), configureRequirementEngineering:vi.fn(), publishEngineeringUnits:vi.fn(),runEngineering: vi.fn() }));
+const endpoints = vi.hoisted(() => ({ getEngineeringOverview: vi.fn(), listAgents: vi.fn(), answerEngineering: vi.fn(), abandonEngineering: vi.fn(), configureEngineering: vi.fn(), configureRequirementEngineering:vi.fn(), authorizeEngineeringDelivery:vi.fn(),publishEngineeringUnits:vi.fn(),runEngineering: vi.fn() }));
 vi.mock("@multica/core/api", async importOriginal => ({ ...await importOriginal<typeof import("@multica/core/api")>(), api: endpoints }));
 vi.mock("@multica/core/hooks", async importOriginal => ({ ...await importOriginal<typeof import("@multica/core/hooks")>(), useWorkspaceId: () => "workspace" }));
 const issue = { id: "issue", title: "Fixture delivery", revision: 4 } as Issue;
@@ -136,13 +136,25 @@ it("requires an explicit structured choice and never submits the recommendation 
 
 it("shows planned units and requirement acceptances without offering to rerun a finished plan",async()=>{
   state.chain="planning";state.status="completed";state.questions=[];
-  state.requirement={publication:null,kind:"requirement",input:"Original request",context:{intent:"Reader continues",changeSummary:"New action",acceptances:[{id:"acceptance",key:"heading",statement:"Shows Ready",oracle:"Exact visible Ready",sourceRef:"Input",revision:1}]},plan:{rationale:"Two observable outcomes",coverage:"Complete",units:[{key:"action",title:"Continue action",actor:"Reader",trigger:"Click",observableOutcome:"Next page",acceptance:"Continue works",sourceRefs:[],dependsOn:["heading"]}]}};
+  state.requirement={delivery_policy:null,accepted:{},progress:[],publication:null,kind:"requirement",input:"Original request",context:{intent:"Reader continues",changeSummary:"New action",acceptances:[{id:"acceptance",key:"heading",statement:"Shows Ready",oracle:"Exact visible Ready",sourceRef:"Input",revision:1}]},plan:{rationale:"Two observable outcomes",coverage:"Complete",units:[{key:"action",title:"Continue action",actor:"Reader",trigger:"Click",observableOutcome:"Next page",acceptance:"Continue works",sourceRefs:[],dependsOn:["heading"]}]}};
   const user=userEvent.setup();renderPanel();await screen.findByText("Plan ready. Delivery and final review are still required.");expect(screen.queryByRole("button",{name:/Start run|Continue run/})).not.toBeInTheDocument();await user.click(screen.getByText("Requirement acceptances",{exact:true}));await screen.findByText("Exact visible Ready");await screen.findByText("Prerequisites: heading");
 });
 
 
 it("keeps a failed publication retryable and freezes the plan after publication intent exists",async()=>{
- state.chain="planning";state.status="completed";state.questions=[];state.requirement={publication:null,kind:"requirement",input:"Request",context:null,plan:{rationale:"One outcome",coverage:"Complete",units:[]}};
+ state.chain="planning";state.status="completed";state.questions=[];state.requirement={delivery_policy:null,accepted:{},progress:[],publication:null,kind:"requirement",input:"Request",context:null,plan:{rationale:"One outcome",coverage:"Complete",units:[]}};
  const user=userEvent.setup();vi.mocked(api.publishEngineeringUnits).mockRejectedValueOnce(new Error("Publication interrupted; retry"));renderPanel();await user.click(await screen.findByRole("button",{name:"Publish units"}));await screen.findByText("Publication interrupted; retry");
  vi.mocked(api.publishEngineeringUnits).mockImplementationOnce(async()=>{state.requirement!.publication={requestedBy:"human",units:[{issueId:"child",published:true,unit:{key:"heading",title:"Heading"}}]};});await user.click(screen.getByRole("button",{name:"Publish units"}));await screen.findByText("Units published. Delivery and final review are still required.");expect(api.publishEngineeringUnits).toHaveBeenLastCalledWith("issue",{expectedRevision:2,expectedSequence:7});expect(screen.queryByRole("button",{name:"New revision"})).not.toBeInTheDocument();
+});
+
+it("authorizes distinct frozen delivery roles, keeps failures editable and shows accepted progress",async()=>{
+  state.chain="planning";state.status="completed";state.questions=[];
+  state.requirement={delivery_policy:null,accepted:{},progress:[],publication:{requestedBy:"human",units:[{issueId:"child",published:true,unit:{key:"heading",title:"Ready heading"}}]},kind:"requirement",input:"Request",context:null,plan:{rationale:"One outcome",coverage:"Complete",units:[{key:"heading",title:"Ready heading",actor:"Reader",trigger:"Open",observableOutcome:"Ready",acceptance:"Ready visible",sourceRefs:[],dependsOn:[]}]}};
+  vi.mocked(api.listAgents).mockResolvedValue([{id:"analyst",name:"Analyst"},{id:"developer",name:"Developer"},{id:"verifier",name:"Verifier"}] as Agent[]);
+  const user=userEvent.setup();renderPanel();await user.click(await screen.findByRole("button",{name:"Start deliveries"}));const dialog=screen.getByRole("dialog");
+  expect(within(dialog).getByRole("button",{name:"Authorize and start"})).toBeDisabled();
+  for(const [label,name] of [["Analysis agent","Analyst"],["Development agent","Developer"],["Independent verification agent","Verifier"]]){await user.click(within(dialog).getByRole("combobox",{name:label}));await user.click(await screen.findByRole("option",{name}));}
+  vi.mocked(api.authorizeEngineeringDelivery).mockRejectedValueOnce(new Error("Mapping changed; retry"));await user.click(within(dialog).getByRole("button",{name:"Authorize and start"}));await screen.findByText("Mapping changed; retry");
+  vi.mocked(api.authorizeEngineeringDelivery).mockImplementationOnce(async()=>{state.requirement!.delivery_policy={analystId:"analyst",developerId:"developer",verifierId:"verifier",maxReworks:3,mode:"in_place",userId:"human"};state.requirement!.accepted.heading={workspaceId:"workspace",issueId:"child",revision:1,contractVersion:"spec",codeVersion:"verified-commit"};});
+  await user.click(within(dialog).getByRole("button",{name:"Authorize and start"}));await screen.findByText("All units accepted. Final requirement review is still required.");expect(api.authorizeEngineeringDelivery).toHaveBeenLastCalledWith("issue",{expectedRevision:2,expectedSequence:7,analystId:"analyst",developerId:"developer",verifierId:"verifier",maxReworks:3});await screen.findByText("Accepted",{exact:true});expect(screen.queryByRole("button",{name:"Start deliveries"})).not.toBeInTheDocument();
 });

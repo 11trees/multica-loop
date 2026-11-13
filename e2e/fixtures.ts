@@ -580,12 +580,19 @@ export class TestApiClient {
     if(!this.createdIssueIds.includes(parentId))throw new Error("Not an owned requirement fixture");const response=await this.authedFetch(`/api/issues/${parentId}/engineering/publication`,{method:"POST",body:JSON.stringify(payload)});if(!response.ok)throw new Error(`Publication failed: ${response.status} ${await response.text()}`);return response.json();
   }
 
+  async engineeringOverview(issueId:string){
+    if(!this.createdIssueIds.includes(issueId))throw new Error("Not an owned engineering fixture");
+    const response=await this.authedFetch(`/api/issues/${issueId}/engineering`);
+    if(!response.ok)throw new Error(`Engineering overview failed: ${response.status}`);
+    return response.json();
+  }
+
   async publishedEngineeringIssues(parentId:string){
     if(!this.createdIssueIds.includes(parentId) || !process.env.MULTICA_ENGINEERING_DATABASE)throw new Error("Not an owned requirement fixture");
     const {DatabaseSync}=await import("node:sqlite"),database=new DatabaseSync(process.env.MULTICA_ENGINEERING_DATABASE);let ids:string[];
     try{ids=database.prepare("SELECT issue_id FROM requirement_unit WHERE workspace_id=? AND parent_issue_id=?").all(this.workspaceId,parentId).map(row=>String(row.issue_id));}finally{database.close();}
     const response=await this.authedFetch(`/api/issues/${parentId}/children`);if(!response.ok)throw new Error("Unable to read native child issues");
-    const body=await response.json() as {issues:{id:string;title:string;parent_issue_id:string;assignee_id:string|null;metadata:Record<string,unknown>}[]};
+    const body=await response.json() as {issues:{id:string;title:string;status:string;parent_issue_id:string;assignee_id:string|null;metadata:Record<string,unknown>}[]};
     const issues=body.issues.filter(issue=>ids.includes(issue.id) && issue.parent_issue_id === parentId);
     for(const issue of issues)if(!this.createdIssueIds.includes(issue.id))this.createdIssueIds.push(issue.id);
     return issues;

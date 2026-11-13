@@ -3069,6 +3069,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 			"action": "selection",
 		})
 		var role struct {
+			ParentID   string `json:"parent_issue_id"`
 			Configured *bool  `json:"configured"`
 			Chain      string `json:"chain"`
 			Repository string `json:"repository_path"`
@@ -3081,6 +3082,15 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		}
 		if invalid {
 			return resp, nil, nil, 0, 0, h.failClaimedTaskBeforeLaunch(r.Context(), task, "Engineering role lookup is unavailable.", taskfailure.ReasonEnvironmentPrepareFailed, "engineering_unavailable", http.StatusServiceUnavailable, "engineering unavailable")
+		}
+		if *role.Configured && role.ParentID != "" {
+			issue, err := h.Queries.GetIssueInWorkspace(r.Context(), db.GetIssueInWorkspaceParams{ID: task.IssueID, WorkspaceID: parseUUID(runtimeWorkspaceID)})
+			if err == nil {
+				_, err = h.managedParent(r.Context(), issue, role.ParentID)
+			}
+			if err != nil {
+				return resp, nil, nil, 0, 0, h.failClaimedTaskBeforeLaunch(r.Context(), task, "Managed requirement is not executable.", taskfailure.ReasonEnvironmentPrepareFailed, "engineering_parent", http.StatusConflict, "managed parent unavailable")
+			}
 		}
 		if *role.Configured {
 			resp.EngineeringChain = role.Chain

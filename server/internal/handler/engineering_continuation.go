@@ -15,14 +15,16 @@ import (
 )
 
 type engineeringContinuation struct {
-	WorkspaceID      string `json:"workspace_id"`
-	IssueID          string `json:"issue_id"`
-	AgentID          string `json:"agent_id"`
-	UserID           string `json:"user_id"`
-	TaskID           string `json:"task_id"`
-	ExpectedRevision int    `json:"expected_revision"`
-	ExpectedSequence int    `json:"expected_sequence"`
-	Reason           string `json:"reason"`
+	ParentIssueID    string   `json:"parent_issue_id,omitempty"`
+	UnitIssueIDs     []string `json:"unit_issue_ids,omitempty"`
+	WorkspaceID      string   `json:"workspace_id"`
+	IssueID          string   `json:"issue_id"`
+	AgentID          string   `json:"agent_id"`
+	UserID           string   `json:"user_id"`
+	TaskID           string   `json:"task_id"`
+	ExpectedRevision int      `json:"expected_revision"`
+	ExpectedSequence int      `json:"expected_sequence"`
+	Reason           string   `json:"reason"`
 }
 
 // ReconcileEngineering derives work from persisted handoffs and answered batches.
@@ -50,6 +52,9 @@ func (h *Handler) ReconcileEngineering(ctx context.Context) error {
 }
 
 func (h *Handler) dispatchEngineeringContinuation(ctx context.Context, item engineeringContinuation) error {
+	if item.Reason == "unit_activation" || item.Reason == "unit_passed" {
+		return h.dispatchManagedUnit(ctx, item)
+	}
 	workspaceID, err := util.ParseUUID(item.WorkspaceID)
 	if err != nil {
 		return err
@@ -70,7 +75,7 @@ func (h *Handler) dispatchEngineeringContinuation(ctx context.Context, item engi
 	if err != nil {
 		return err
 	}
-	if item.ExpectedRevision < 1 || item.ExpectedSequence < 0 || (item.Reason != "context_handoff" && item.Reason != "human_answers" && item.Reason != "development_handoff" && item.Reason != "verification_rework" && item.Reason != "analysis_handoff" && item.Reason != "verification_reanalysis") {
+	if item.ExpectedRevision < 1 || item.ExpectedSequence < 0 || (item.Reason != "unit_ready" && item.Reason != "context_handoff" && item.Reason != "human_answers" && item.Reason != "development_handoff" && item.Reason != "verification_rework" && item.Reason != "analysis_handoff" && item.Reason != "verification_reanalysis") {
 		return fmt.Errorf("invalid engineering continuation checkpoint")
 	}
 	if existing, err := h.Queries.GetAgentTask(ctx, taskID); err == nil {
@@ -101,6 +106,15 @@ func (h *Handler) dispatchEngineeringContinuation(ctx context.Context, item engi
 	}
 	if active {
 		return nil
+	}
+	if item.ParentIssueID != "" {
+		idle, err := h.managedRunsIdle(ctx, issue)
+		if err != nil {
+			return err
+		}
+		if !idle {
+			return nil
+		}
 	}
 	member, err := h.Queries.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{UserID: userID, WorkspaceID: workspaceID})
 	if err != nil {

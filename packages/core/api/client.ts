@@ -1,7 +1,7 @@
-import { EngineeringPublicationSchema } from "../issues/engineering-schema";
+import { EngineeringDeliveryAuthorizationSchema, EngineeringPublicationSchema } from "../issues/engineering-schema";
 import type { ZodType } from "zod";
 import { EngineeringOverviewSchema, EngineeringWriteSchema } from "./schemas";
-import type { EngineeringCheckpoint, RequirementConfiguration, EngineeringConfiguration, EngineeringOverview } from "../issues/engineering-schema";
+import type { RequirementDeliveryConfiguration, EngineeringCheckpoint, RequirementConfiguration, EngineeringConfiguration, EngineeringOverview } from "../issues/engineering-schema";
 import { AgentRuntimeSchema, EMPTY_RUNTIME } from "../runtimes/schema";
 import type { IssueWakeup, IssueWakeupInput, IssueWakeupSummaryRow, PausedWakeup, SystemWakeup, WakeupRun, WorkspaceSystemWakeup } from "../types/issue-wakeup";
 import type { WorkspaceWakeupPage, WorkspaceWakeupFilters } from "../types/issue-wakeup";
@@ -3034,6 +3034,11 @@ export class ApiClient {
   async publishEngineeringUnits(issueId:string,input:EngineeringCheckpoint):Promise<void>{
     const raw=await this.fetch<unknown>(`/api/issues/${issueId}/engineering/publication`,{method:"POST",body:JSON.stringify({expected_revision:input.expectedRevision,expected_sequence:input.expectedSequence})});
     if(!parseWithFallback(raw,EngineeringPublicationSchema,null,{endpoint:"POST /api/issues/:id/engineering/publication"}))throw new Error("Invalid publication response");
+  }
+
+  async authorizeEngineeringDelivery(issueId:string,input:RequirementDeliveryConfiguration):Promise<void>{
+    const raw=await this.fetch<unknown>(`/api/issues/${issueId}/engineering/delivery`,{method:"POST",body:JSON.stringify({expected_revision:input.expectedRevision,expected_sequence:input.expectedSequence,analyst_agent_id:input.analystId,developer_agent_id:input.developerId,agent_id:input.verifierId,max_reworks:input.maxReworks})});
+    if(!parseWithFallback(raw,EngineeringDeliveryAuthorizationSchema,null,{endpoint:"POST /api/issues/:id/engineering/delivery"}))throw new Error("Invalid delivery authorization response");
   }
 
   async answerEngineering(issueId: string, input: { expectedSequence: number; requestId: string; answer: string; selectedOption?:string }): Promise<void> {

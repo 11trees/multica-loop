@@ -20,6 +20,7 @@ func init() {
 		{"command", "/api/engineering/verification/commands", "Execute a JSON phase/artifact/runtime-input command"},
 		{"configure <issue-id>", "configure", "Freeze a delivery contract and clean repository commit (human only)"},
 		{"publish-units <issue-id>", "publish-units", "Publish a frozen requirement plan as native child issues (human only)"},
+		{"start-deliveries <issue-id>", "start-deliveries", "Authorize frozen roles and bounded serial delivery for a published plan (human only)"},
 		{"inspect <issue-id>", "inspect", "Read the issue's contract and questions (human only)"},
 		{"answer <issue-id>", "answer", "Answer a pending runtime input (human only)"},
 		{"abandon <issue-id>", "abandon", "Abandon an active verification draft (human only)"},
@@ -43,6 +44,9 @@ func init() {
 				path = "/api/issues/" + url.PathEscape(args[0]) + "/engineering/verification/"
 				if op.path == "publish-units" {
 					path = "/api/issues/" + url.PathEscape(args[0]) + "/engineering/publication"
+				}
+				if op.path == "start-deliveries" {
+					path = "/api/issues/" + url.PathEscape(args[0]) + "/engineering/delivery"
 				}
 				if op.path == "answer" {
 					path += "answers"

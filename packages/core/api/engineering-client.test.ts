@@ -9,6 +9,20 @@ const body = { enabled: true, configured: true, chain: "verification", agent_id:
 const respond = (value: unknown) => vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(value), { headers: { "Content-Type": "application/json" } })));
 afterEach(() => vi.unstubAllGlobals());
 
+it("authorizes the exact managed delivery checkpoint and rejects a malformed acknowledgement",async()=>{
+  const input={expectedRevision:2,expectedSequence:17,analystId:"analyst",developerId:"developer",verifierId:"verifier",maxReworks:3};
+  respond({authorized:true});await new ApiClient("https://api.example.test").authorizeEngineeringDelivery("issue",input);
+  expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]![1]?.body))).toEqual({expected_revision:2,expected_sequence:17,analyst_agent_id:"analyst",developer_agent_id:"developer",agent_id:"verifier",max_reworks:3});
+  respond({authorized:"true"});await expect(new ApiClient("https://api.example.test").authorizeEngineeringDelivery("issue",input)).rejects.toThrow(/Invalid delivery authorization/);
+});
+
+it("validates frozen managed policy, accepted versions and child progress",async()=>{
+  const requirement={kind:"requirement",input:"Original",context:null,plan:null,delivery_policy:{analystId:"analyst",developerId:"developer",verifierId:"verifier",maxReworks:3,mode:"worktree",userId:"human"},accepted:{unit:{workspaceId:"workspace",issueId:"child",revision:1,contractVersion:"spec",codeVersion:"verified"}},progress:[{key:"unit",chain:"verification",status:"completed",stop_reason:null}]};
+  respond({...body,chain:"planning",requirement});expect(await new ApiClient("https://api.example.test").getEngineeringOverview("parent")).toMatchObject({requirement:{delivery_policy:{mode:"worktree"},accepted:{unit:{codeVersion:"verified"}},progress:[{key:"unit",status:"completed"}]}});
+  respond({...body,chain:"planning",requirement:{...requirement,accepted:{unit:{codeVersion:"unbound"}}}});await expect(new ApiClient("https://api.example.test").getEngineeringOverview("parent")).rejects.toThrow(/Invalid engineering overview/);
+  respond({...body,chain:"planning",requirement:{...requirement,delivery_policy:{...requirement.delivery_policy,maxReworks:100}}});await expect(new ApiClient("https://api.example.test").getEngineeringOverview("parent")).rejects.toThrow(/Invalid engineering overview/);
+});
+
 it("parses overview identity and answer attribution and maps wire fields at the API boundary", async () => {
   respond(body);
   const state = await new ApiClient("https://api.example.test").getEngineeringOverview("issue");

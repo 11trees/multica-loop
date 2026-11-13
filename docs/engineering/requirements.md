@@ -154,6 +154,70 @@ this is not a cross-database transaction or a general external-effects guarantee
 
 ![Managed child with original acceptance oracle](assets/requirement-published-unit.png)
 
+## Authorized serial execution
+
+After every child is published, **Start deliveries** freezes a human-authorized
+policy: three distinct invocable analysis/development/verification agents, a
+rework limit of 0–10 for each unit, and their common registered repository and
+execution mode. Each role must map to exactly one matching native local project
+resource. The existing context/planning continuation switch does not authorize
+implementation; starting delivery is a separate human action.
+
+The management CLI exposes the same checkpoint:
+
+```sh
+multica engineering start-deliveries <requirement-issue-id> --payload-file delivery-policy.json
+```
+
+The JSON body contains `expected_revision`, `expected_sequence`,
+`analyst_agent_id`, `developer_agent_id`, `agent_id` (independent verifier), and
+`max_reworks`. The native API route is `POST /api/issues/{id}/engineering/delivery`.
+Task credentials cannot authorize this policy or change managed scope.
+
+The native coordinator activates units in the frozen plan order. Every preceding
+unit must have an acknowledged passed verification binding; explicit dependency
+bindings are also frozen into analysis. The first unit starts from the original
+requirement commit; each later unit starts from its immediate predecessor's
+actual accepted commit, including predecessors not listed as explicit dependencies.
+An in-place repository must be clean and exactly at that commit. Worktree mode
+selects the accepted commit while preserving the registered checkout and binds
+runtime worktrees through the existing daemon repository protocol.
+
+Each child uses the existing analysis → development → independent verification
+chain, including authenticated human questions and bounded specification or
+implementation rework. Published acceptance oracles remain authoritative. A native
+process exit does not advance the plan. The coordinator waits for all unfinished
+runs of the requirement and its children, including deferred runs, before dispatch.
+Native role checkpoints retain stable task IDs across retries.
+
+After passed independent verification and terminal native runs, the coordinator
+checks completion synchronously, moves the child to native Done through the
+common guarded writer, and acknowledges that exact verification binding on the
+parent. If acknowledgement fails after Done, reconciliation retries acceptance
+without recreating the child. Only then can the next unit activate. The parent
+panel polls delivery progress and links to children for questions and detailed
+history. Closing, cancelling or moving the parent to another project blocks new
+child commands/claims/continuations; it does not terminate already-running OS
+processes or roll back filesystem effects.
+
+This serial scope is one requirement and its children. It is not an atomic
+cross-parent repository lease, a PostgreSQL/SQLite/filesystem transaction, or a
+global exactly-once guarantee. Simultaneous requirements sharing a repository
+need a separate admission/ownership design before that usage is supported.
+
+All accepted units still leave the parent completion gate blocked for final
+requirement review. Published-plan revision, managed budget recovery and explicit
+reconciliation after scope changes are not yet exposed; generic reconfiguration
+must not replace managed scope.
+
+![Frozen delivery roles and per-unit budget](assets/requirement-delivery-policy.png)
+
+![Delivery authorization on a narrow viewport](assets/requirement-delivery-policy-narrow.png)
+
+![Accepted dependent native units](assets/requirement-delivered-units.png)
+
+![Accepted units on a narrow viewport](assets/requirement-delivered-narrow.png)
+
 ## Verification and remaining integration
 
 Kernel tests use real SQLite and temporary Git repositories to cover human
@@ -171,16 +235,25 @@ publication without duplicates, opens a child through the real UI, and proves
 that parent and child completion remain blocked before delivery. Its task claims are owned fixture metadata; it
 does not launch an installed provider or call a model.
 
-Native child-issue publication is connected. Selecting execution roles, scheduling
-units from their verified prerequisite versions, and requirement-level final
-review are the next integration steps.
-They are not implemented by compiling a plan. The completion gate rejects a
-requirement issue until actual delivery and final review are connected and
-passed. Managed children are also blocked until their execution/verification
-contracts are connected. The current UI shows planned units and acceptance revisions without
-offering another run for a terminal plan. Web/Desktop share these controls;
-packaged Desktop and real-provider acceptance remain unverified. Mobile retains
-its independent interface.
+Native child publication and authorized serial execution are connected. Kernel
+tests cover two units in both in-place and worktree modes, actual Git commits,
+SQLite reopen, frozen policy/mode/base refusal, and predecessor acceptance.
+Managed PostgreSQL tests cover deferred sibling admission, native Done before
+acceptance, acknowledgement recovery, and parent cancellation.
+
+The native end-to-end requirement scenario also authorizes three separate delivery
+roles through the UI, executes both published children through the native
+scheduler/CLI/worker, captures actual development command results, and observes
+the committed heading and Continue action in Chromium. It asserts the second
+unit's actual predecessor commit, both native Done statuses, and the parent's
+remaining final-review gate. It uses controlled task claims and does not launch
+an installed provider or call a model.
+
+Requirement final review, published-plan reconciliation, managed budget recovery,
+and cross-parent repository admission remain integration work. Packaged Desktop,
+real-provider acceptance, and native end-to-end multi-unit worktree execution
+remain unverified. Web/Desktop share the controls; Mobile retains its independent
+interface.
 
 ![Compiled dependency plan and permanent acceptances](assets/requirement-plan.png)
 

@@ -1,13 +1,13 @@
 import { test,expect,chromium } from "@playwright/test";
-import { execFileSync } from "node:child_process";
+import { execFileSync,spawnSync } from "node:child_process";
 import { mkdtemp,rm,writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join,resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { TestApiClient } from "./fixtures";
 
-test("requirement context preserves a human choice and hands stable acceptances to a complete dependency plan without completing delivery",async({baseURL},testInfo)=>{
-  test.setTimeout(180000);
+test("requirement context preserves a human choice and hands stable acceptances to a complete dependency plan and serially delivers native units from verified predecessor commits",async({baseURL},testInfo)=>{
+  test.setTimeout(480000);
   test.skip(process.env.MULTICA_ENGINEERING_ENABLED !== "true" || !process.env.MULTICA_ENGINEERING_CLI || !process.env.MULTICA_ENGINEERING_BROWSER,"Requires the managed service, CLI and explicit browser binary");
   const api=new TestApiClient();await api.loginLocally();const workspace=(await api.getWorkspaces()).find(item=>item.slug === "loopwork-local")!;api.setWorkspaceId(workspace.id);api.setWorkspaceSlug(workspace.slug);
   const directory=await mkdtemp(join(tmpdir(),"requirement-e2e-")),repository=join(directory,"repository");execFileSync("git",["init","-q",repository]);
@@ -57,6 +57,42 @@ test("requirement context preserves a human choice and hands stable acceptances 
     await childPanel.getByText("Frozen scope",{exact:true}).click();await expect(childPanel.getByText("Browser sees exact Ready",{exact:true})).toBeVisible();
     const childScreenshot=testInfo.outputPath("requirement-published-unit.png");await childPanel.screenshot({path:childScreenshot});await testInfo.attach("Native child bound to the frozen plan",{path:childScreenshot,contentType:"image/png"});
     await expect(api.updateIssue(heading.id,{status:"done",suppress_run:true})).rejects.toThrow(/409.*independent verification/i);
+
+    const analyst=await api.seedEngineeringRun(backlog.issueId),developer=await api.seedEngineeringRun(backlog.issueId),verifier=await api.seedEngineeringRun(backlog.issueId);
+    for(const run of [analyst,developer,verifier]){await api.finishEngineeringRun(run.taskId);await api.attachEngineeringProject(run.taskId,project.id,repository);}
+    await page.goto(`${baseURL}/${workspace.slug}/issues/${backlog.issueId}`);await panel.getByRole("button",{name:"Start deliveries",exact:true}).click();
+    const deliveryDialog=page.getByRole("dialog");
+    for(const [label,run] of [["Analysis agent",analyst],["Development agent",developer],["Independent verification agent",verifier]] as const){await deliveryDialog.getByRole("combobox",{name:label}).click();await page.getByRole("option",{name:`Engineering fixture ${run.agentId}`,exact:true}).click();}
+    await deliveryDialog.getByLabel("Rework limit per unit").fill("1");const policyScreenshot=testInfo.outputPath("requirement-delivery-policy.png");await deliveryDialog.screenshot({path:policyScreenshot});await testInfo.attach("Authorize independent delivery roles",{path:policyScreenshot,contentType:"image/png"});
+    await page.setViewportSize({width:390,height:1000});
+    await panel.getByRole("button",{name:"Start deliveries",exact:true}).click();
+    for(const [label,run] of [["Analysis agent",analyst],["Development agent",developer],["Independent verification agent",verifier]] as const){await deliveryDialog.getByRole("combobox",{name:label}).click();await page.getByRole("option",{name:`Engineering fixture ${run.agentId}`,exact:true}).click();}
+    await deliveryDialog.getByLabel("Rework limit per unit").fill("1");expect(await deliveryDialog.evaluate(element=>element.scrollWidth<=element.clientWidth+1)).toBe(true);const policyNarrow=testInfo.outputPath("requirement-delivery-policy-narrow.png");await deliveryDialog.screenshot({path:policyNarrow});await testInfo.attach("Delivery roles on a narrow viewport",{path:policyNarrow,contentType:"image/png"});
+    await deliveryDialog.getByRole("button",{name:"Authorize and start",exact:true}).click();await expect(deliveryDialog).not.toBeVisible();await expect(panel.getByText("Delivery authorized. Open a unit to review progress or answer questions.",{exact:true})).toBeVisible();
+    await page.setViewportSize({width:1280,height:1600});
+    const nextUnit=async(issueId:string,agentId:string)=>{await expect.poll(()=>api.queuedEngineeringRun(issueId,agentId),{timeout:70000}).not.toBeNull();return api.claimEngineeringRun((await api.queuedEngineeringRun(issueId,agentId))!);};
+    const commits:string[]=[];
+    for(const [index,title] of ["Ready heading","Continue action"].entries()){
+      const child=children.find(item=>item.title === title)!;
+      await begin(await nextUnit(child.id,analyst.agentId));expect(state.chain).toBe("analysis");
+      if(index === 1)expect(state.contract.binding.codeVersion).toBe(commits[0]);
+      const other=children.find(item=>item.id !== child.id)!;
+      if(index === 0)expect(await api.queuedEngineeringRun(other.id,analyst.agentId)).toBeNull();
+      command({type:"phase.complete"});command({type:"artifact.put",ref:"delivery-analysis.impacts",key:"scope",content:"area: Reader outcome\nfinding: Implement only the frozen unit\ndisposition: change\nevidence: Current index.html"});command({type:"phase.complete"});command({type:"phase.complete"});command({type:"phase.complete"});command({type:"artifact.put",ref:"delivery-analysis.answer-review",content:"Original acceptance and authenticated Continue label remain authoritative"});command({type:"phase.complete"});command({type:"artifact.put",ref:"delivery-analysis.summary",content:`Deliver ${title}`});command({type:"artifact.put",ref:"delivery-analysis.contract",content:`Implement ${title} while preserving the earlier verified reader outcome`});command({type:"phase.complete"});command({type:"phase.complete",confirmation:"Original acceptance preserved"});await api.finishEngineeringRun(owner.taskId);
+      await begin(await nextUnit(child.id,developer.agentId));expect(state.chain).toBe("development");command({type:"phase.complete"});
+      await writeFile(join(repository,"index.html"),index === 0 ? "<!doctype html><h1>Ready</h1>" : `<!doctype html><h1>Ready</h1><button onclick="document.querySelector('output').textContent='Continued'">Continue</button><output></output>`);
+      for(const source of state.contract.sources.filter((item:{kind:string})=>item.kind === "acceptance"))command({type:"acceptance.assess",key:source.key,evidence:"index.html:1 implements the frozen reader outcome"});command({type:"phase.complete"});command({type:"artifact.put",ref:"development.code-review",content:"summary: Only current unit changed; earlier delivered outcome preserved\nevidence: index.html:1"});command({type:"phase.complete"});
+      const script="const s=require('node:fs').readFileSync('index.html','utf8');if(!s.includes('<h1>Ready</h1>'))process.exit(1)";const check=spawnSync(process.execPath,["-e",script],{cwd:repository,encoding:"utf8"});expect(check.status).toBe(0);const receipt=await api.captureEngineeringReceipt(owner.taskId,{id:"unit-check",sequence:1,result:{command:`node -e ${JSON.stringify(script)}`,cwd:repository,status:"completed",exit_code:check.status}});command({type:"check.record",key:"unit-check",receipt_id:receipt.captured,summary:"Actual current fixture check"});command({type:"phase.complete"});git("add","index.html");git("commit","-qm",`Deliver ${title}`);commits.push(execFileSync("git",["-C",repository,"rev-parse","HEAD"],{encoding:"utf8"}).trim());command({type:"phase.complete",confirmation:"Scoped commit checked"});command({type:"phase.complete",confirmation:"Implementation, review and captured check align"});await api.finishEngineeringRun(owner.taskId);
+      await begin(await nextUnit(child.id,verifier.agentId));expect(state.chain).toBe("verification");command({type:"phase.complete"});command({type:"artifact.put",ref:"verification.scenarios",key:"s1",content:`channel: frontend\ntitle: ${title}\nsetup: Open committed fixture\nsteps: Read heading${index ? " and activate Continue" : ""}\nexpected: Ready${index ? " and Continued after activation" : ""}\ncoverageRefs: [${state.contract.sources.map((source:{key:string})=>source.key).join(", ")}]`});command({type:"phase.complete"});
+      const view=await context.newPage();await view.goto(pathToFileURL(join(repository,"index.html")).href);await expect(view.getByRole("heading",{name:"Ready",exact:true})).toBeVisible();if(index){await view.getByRole("button",{name:"Continue",exact:true}).click();await expect(view.locator("output")).toHaveText("Continued");}await view.close();
+      command({type:"artifact.put",ref:"verification.results",key:"s1",content:`status: passed\nevidence: Chromium observed exact Ready${index ? " and Continued after activating Continue" : ""}`});command({type:"phase.complete"});command({type:"artifact.put",ref:"verification.evidence-review",content:"summary: Actual browser evidence covers every frozen source and the original oracle"});command({type:"phase.complete"});command({type:"phase.complete"});await api.finishEngineeringRun(owner.taskId);
+      await expect.poll(async()=> (await api.publishedEngineeringIssues(backlog.issueId)).find(item=>item.id === child.id)?.status,{timeout:70000}).toBe("done");
+    }
+    await expect.poll(async()=>Object.keys((await api.engineeringOverview(backlog.issueId)).requirement.accepted),{timeout:70000}).toEqual(["heading","action"]);
+    await panel.getByRole("button",{name:"Refresh engineering delivery"}).click();await expect(panel.getByText("All units accepted. Final requirement review is still required.",{exact:true})).toBeVisible();await expect(panel.getByText("Accepted",{exact:true})).toHaveCount(2);
+    const deliveredScreenshot=testInfo.outputPath("requirement-delivered-units.png");await panel.screenshot({path:deliveredScreenshot});await testInfo.attach("Dependent units accepted against actual commits",{path:deliveredScreenshot,contentType:"image/png"});
+    await page.setViewportSize({width:390,height:1200});const deliveredNarrow=testInfo.outputPath("requirement-delivered-narrow.png");await panel.screenshot({path:deliveredNarrow});await testInfo.attach("Delivered units on a narrow viewport",{path:deliveredNarrow,contentType:"image/png"});
+    await expect(api.updateIssue(backlog.issueId,{status:"done",suppress_run:true})).rejects.toThrow(/409.*final review/i);
 
   }finally{await context.close();await browser.close();await api.cleanup();await rm(directory,{recursive:true,force:true});}
 });
