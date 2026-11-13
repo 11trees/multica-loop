@@ -1,5 +1,8 @@
 # Local single-user access
 
+The confirmed deployment target is one user on their own machine. Web, CLI,
+and development Desktop share that local identity and workspace.
+
 Set `MULTICA_LOCAL_AUTH=true` in the checkout's ignored `.env`, then restart it
 through `make down` followed by `make up C=api,web`. Open the local Web address
 printed by that command. The option is read when the backend starts.

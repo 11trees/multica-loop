@@ -2,8 +2,10 @@
 
 ## Objective and baseline
 
-Move LoopWork's development workflow into Multica and provide a single-user,
-self-hosted mode that opens the workspace without an email or OAuth login.
+Move LoopWork's development workflow into Multica. The confirmed deployment
+target is a local single-user installation that opens the workspace without
+an email or OAuth login, through the direct-loopback bootstrap described in
+[local access](local-access.md).
 Local identity must remain explicit so issues, runs, decisions, permissions,
 and audit records retain their ownership.
 
