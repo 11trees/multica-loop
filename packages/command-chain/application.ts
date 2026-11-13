@@ -25,7 +25,7 @@ const coordinator = z.strictObject({ kind: z.literal("coordinator") });
 const actor = z.discriminatedUnion("kind", [human, task, daemon, host, coordinator]);
 export const applicationRequestSchema = z.strictObject({
   actor,
-  action: z.enum(["configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations", "verified-binding", "publication", "publication-ack", "delivery-policy", "activate-unit", "accept-unit", "parent-scope"]),
+  action: z.enum(["configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations", "verified-binding", "publication", "publication-ack", "delivery-policy", "activate-unit", "accept-unit", "parent-scope", "review-inputs", "configure-review", "review-ack"]),
   payload: z.unknown().optional(),
 });
 export type ApplicationRequest = z.infer<typeof applicationRequestSchema>;
@@ -99,7 +99,11 @@ export class EngineeringApplication {
     )`);
     this.drafts = new SqliteDraftStore(database);
     this.db.exec("CREATE TABLE IF NOT EXISTS engineering_receipt (draft_id TEXT NOT NULL, receipt_id TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY (draft_id, receipt_id))");
-    this.requirements=new RequirementApplication(this.db,this.drafts,requirementDefinitions);
+    this.requirements=new RequirementApplication(this.db,this.drafts,requirementDefinitions,async(workspaceId,issueId)=>{
+      const record=this.current(workspaceId,issueId),verified=await this.verifiedBinding(record);
+      if(!record?.analysis?.handoff)throw new Error("Requirement review needs a resolved delivery specification");
+      return {binding:verified.binding,analysis:compileAnalysisConclusion(this.storedDraft(record.analysis.draftId),record.analysis.contract),verification:compileVerificationConclusion(this.storedDraft(record.draftId),record.contract)};
+    });
     this.db.exec("CREATE TABLE IF NOT EXISTS engineering_execution (workspace_id TEXT NOT NULL, issue_id TEXT NOT NULL, revision INTEGER NOT NULL, agent_id TEXT NOT NULL, attempt_id TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY (workspace_id, issue_id, revision, agent_id, attempt_id))");
   }
 
@@ -421,7 +425,7 @@ export class EngineeringApplication {
   private async managedProgress() {
     const pending=[];
     for(const {parent,units} of this.requirements.executionPlans()){
-      const unit=units.find(unit=>!parent.accepted[unit.unit.key]);if(!unit)continue;
+      const unit=units.find(unit=>!parent.accepted[unit.unit.key]);if(!unit?.published)continue;
       const current=this.current(unit.workspaceId,unit.issueId),draft=current ? await this.drafts.read(this.activeRole(current).draftId) : undefined;
       const verdict=current && this.activeRole(current).chain === "verification" && draft?.status === "completed" ? compileVerificationConclusion(draft,current.contract).verdict : null;
       if(current && verdict !== "passed")continue;
@@ -462,6 +466,8 @@ export class EngineeringApplication {
     const managedUnit=this.requirements.managedUnit(actor.workspaceId,actor.issueId);
     if(action === "parent-scope"){
       if(actor.kind !== "host")throw new Error("Only the host can inspect managed execution scope");
+      const requirement=this.requirements.current(actor.workspaceId,actor.issueId);
+      if(requirement?.reviews.length)return {managed:false,review_units:requirement.reviews.at(-1)!.units};
       return managedUnit ? {managed:true,parent_issue_id:managedUnit.parentIssueId,contract_hash:managedUnit.contractHash,plan_draft_id:managedUnit.planDraftId,unit_issue_ids:this.requirements.executionContext(actor.workspaceId,actor.issueId)!.units.map(unit=>unit.issueId)} : {managed:false};
     }
     if(action === "delivery-policy")return this.requirements.deliveryPolicy(request);
@@ -490,15 +496,16 @@ export class EngineeringApplication {
     }
     if(requirement){
       if(action === "configure")throw new Error("This issue owns a requirement workflow; configure a requirement revision");
-      const result=await this.requirements.invoke(request);
-      if(action === "overview" && "requirement" in result && result.requirement?.publication){
-        const progress=await Promise.all(result.requirement.publication.units.map(async item=>{
+      if(action === "overview"){
+        if(actor.kind !== "human")throw new Error("A human actor is required");
+        const result=await this.requirements.overview(requirement);
+        const progress=await Promise.all((result.requirement.publication?.units ?? []).map(async item=>{
           const current=this.current(actor.workspaceId,item.issueId),role=current ? this.activeRole(current) : null,draft=role ? await this.drafts.read(role.draftId) : null;
           return {key:item.unit.key,chain:role?.chain ?? null,status:draft?.status ?? (current ? "unstarted" : "pending"),stop_reason:current ? this.reworkView(current).stop_reason : null};
         }));
         return {...result,requirement:{...result.requirement,progress}};
       }
-      return result;
+      return this.requirements.invoke(request);
     }
     const record = this.current(actor.workspaceId, actor.issueId);
     if (action === "overview" || action === "prepare-run") {

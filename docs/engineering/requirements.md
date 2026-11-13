@@ -205,8 +205,9 @@ cross-parent repository lease, a PostgreSQL/SQLite/filesystem transaction, or a
 global exactly-once guarantee. Simultaneous requirements sharing a repository
 need a separate admission/ownership design before that usage is supported.
 
-All accepted units still leave the parent completion gate blocked for final
-requirement review. Published-plan revision, managed budget recovery and explicit
+All accepted units enter the [requirement final review](requirement-review.md)
+boundary. A report is not completion until the authenticated human reads its
+current version; closure gaps append stable follow-up units. Published-plan revision, managed budget recovery and explicit
 reconciliation after scope changes are not yet exposed; generic reconfiguration
 must not replace managed scope.
 
@@ -246,10 +247,11 @@ roles through the UI, executes both published children through the native
 scheduler/CLI/worker, captures actual development command results, and observes
 the committed heading and Continue action in Chromium. It asserts the second
 unit's actual predecessor commit, both native Done statuses, and the parent's
-remaining final-review gate. It uses controlled task claims and does not launch
+final-review gate before exercising the full review/gap/follow-up/report-reading
+path described in [requirement review](requirement-review.md). It uses controlled task claims and does not launch
 an installed provider or call a model.
 
-Requirement final review, published-plan reconciliation, managed budget recovery,
+Published-plan reconciliation, managed budget recovery,
 and cross-parent repository admission remain integration work. Packaged Desktop,
 real-provider acceptance, and native end-to-end multi-unit worktree execution
 remain unverified. Web/Desktop share the controls; Mobile retains its independent

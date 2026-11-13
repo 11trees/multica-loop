@@ -26,8 +26,9 @@ independent verification are connected and passed. A generic unconfigured issue
 does not become an escape hatch for those managed children.
 
 A [requirement workflow](requirements.md) cannot complete from a finished context
-or plan. Managed-unit execution/orchestration and final review remain pending;
-the parent completion call rejects until those delivery gates exist and pass.
+or plan. [Managed-unit execution and final review](requirement-review.md) are connected;
+the parent completion call requires the current report reading acknowledgement
+and native delivered-child proofs in addition to the frozen protocol gates.
 
 ## Covered writers
 
@@ -59,7 +60,7 @@ item after previous items have committed. No global concurrent-edit or
 cross-database atomicity guarantee is claimed.
 
 This first boundary enforces the migrated development/verification protocol.
-Managed-unit execution/orchestration, final review, system arbitration, remote clone
+System arbitration, verified feedback, remote clone
 mapping, and real-provider acceptance still need migration. A process exit or a
 merged PR alone cannot replace the current independent verification verdict.
 

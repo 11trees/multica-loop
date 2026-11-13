@@ -1,14 +1,14 @@
 import { queryOptions, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { issueKeys } from "./queries";
-import type { RequirementDeliveryConfiguration, EngineeringCheckpoint, RequirementConfiguration, EngineeringConfiguration } from "./engineering-schema";
-export type { EngineeringOverview, RequirementDeliveryConfiguration, RequirementConfiguration, EngineeringCheckpoint, EngineeringConfiguration, EngineeringDeliveryUnit } from "./engineering-schema";
+import type { RequirementReviewConfiguration, RequirementReviewAcknowledgement, RequirementDeliveryConfiguration, EngineeringCheckpoint, RequirementConfiguration, EngineeringConfiguration } from "./engineering-schema";
+export type { EngineeringOverview, RequirementReviewConfiguration, RequirementReviewAcknowledgement, RequirementDeliveryConfiguration, RequirementConfiguration, EngineeringCheckpoint, EngineeringConfiguration, EngineeringDeliveryUnit } from "./engineering-schema";
 
 export function engineeringOverviewOptions(workspaceId: string, issueId: string) {
   return queryOptions({
     queryKey: ["engineering", workspaceId, issueId], queryFn: () => api.getEngineeringOverview(issueId),
     enabled: !!workspaceId && !!issueId, retry: false, staleTime: 5000,
-    refetchInterval: query => {const state=query.state.data;return state?.configured && (!["completed", "abandoned"].includes(state.status) || state.requirement?.delivery_policy && state.requirement.publication?.units.some(unit=>!state.requirement!.accepted[unit.unit.key])) ? 5000 : false;},
+    refetchInterval: query => {const state=query.state.data,review=state?.requirement?.review;return state?.configured && (state.hasActiveRun === true || !["completed", "abandoned"].includes(state.status) || review?.result?.verdict === "closure_gap" || state.requirement?.delivery_policy && state.requirement.publication?.units.some(unit=>!state.requirement!.accepted[unit.unit.key])) ? 5000 : false;},
   });
 }
 
@@ -22,8 +22,10 @@ export function useEngineeringActions(workspaceId: string, issueId: string) {
   const configureRequirement=useMutation({mutationFn:(input:RequirementConfiguration)=>api.configureRequirementEngineering(issueId,input),onSettled:refresh});
   const publish=useMutation({mutationFn:(input:EngineeringCheckpoint)=>api.publishEngineeringUnits(issueId,input),onSettled:()=>Promise.all([refresh(),client.invalidateQueries({queryKey:issueKeys.children(workspaceId,issueId)}),client.invalidateQueries({queryKey:issueKeys.detail(workspaceId,issueId)}),client.invalidateQueries({queryKey:issueKeys.childrenByParentsAll(workspaceId)})])});
   const deliver=useMutation({mutationFn:(input:RequirementDeliveryConfiguration)=>api.authorizeEngineeringDelivery(issueId,input),onSettled:refresh});
+  const review=useMutation({mutationFn:(input:RequirementReviewConfiguration)=>api.configureRequirementReview(issueId,input),onSettled:refresh});
+  const acknowledge=useMutation({mutationFn:(input:RequirementReviewAcknowledgement)=>api.acknowledgeRequirementReview(issueId,input),onSettled:()=>Promise.all([refresh(),client.invalidateQueries({queryKey:issueKeys.all(workspaceId)})])});
   const answer = useMutation({ mutationFn: (input: { expectedSequence: number; requestId: string; answer: string; selectedOption?:string }) => api.answerEngineering(issueId, input), onSettled: refresh });
   const abandon = useMutation({ mutationFn: (input: { expectedSequence: number; reason: string }) => api.abandonEngineering(issueId, input), onSettled: refresh });
   const run = useMutation({ mutationFn: (input: EngineeringCheckpoint) => api.runEngineering(issueId, input), onSettled: refresh });
-  return { configure, configureRequirement, publish, deliver, answer, abandon, run };
+  return { configure, configureRequirement, publish, deliver, review, acknowledge, answer, abandon, run };
 }

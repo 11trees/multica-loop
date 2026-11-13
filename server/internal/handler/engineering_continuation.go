@@ -52,6 +52,9 @@ func (h *Handler) ReconcileEngineering(ctx context.Context) error {
 }
 
 func (h *Handler) dispatchEngineeringContinuation(ctx context.Context, item engineeringContinuation) error {
+	if item.Reason == "review_forward" || item.Reason == "review_next" {
+		return h.dispatchRequirementReview(ctx, item)
+	}
 	if item.Reason == "unit_activation" || item.Reason == "unit_passed" {
 		return h.dispatchManagedUnit(ctx, item)
 	}
@@ -75,7 +78,7 @@ func (h *Handler) dispatchEngineeringContinuation(ctx context.Context, item engi
 	if err != nil {
 		return err
 	}
-	if item.ExpectedRevision < 1 || item.ExpectedSequence < 0 || (item.Reason != "unit_ready" && item.Reason != "context_handoff" && item.Reason != "human_answers" && item.Reason != "development_handoff" && item.Reason != "verification_rework" && item.Reason != "analysis_handoff" && item.Reason != "verification_reanalysis") {
+	if item.ExpectedRevision < 1 || item.ExpectedSequence < 0 || (item.Reason != "review_ready" && item.Reason != "unit_ready" && item.Reason != "context_handoff" && item.Reason != "human_answers" && item.Reason != "development_handoff" && item.Reason != "verification_rework" && item.Reason != "analysis_handoff" && item.Reason != "verification_reanalysis") {
 		return fmt.Errorf("invalid engineering continuation checkpoint")
 	}
 	if existing, err := h.Queries.GetAgentTask(ctx, taskID); err == nil {
@@ -143,10 +146,16 @@ func (h *Handler) dispatchEngineeringContinuation(ctx context.Context, item engi
 		return err
 	}
 	var selection struct {
-		AgentID string `json:"agent_id"`
+		AgentID     string                   `json:"agent_id"`
+		ReviewUnits *[]engineeringReviewUnit `json:"review_units"`
 	}
 	if json.Unmarshal(selected, &selection) != nil || selection.AgentID != item.AgentID {
 		return fmt.Errorf("engineering role changed before continuation")
+	}
+	if selection.ReviewUnits != nil {
+		if err := h.reviewNativeUnits(ctx, issue, *selection.ReviewUnits, true); err != nil {
+			return err
+		}
 	}
 	_, err = h.TaskService.EnqueueEngineeringContinuation(ctx, issue, agentID, userID, taskID, "Continue the configured engineering chain with multica engineering start. Preserve its frozen inputs and current phase.")
 	return err

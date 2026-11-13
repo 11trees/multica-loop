@@ -71,7 +71,7 @@ func TestEngineeringControlsRejectTaskCredentials(t *testing.T) {
 	h := *testHandler
 	recorder := &engineeringRecorder{}
 	h.EngineeringWorker = recorder
-	for _, handler := range []http.HandlerFunc{h.GetEngineeringOverview, h.RunEngineering, h.AuthorizeEngineeringDelivery} {
+	for _, handler := range []http.HandlerFunc{h.GetEngineeringOverview, h.RunEngineering, h.AuthorizeEngineeringDelivery, h.ConfigureEngineeringReview, h.AcknowledgeEngineeringReview} {
 		r := withURLParam(httptest.NewRequest(http.MethodPost, "/api/issues/"+issueID+"/engineering", strings.NewReader(`{"expected_revision":1,"expected_sequence":0}`)), "id", issueID)
 		r.Header.Set("Authorization", "Bearer "+token)
 		r.Header.Set("X-Workspace-ID", testWorkspaceID)

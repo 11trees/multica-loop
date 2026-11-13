@@ -3069,19 +3069,29 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 			"action": "selection",
 		})
 		var role struct {
-			ParentID   string `json:"parent_issue_id"`
-			Configured *bool  `json:"configured"`
-			Chain      string `json:"chain"`
-			Repository string `json:"repository_path"`
-			Commit     string `json:"code_version"`
+			ParentID    string                  `json:"parent_issue_id"`
+			ReviewUnits []engineeringReviewUnit `json:"review_units"`
+			Configured  *bool                   `json:"configured"`
+			Chain       string                  `json:"chain"`
+			Repository  string                  `json:"repository_path"`
+			Commit      string                  `json:"code_version"`
 		}
 		invalid := selectErr != nil || json.Unmarshal(selection, &role) != nil || role.Configured == nil
 		if !invalid && *role.Configured {
 			commit, err := hex.DecodeString(role.Commit)
-			invalid = err != nil || (len(commit) != 20 && len(commit) != 32) || role.Repository == "" || (role.Chain != "context" && role.Chain != "planning" && role.Chain != "analysis" && role.Chain != "development" && role.Chain != "verification")
+			invalid = err != nil || (len(commit) != 20 && len(commit) != 32) || role.Repository == "" || (role.Chain != "review" && role.Chain != "context" && role.Chain != "planning" && role.Chain != "analysis" && role.Chain != "development" && role.Chain != "verification")
 		}
 		if invalid {
 			return resp, nil, nil, 0, 0, h.failClaimedTaskBeforeLaunch(r.Context(), task, "Engineering role lookup is unavailable.", taskfailure.ReasonEnvironmentPrepareFailed, "engineering_unavailable", http.StatusServiceUnavailable, "engineering unavailable")
+		}
+		if *role.Configured && role.Chain == "review" {
+			issue, err := h.Queries.GetIssueInWorkspace(r.Context(), db.GetIssueInWorkspaceParams{ID: task.IssueID, WorkspaceID: parseUUID(runtimeWorkspaceID)})
+			if err == nil {
+				err = h.reviewNativeUnits(r.Context(), issue, role.ReviewUnits, true)
+			}
+			if err != nil {
+				return resp, nil, nil, 0, 0, h.failClaimedTaskBeforeLaunch(r.Context(), task, "Requirement review native scope is unavailable.", taskfailure.ReasonEnvironmentPrepareFailed, "engineering_review", http.StatusConflict, "review scope unavailable")
+			}
 		}
 		if *role.Configured && role.ParentID != "" {
 			issue, err := h.Queries.GetIssueInWorkspace(r.Context(), db.GetIssueInWorkspaceParams{ID: task.IssueID, WorkspaceID: parseUUID(runtimeWorkspaceID)})
@@ -3097,6 +3107,9 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 			resp.EngineeringRepository = role.Repository
 			resp.EngineeringCommit = role.Commit
 			resp.Agent.Instructions += "\n\nThis issue uses the engineering command chain. First run `multica engineering start`, then read the returned draft phase, sequence, inputs, and instructions. Submit edits with `multica engineering command --payload '<JSON>'` where JSON contains expected_sequence and command. Use phase.complete only after the phase gates pass. If waiting_for_answers, stop and return control to the host; do not answer your own questions or mark delivery complete through issue status. Your task token and claim determine identity."
+			if role.Chain == "review" {
+				resp.Agent.Instructions += "\nYour role is requirement fact reconciliation and closure reporting. Use the original frozen obligations and independent Test evidence. Do not run tests or invent delivery facts. Missing or conflicting final/composed evidence must become a closure gap and complete forward delivery units, never residual risk or a fabricated report. Human reading acknowledgement is separate."
+			}
 			if role.Chain == "development" {
 				resp.Agent.Instructions += "\nYour role is development. Implement the frozen scope, register acceptance.assess evidence, perform code review, and run real commands. Select successful captured receipts with check.record; do not supply exit codes or test verdicts. Commit the scoped changes before final confirmation. Independent verification uses a separate agent and the committed snapshot."
 			}

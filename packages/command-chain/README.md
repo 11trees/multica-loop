@@ -7,12 +7,14 @@ adapters. YAML cannot define executable commands, validators, or transitions.
 
 The loader validates syntax, references, writable block boundaries, and the
 mandatory builtin sequence. `CommandChainEngine` adds phase execution and
-durable drafts through an injected `DraftStore`. Development and independent
-verification have host-owned builtin implementations; the other chains remain
-separate migration work.
+durable drafts through an injected `DraftStore`. Requirement context, planning,
+delivery analysis, development, independent verification and normal requirement
+review have host-owned handlers. The remaining source chains and pipelines are
+tracked in the [migration coverage audit](../../docs/engineering/migration-status.md).
 
 The identifier grammar excludes numeric keys so YAML declaration order survives
-JavaScript object enumeration. Only authoring format version 1 is accepted.
+JavaScript object enumeration. Profiles select supported definition versions;
+most imported definitions use version 1, while delivery analysis uses version 2.
 
 ## Draft execution
 
@@ -47,7 +49,8 @@ JavaScript object enumeration. Only authoring format version 1 is accepted.
 adapter using Node's built-in `node:sqlite` (Node 22.13+). Create its parent
 directory before opening a file and close it on shutdown. Each draft is one
 atomic snapshot including its event history; this is intentionally an initial
-local adapter, not the final evidence archive. No application imports it yet.
+local adapter, not the final evidence archive. The Node-only host applications
+use it alongside their frozen contract and integration records.
 The main package entry has no Node or database imports. Other adapters must
 honor the same atomic create/compare-and-swap contract.
 
@@ -86,7 +89,9 @@ cannot be rewritten or silently asked again under the same active key. Rewind
 supersedes questions at/after the target while preserving their answers for
 inspection; a new question receives a new request ID so a stale answer cannot
 close it. Removed unanswered questions are retained as inactive records too.
-Multica's human-facing question UI and automatic run scheduling remain pending.
+Multica's shared human controls and native continuation scheduler are connected;
+see [human controls](../../docs/engineering/human-controls.md) and
+[automatic continuation](../../docs/engineering/automatic-continuation.md).
 
 ## Independent verification builtins
 
@@ -122,10 +127,12 @@ have a completed chain: completion means the report is ready, not that the
 implementation passed. The conclusion includes draft sequence, run attempt,
 and version bindings. Failure routing preserves specification precedence:
 specification findings point to analysis; implementation-only failures point
-to development. These are routing hints, not actual host transitions.
+to development. The pure conclusion supplies routing hints; the host application
+applies the authorized bounded rework/reanalysis transitions.
 The conclusion is not a signed host receipt or proof that supplied
-evidence describes an independently observed event. Captured evidence,
-and host handoff enforcement are still pending. Blocked observations stay at
+evidence describes an independently observed event. The host supplies captured
+command receipts, repository checks and guarded handoffs; these do not prove the
+semantic truth of a verifier's narrative. Blocked observations stay at
 the execution checkpoint and can suspend for human input; after an answer,
 they still cannot produce a conclusion until observations are updated.
 
@@ -156,3 +163,18 @@ use temporary repositories/databases and do not access agent accounts or user
 databases. See [the engineering service](../../docs/engineering/engineering-service.md)
 for its authenticated host API, native CLI, durable contracts, actual Git checks,
 and integration evidence.
+
+## Requirement final review
+
+`createReviewHandlers` preserves the imported review phase order and its exclusive
+report/closure-gap branches. Subjects, exact evidence-source fingerprints and
+metadata are host-owned. Each subject requires one reconciliation or gap;
+reconciliations require every frozen independent verification reference for that
+scope. Missing or conflicting composed evidence must remain an explicit gap.
+
+`compileReviewConclusion` derives `report_ready` or `closure_gap`, never native
+issue completion. The Node host appends stable gap units, retains their original
+oracles and review lineage, schedules fresh review generations, and records an
+explicit authenticated reading acknowledgement. Go rechecks native children and
+unfinished runs before writing Done. See [requirement review](../../docs/engineering/requirement-review.md)
+for exact runtime evidence, recovery and remaining migration boundaries.

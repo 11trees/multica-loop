@@ -580,6 +580,10 @@ export class TestApiClient {
     if(!this.createdIssueIds.includes(parentId))throw new Error("Not an owned requirement fixture");const response=await this.authedFetch(`/api/issues/${parentId}/engineering/publication`,{method:"POST",body:JSON.stringify(payload)});if(!response.ok)throw new Error(`Publication failed: ${response.status} ${await response.text()}`);return response.json();
   }
 
+  async getOwnedEngineeringIssue(issueId:string){
+    if(!this.createdIssueIds.includes(issueId))throw new Error("Not an owned engineering fixture");const response=await this.authedFetch(`/api/issues/${issueId}`);if(!response.ok)throw new Error("Unable to read owned engineering issue");return response.json();
+  }
+
   async engineeringOverview(issueId:string){
     if(!this.createdIssueIds.includes(issueId))throw new Error("Not an owned engineering fixture");
     const response=await this.authedFetch(`/api/issues/${issueId}/engineering`);
@@ -606,7 +610,7 @@ export class TestApiClient {
       try {
         if(database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='requirement_contract'").get())for(const issueId of this.createdIssueIds){
           const rows=database.prepare("SELECT payload FROM requirement_contract WHERE workspace_id=? AND issue_id=?").all(this.workspaceId,issueId);
-          for(const row of rows){const record=JSON.parse(String(row.payload));for(const id of [record.contextDraftId,record.planDraftId])database.prepare("DELETE FROM chain_drafts WHERE id=?").run(id);}
+          for(const row of rows){const record=JSON.parse(String(row.payload));for(const id of [record.contextDraftId,record.planDraftId,...(record.reviews ?? []).map((review:{draftId:string})=>review.draftId)])database.prepare("DELETE FROM chain_drafts WHERE id=?").run(id);}
           database.prepare("DELETE FROM requirement_unit WHERE workspace_id=? AND (issue_id=? OR parent_issue_id=?)").run(this.workspaceId,issueId,issueId);
           for(const table of ["requirement_execution","requirement_acceptance","requirement_contract"])database.prepare(`DELETE FROM ${table} WHERE workspace_id=? AND issue_id=?`).run(this.workspaceId,issueId);
         }

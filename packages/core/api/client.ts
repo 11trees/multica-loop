@@ -1,7 +1,7 @@
-import { EngineeringDeliveryAuthorizationSchema, EngineeringPublicationSchema } from "../issues/engineering-schema";
+import { RequirementReviewConfiguredSchema, RequirementReviewAcknowledgedSchema, EngineeringDeliveryAuthorizationSchema, EngineeringPublicationSchema } from "../issues/engineering-schema";
 import type { ZodType } from "zod";
 import { EngineeringOverviewSchema, EngineeringWriteSchema } from "./schemas";
-import type { RequirementDeliveryConfiguration, EngineeringCheckpoint, RequirementConfiguration, EngineeringConfiguration, EngineeringOverview } from "../issues/engineering-schema";
+import type { RequirementReviewConfiguration, RequirementReviewAcknowledgement, RequirementDeliveryConfiguration, EngineeringCheckpoint, RequirementConfiguration, EngineeringConfiguration, EngineeringOverview } from "../issues/engineering-schema";
 import { AgentRuntimeSchema, EMPTY_RUNTIME } from "../runtimes/schema";
 import type { IssueWakeup, IssueWakeupInput, IssueWakeupSummaryRow, PausedWakeup, SystemWakeup, WakeupRun, WorkspaceSystemWakeup } from "../types/issue-wakeup";
 import type { WorkspaceWakeupPage, WorkspaceWakeupFilters } from "../types/issue-wakeup";
@@ -3039,6 +3039,16 @@ export class ApiClient {
   async authorizeEngineeringDelivery(issueId:string,input:RequirementDeliveryConfiguration):Promise<void>{
     const raw=await this.fetch<unknown>(`/api/issues/${issueId}/engineering/delivery`,{method:"POST",body:JSON.stringify({expected_revision:input.expectedRevision,expected_sequence:input.expectedSequence,analyst_agent_id:input.analystId,developer_agent_id:input.developerId,agent_id:input.verifierId,max_reworks:input.maxReworks})});
     if(!parseWithFallback(raw,EngineeringDeliveryAuthorizationSchema,null,{endpoint:"POST /api/issues/:id/engineering/delivery"}))throw new Error("Invalid delivery authorization response");
+  }
+
+  async configureRequirementReview(issueId:string,input:RequirementReviewConfiguration):Promise<void>{
+    const raw=await this.fetch<unknown>(`/api/issues/${issueId}/engineering/review`,{method:"POST",body:JSON.stringify({expected_revision:input.expectedRevision,expected_sequence:input.expectedSequence,agent_id:input.reviewerId})});
+    if(!parseWithFallback(raw,RequirementReviewConfiguredSchema,null,{endpoint:"POST /api/issues/:id/engineering/review"}))throw new Error("Invalid requirement review configuration response");
+  }
+
+  async acknowledgeRequirementReview(issueId:string,input:RequirementReviewAcknowledgement):Promise<void>{
+    const raw=await this.fetch<unknown>(`/api/issues/${issueId}/engineering/review/acknowledge`,{method:"POST",body:JSON.stringify({expected_revision:input.expectedRevision,expected_sequence:input.expectedSequence,report_hash:input.reportHash})});
+    if(!parseWithFallback(raw,RequirementReviewAcknowledgedSchema,null,{endpoint:"POST /api/issues/:id/engineering/review/acknowledge"}))throw new Error("Invalid report reading acknowledgement response");
   }
 
   async answerEngineering(issueId: string, input: { expectedSequence: number; requestId: string; answer: string; selectedOption?:string }): Promise<void> {

@@ -627,7 +627,7 @@ func (h *Handler) remapIssues(ctx context.Context, qtx *db.Queries, wsUUID pgtyp
 			return nil, nil, err
 		}
 		for _, issue := range rows {
-			if err := h.requireEngineeringCompletionWithCatalog(ctx, qtx, wsUUID, db.UpdateIssueParams{ID: issue.ID, Status: strToText(issue.Status)}); err != nil {
+			if err := h.requireEngineeringCompletionWithCatalog(ctx, qtx, wsUUID, db.UpdateIssueParams{ID: issue.ID, Status: strToText(issue.Status), ProjectID: issue.ProjectID}); err != nil {
 				return nil, nil, err
 			}
 			stopped, err := service.StopClosedIssueWakeups(ctx, qtx, issue)
