@@ -136,9 +136,13 @@ test covers frozen Git identity, phase commands, human answers, reclaimed
 continuation, and refusal after repository edits. See
 [engineering service](engineering-service.md) for setup and limits.
 
-The synchronous handoff boundary, question UI, automatic continuation, remaining
-chains, and real delivery acceptance are still pending. These local integration
-steps do not complete milestone 2 or the migration.
+The first synchronous [issue completion boundary](issue-completion.md) now checks
+ordinary/description/batch updates, PR automation, and workflow remaps against
+the latest passed verification and current clean commit. It preserves the
+existing non-atomic batch semantics and does not supply a cross-database handoff
+transaction. Final review, question UI, automatic continuation, workspace mapping,
+remaining chains, and real delivery acceptance are still pending. These local
+integration steps do not complete milestone 2 or the migration.
 
 ## Cutover and rollback
 

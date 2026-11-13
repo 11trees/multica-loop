@@ -122,7 +122,10 @@ observations, not a real delivered business change. Its fixture helper removes
 its own PostgreSQL/SQLite records. Normal issue-deletion retention/cleanup for
 engineering history remains an application integration task.
 
-The other chains, additional provider receipt adapters, automated
-run continuation, UI, remote repository mapping, and the synchronous host handoff
-gate are still required for cutover. Agent issue-status changes are not yet gated
-by this service; successful process exit is not evidence of engineering delivery.
+The service now [checks issue completion synchronously](issue-completion.md),
+including human/agent updates, batches, PR automation, and workflow remaps. A
+passed current independent verification is required for a registered issue's
+done-category write. The other chains, additional provider receipt adapters,
+automated run continuation, UI, repository mapping, and cross-database handoff
+acceptance remain required for cutover. Successful process exit is not evidence
+of engineering delivery.

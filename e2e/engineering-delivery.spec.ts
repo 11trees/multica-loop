@@ -33,6 +33,7 @@ test("a development commit is handed to independent browser verification with ca
     let state = cli("start");
     const command = (value: unknown) => { state = cli("command", { expected_sequence: state.draft.sequence, command: value }); };
     expect(state.chain).toBe("development");
+    await expect(api.updateIssue(dev.issueId, { status: "done", suppress_run: true })).rejects.toThrow(/409.*not handed off/);
     command({ type: "phase.complete" });
     await writeFile(join(repository, "index.html"), "<!doctype html><h1>Ready</h1>");
     command({ type: "acceptance.assess", key: "ac1", evidence: "index.html:1 implements the heading" });
@@ -52,6 +53,7 @@ test("a development commit is handed to independent browser verification with ca
     command({ type: "phase.complete", confirmation: "Scoped commit created" });
     command({ type: "phase.complete", confirmation: "Implementation, review, checks, and commit align" });
     expect(state.conclusion.commit).toBe(commit);
+    await expect(api.updateIssue(dev.issueId, { status: "done", suppress_run: true })).rejects.toThrow(/409.*Complete independent verification/);
     owner = verifier; state = cli("start");
     expect(state.chain).toBe("verification"); expect(state.contract.binding.codeVersion).toBe(commit);
     command({ type: "phase.complete" });
@@ -69,5 +71,8 @@ test("a development commit is handed to independent browser verification with ca
     command({ type: "artifact.put", ref: "verification.evidence-review", content: "summary: Browser evidence matches the frozen oracle and committed source" });
     command({ type: "phase.complete" }); command({ type: "phase.complete" });
     expect(state.conclusion.verdict).toBe("passed"); expect(state.conclusion.binding.codeVersion).toBe(commit);
+    expect((await api.updateIssue(dev.issueId, { status: "done", suppress_run: true })).status).toBe("done");
+    await writeFile(join(repository, "index.html"), "<!doctype html><h1>Changed after verification</h1>");
+    await expect(api.updateIssue(dev.issueId, { status: "done", suppress_run: true })).rejects.toThrow(/409.*uncommitted changes/);
   } finally { await api.cleanup(); await rm(directory, { recursive: true, force: true }); }
 });

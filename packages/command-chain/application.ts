@@ -14,10 +14,11 @@ const scope = { workspaceId: z.uuid(), issueId: z.uuid() };
 const human = z.strictObject({ kind: z.literal("human"), userId: z.uuid(), ...scope });
 const task = z.strictObject({ kind: z.literal("task"), agentId: z.uuid(), attemptId: text, ...scope });
 const daemon = task.extend({ kind: z.literal("daemon") });
-const actor = z.discriminatedUnion("kind", [human, task, daemon]);
+const host = z.strictObject({ kind: z.literal("host"), ...scope });
+const actor = z.discriminatedUnion("kind", [human, task, daemon, host]);
 export const applicationRequestSchema = z.strictObject({
   actor,
-  action: z.enum(["configure", "read", "start", "command", "answer", "abandon", "selection", "receipt"]),
+  action: z.enum(["configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion"]),
   payload: z.unknown().optional(),
 });
 export type ApplicationRequest = z.infer<typeof applicationRequestSchema>;
@@ -111,6 +112,19 @@ export class EngineeringApplication {
     const request = applicationRequestSchema.parse(input);
     const { actor, action } = request;
     let record = this.current(actor.workspaceId, actor.issueId);
+    if (action === "completion") {
+      if (actor.kind !== "host") throw new Error("Only the host can authorize issue completion");
+      if (!record) return { configured: false, allowed: true };
+      if (record.development && !record.development.handoff) throw new DraftConflictError("Development has not handed off its committed result");
+      const draft = await this.drafts.read(record.draftId);
+      if (!draft || draft.status !== "completed") throw new DraftConflictError("Complete independent verification before marking this issue done");
+      const conclusion = compileVerificationConclusion(draft, record.contract);
+      if (conclusion.verdict !== "passed") throw new DraftConflictError(`Independent verification failed; return to ${conclusion.rewindTo}`);
+      const code = snapshot(record.repositoryPath);
+      if (code.codeVersion !== record.contract.binding.codeVersion) throw new DraftConflictError("Repository commit changed after verification; freeze and verify a new revision");
+      return { configured: true, allowed: true, binding: conclusion.binding };
+    }
+    if (actor.kind === "host") throw new Error("Host completion credentials cannot edit chain state");
     if (action === "selection") return {
       configured: actor.kind === "task" && (record?.development && !record.development.handoff ? record.development.agentId === actor.agentId : record?.agentId === actor.agentId),
       chain: record?.development && !record.development.handoff ? "development" : "verification",
