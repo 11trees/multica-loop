@@ -14,6 +14,8 @@ import { verificationContractSchema } from "./verification";
 import { reviewGapSources, compileReviewConclusion, createReviewHandlers, reviewContractSchema, reviewProfile, type ReviewContract } from "./review";
 import type { compileAnalysisConclusion } from "./analysis";
 import type { compileVerificationConclusion } from "./verification";
+import { FeedbackStore, type FeedbackBatch } from "./feedback-store";
+import { feedbackCommentSchema, createFeedbackTriageHandlers, compileFeedbackTriageConclusion, feedbackTriageProfile } from "./feedback";
 import { artifactBlock } from "./artifacts";
 import { compileReproductionConclusion, reproductionState, createReproductionHandlers, reproductionContractSchema, reproductionProfile } from "./reproduction";
 
@@ -28,13 +30,15 @@ type Record=z.infer<typeof recordSchema>;
 type ReviewRecord=z.infer<typeof reviewRecordSchema>;
 const managedUnitSchema=z.strictObject({workspaceId:z.uuid(),issueId:z.uuid(),parentIssueId:z.uuid(),parentRevision:z.number().int().positive(),planDraftId:z.uuid(),planSequence:sequence,unit:deliveryUnitSchema,sources:verificationContractSchema.shape.sources,contractHash:text,published:z.boolean()});
 const executionSchema=z.strictObject({repositoryPath:text,overlays:z.array(z.strictObject({path:text,hash:text,executable:z.boolean(),originalHash:text.nullable(),originalExecutable:z.boolean()}))});
-export type RequirementDefinitions={context:string;planning:string;review?:string;reproduction?:string};
+export type RequirementDefinitions={context:string;planning:string;review?:string;reproduction?:string;feedback?:{triage:string;verify:string}};
 
 function stableId(value:string){const hash=createHash("sha256").update(value).digest("hex");return `${hash.slice(0,8)}-${hash.slice(8,12)}-5${hash.slice(13,16)}-a${hash.slice(17,20)}-${hash.slice(20,32)}`;}
 
 /** Requirement-level checkpoints share the authenticated host and draft store. */
 export class RequirementApplication {
+  private readonly feedback:FeedbackStore;
   constructor(private readonly db:DatabaseSync,private readonly drafts:SqliteDraftStore,private readonly definitions?:RequirementDefinitions,private readonly deliveryEvidence?:(workspaceId:string,issueId:string)=>Promise<DeliveryEvidence>){
+    this.feedback=new FeedbackStore(db,drafts);
     db.exec("CREATE TABLE IF NOT EXISTS requirement_contract (workspace_id TEXT NOT NULL,issue_id TEXT NOT NULL,revision INTEGER NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(workspace_id,issue_id,revision))");
     db.exec("CREATE TABLE IF NOT EXISTS requirement_acceptance (workspace_id TEXT NOT NULL,issue_id TEXT NOT NULL,acceptance_key TEXT NOT NULL,revision INTEGER NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(workspace_id,issue_id,acceptance_key,revision))");
     db.exec("CREATE TABLE IF NOT EXISTS requirement_execution (workspace_id TEXT NOT NULL,issue_id TEXT NOT NULL,revision INTEGER NOT NULL,agent_id TEXT NOT NULL,attempt_id TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(workspace_id,issue_id,revision,agent_id,attempt_id))");
@@ -161,7 +165,8 @@ export class RequirementApplication {
       review.settled=true;if(conclusion.report)review.reportHash=createHash("sha256").update(JSON.stringify(conclusion)).digest("hex");this.save(record);this.db.exec("COMMIT");
     }catch(error){this.db.exec("ROLLBACK");throw error;}
   }
-  private async reviewCompletion(record:Record){
+  private async reviewCompletion(record:Record,feedbackAdmission=false){
+    if(!feedbackAdmission && this.feedback.unresolved(record.workspaceId,record.issueId).length)throw new DraftConflictError("Feedback comments remain pending or reopened before requirement closure");
     const review=record.reviews.at(-1);if(!review)throw new DraftConflictError("Requirement delivery and final review must complete; a context or plan is not delivered work");
     await this.validateReview(record,review);const draft=await this.drafts.read(review.draftId);if(!draft)throw new DraftConflictError("Requirement final review is incomplete");
     this.readonlyExecution(record,review,draft);const result=compileReviewConclusion(draft,review.contract);
@@ -203,6 +208,7 @@ export class RequirementApplication {
   }
   private save(record:Record){this.db.prepare("UPDATE requirement_contract SET payload=? WHERE workspace_id=? AND issue_id=? AND revision=?").run(JSON.stringify(record),record.workspaceId,record.issueId,record.contextContract.binding.revision);}
   private role(record:Record){
+    const feedback=this.activeFeedback(record);if(feedback?.policy)return {chain:"feedback-triage",agentId:feedback.policy.agentId,draftId:feedback.triageDraftId,contract:feedback.contract,source:feedback.definitions.triage,profile:feedbackTriageProfile};
     if(record.contextHandoff && record.contextContract.kind === "bug" && !record.reproduction)throw new Error("Reconfigure this bug with a reproduction agent before planning");
     const reproduction=record.reproduction;
     if(record.contextHandoff && reproduction && !reproduction.handoff){if(!reproduction.contract)throw new Error("Reproduction inputs are unavailable");return {chain:"reproduction",agentId:reproduction.agentId,draftId:reproduction.draftId,contract:reproduction.contract,source:reproduction.source,profile:reproductionProfile};}
@@ -229,6 +235,30 @@ export class RequirementApplication {
       for(const item of [...active,...retired])this.db.prepare("INSERT INTO requirement_acceptance(workspace_id,issue_id,acceptance_key,revision,payload) VALUES(?,?,?,?,?) ON CONFLICT DO NOTHING").run(record.workspaceId,record.issueId,item.key,item.revision,JSON.stringify(item));
       this.save(record);this.db.exec("COMMIT");
     }catch(error){this.db.exec("ROLLBACK");throw error;}
+  }
+  private activeFeedback(record:Record){return this.feedback.list(record.workspaceId,record.issueId).findLast(batch=>batch.policy && !["completed","cancelled"].includes(batch.status));}
+  private async beginFeedback(record:Record,request:ApplicationRequest){
+    if(request.actor.kind !== "human" || !this.definitions?.feedback)throw new Error("Only a human can capture native feedback");
+    const input=z.strictObject({request_id:z.uuid(),expected_revision:sequence,expected_sequence:sequence,expected_batch_number:sequence,agent_id:z.uuid(),verifier_id:z.uuid(),comments:z.array(feedbackCommentSchema).min(1).max(100),restore_done:z.boolean(),execution_resources:z.array(z.strictObject({path:text,mode:z.enum(["in_place","worktree"])})).length(2),native_unit_ids:z.array(z.uuid()).min(1)}).parse(request.payload);
+    const previous=this.feedback.list(record.workspaceId,record.issueId).find(batch=>batch.requestId === input.request_id);
+    if(previous){
+      if(previous.createdBy !== request.actor.userId || previous.policy?.agentId !== input.agent_id || previous.policy.verifierId !== input.verifier_id || JSON.stringify(previous.contract.comments) !== JSON.stringify(input.comments) || previous.contract.binding.revision !== input.expected_revision)throw new DraftConflictError("Feedback capture request changed");
+      return {configured:true,batch_id:previous.id,reopen_required:!["completed","cancelled"].includes(previous.status)};
+    }
+    const {review,draft,result}=await this.reviewCompletion(record,true),policy=record.deliveryPolicy!;
+    if(input.expected_revision !== record.contextContract.binding.revision || input.expected_sequence !== draft.sequence)throw new DraftConflictError("Requirement report checkpoint changed before feedback capture");
+    if(input.agent_id === input.verifier_id || [policy.analystId,policy.developerId,policy.verifierId].some(id=>id === input.agent_id || id === input.verifier_id))throw new Error("Feedback roles must be separate from each other and the delivery roles");
+    if(input.execution_resources.some(resource=>resource.mode !== policy.mode || repositorySnapshot(resource.path,false).repositoryPath !== record.repositoryPath))throw new Error("Feedback roles must use the frozen registered repository and execution mode");
+    if(JSON.stringify(input.native_unit_ids) !== JSON.stringify(this.reviewUnits(record).map(item=>item.issue_id)))throw new DraftConflictError("Native feedback delivery scope changed");
+    if(policy.mode === "in_place" && repositorySnapshot(record.repositoryPath).codeVersion !== result.binding.codeVersion)throw new DraftConflictError("Feedback repository differs from the current reviewed commit");
+    const batch=this.feedback.capture({requestId:input.request_id,userId:request.actor.userId,expectedBatchNumber:input.expected_batch_number,definitions:this.definitions.feedback,policy:{agentId:input.agent_id,verifierId:input.verifier_id,repositoryPath:record.repositoryPath,mode:policy.mode,reviewDraftId:draft.id,reportHash:review.reportHash!,restoreDone:input.restore_done},contract:{binding:result.binding,decisionMode:record.contextContract.decisionMode,comments:input.comments,context:{ref:`REVIEW:${draft.id}`,version:review.reportHash!,content:JSON.stringify(result)},units:this.publication(record).units.map((unit,index)=>({index:index+1,key:unit.unit.key,version:unit.contractHash,content:JSON.stringify(unit)}))}});
+    return {configured:true,batch_id:batch.id,reopen_required:true};
+  }
+  private async validateFeedback(record:Record,batch:FeedbackBatch){
+    const review=record.reviews.at(-1);if(!review || review.draftId !== batch.policy?.reviewDraftId || review.reportHash !== batch.policy.reportHash)throw new DraftConflictError("Feedback source report changed");
+    const current=this.publication(record).units.map((unit,index)=>({index:index+1,key:unit.unit.key,version:unit.contractHash,content:JSON.stringify(unit)}));
+    if(JSON.stringify(current) !== JSON.stringify(batch.contract.units))throw new DraftConflictError("Frozen feedback delivery units changed");
+    await this.validateReview(record,review);
   }
   private async validateReproduction(record:Record){
     const reproduction=record.reproduction;if(!reproduction?.contract)throw new Error("Frozen reproduction inputs are unavailable");
@@ -258,13 +288,14 @@ export class RequirementApplication {
     const reproductionDraft=record.reproduction ? await this.drafts.read(record.reproduction.draftId) : undefined;
     const reproductionResult=reproductionDraft?.status === "completed" ? compileReproductionConclusion(reproductionDraft,record.reproduction!.contract!) : null;
     const plan=planningDraft?.status === "completed" ? compilePlanningConclusion(planningDraft,record.planningContract!) : null;
-    const review=record.reviews.at(-1),reviewResult=review && draft?.status === "completed" ? compileReviewConclusion(draft,review.contract) : null;
+    const feedbackBatches=this.feedback.list(record.workspaceId,record.issueId);
+    const review=record.reviews.at(-1),reviewDraft=review ? await this.drafts.read(review.draftId) : undefined,reviewResult=review && reviewDraft?.status === "completed" ? compileReviewConclusion(reviewDraft,review.contract) : null;
     return {enabled:true,configured:true,auto_continue:record.autoContinue || !!record.reviews.length,chain:role.chain,agent_id:role.agentId,revision:record.contextContract.binding.revision,sequence:draft?.sequence ?? 0,code_version:role.contract.binding.codeVersion,repository_path:record.repositoryPath,draft_id:draft?.id ?? null,status:draft?.status ?? "unstarted",current_phase:draft?.phase ?? null,
       phases:Object.keys(parseCommandChainDefinition(role.source,role.profile).definition.phases).map(id=>({id,status:draft?.completedPhases.includes(id) ? "completed" : id === draft?.phase ? "current" : "pending"})),
       sources:record.planningContract?.sources.map(item=>({key:item.key,kind:item.kind,description:item.content,oracle:item.oracle ?? item.content,source_ref:item.sourceRef})) ?? [],
       artifacts:draft?.artifacts.map(item=>({...item,title:artifactBlock(draft.definition,item.ref).title})) ?? [],decisions:draft?.decisions ?? contextDraft?.decisions ?? [],
       questions:[...(contextDraft?.runtimeInputs.map(item=>({...item,active:false})) ?? []),...(draft?.runtimeInputs ?? [])].map(item=>({...item,decision_key:item.decisionKey,recommendation_option:item.recommendationOption,answer:item.answer ? {text:item.answer.text,user_id:item.answer.userId,sequence:item.answer.sequence,selected_option:item.answer.selectedOption} : null})),
-      requirement:{reproduction:record.reproduction ? {agent_id:record.reproduction.agentId,draft_id:record.reproduction.draftId,status:reproductionDraft?.status ?? "unstarted",observation:reproductionDraft ? reproductionState(reproductionDraft).verdict ?? null : null,result:reproductionResult ? {verdict:"reproduced",report:reproductionResult.report,code_version:reproductionResult.binding.codeVersion} : null} : null,kind:record.contextContract.kind,input:record.contextContract.input,context:context ? {intent:context.intent,changeSummary:context.changeSummary,acceptances:record.acceptances} : null,plan,review_enabled:!!this.definitions?.review,delivery_units:this.publication(record).units.map(item=>item.unit),review:review ? {generation:review.contract.generation,draft_id:review.draftId,agent_id:review.agentId,report_hash:review.reportHash ?? null,acknowledgement:review.acknowledgement ?? null,result:reviewResult,history:await Promise.all(record.reviews.slice(0,-1).map(async item=>{const previous=await this.drafts.read(item.draftId);return {generation:item.contract.generation,draft_id:item.draftId,code_version:item.contract.binding.codeVersion,result:previous?.status === "completed" ? compileReviewConclusion(previous,item.contract) : null};}))} : null,delivery_policy:record.deliveryPolicy ?? null,accepted:record.accepted,publication:record.publicationRequestedBy ? this.publication(record) : null},result:null,
+      requirement:{feedback:this.definitions?.feedback ? {enabled:true,active:!!this.activeFeedback(record),unresolved_count:this.feedback.unresolved(record.workspaceId,record.issueId).length,expected_batch_number:feedbackBatches.at(-1)?.number ?? 0,batches:feedbackBatches.map(batch=>({id:batch.id,number:batch.number,version:batch.version,status:batch.status,agent_id:batch.policy?.agentId ?? null,comments:batch.contract.comments,groups:batch.groups.map(group=>({id:group.id,...group.descriptor,status:group.status})),summary:batch.triage?.summary ?? null}))} : null,reproduction:record.reproduction ? {agent_id:record.reproduction.agentId,draft_id:record.reproduction.draftId,status:reproductionDraft?.status ?? "unstarted",observation:reproductionDraft ? reproductionState(reproductionDraft).verdict ?? null : null,result:reproductionResult ? {verdict:"reproduced",report:reproductionResult.report,code_version:reproductionResult.binding.codeVersion} : null} : null,kind:record.contextContract.kind,input:record.contextContract.input,context:context ? {intent:context.intent,changeSummary:context.changeSummary,acceptances:record.acceptances} : null,plan,review_enabled:!!this.definitions?.review,delivery_units:this.publication(record).units.map(item=>item.unit),review:review ? {generation:review.contract.generation,draft_id:review.draftId,agent_id:review.agentId,report_hash:review.reportHash ?? null,acknowledgement:review.acknowledgement ?? null,result:reviewResult,history:await Promise.all(record.reviews.slice(0,-1).map(async item=>{const previous=await this.drafts.read(item.draftId);return {generation:item.contract.generation,draft_id:item.draftId,code_version:item.contract.binding.codeVersion,result:previous?.status === "completed" ? compileReviewConclusion(previous,item.contract) : null};}))} : null,delivery_policy:record.deliveryPolicy ?? null,accepted:record.accepted,publication:record.publicationRequestedBy ? this.publication(record) : null},result:null,
     };
   }
   async continuations(){
@@ -272,12 +303,15 @@ export class RequirementApplication {
     for(const row of rows){const record=recordSchema.parse(JSON.parse(String(row.payload)));
       if(!record.contextHandoff){const draft=await this.drafts.read(record.contextDraftId);if(draft?.status === "completed")await this.settleContext(record,draft);}
       if(record.reproduction?.contract && !record.reproduction.handoff){const reproductionDraft=await this.drafts.read(record.reproduction.draftId);if(reproductionDraft?.status === "completed")await this.settleReproduction(record,reproductionDraft);}
-      if(!record.autoContinue && !record.reviews.length)continue;
-      const role=this.role(record),draft=await this.drafts.read(role.draftId),review=record.reviews.at(-1);
+      let feedback=this.activeFeedback(record);if(feedback?.status === "triaging"){const saved=await this.drafts.read(feedback.triageDraftId);if(saved?.status === "completed"){await this.validateFeedback(record,feedback);this.readonlyExecution(record,{agentId:feedback.policy!.agentId,contract:feedback.contract},saved);await this.feedback.settleTriage(record.workspaceId,record.issueId,feedback.id,feedback.version);feedback=this.activeFeedback(record);}}
+      const latestFeedback=this.feedback.list(record.workspaceId,record.issueId).at(-1);
+      if(latestFeedback?.status === "completed" && !latestFeedback.nativeRestored && latestFeedback.policy?.restoreDone && !this.feedback.unresolved(record.workspaceId,record.issueId).length && latestFeedback.groups.every(group=>["reply","historical_correction","learning_only"].includes(group.descriptor.workType)))pending.push({workspace_id:record.workspaceId,issue_id:record.issueId,agent_id:latestFeedback.policy.agentId,user_id:latestFeedback.createdBy,task_id:stableId(`multica:feedback:restore:${latestFeedback.id}`),expected_revision:record.contextContract.binding.revision,expected_sequence:latestFeedback.version,feedback_batch_id:latestFeedback.id,reason:"feedback_restore"});
+      if(!record.autoContinue && !record.reviews.length && !feedback)continue;
+      const role=this.role(record),draft=await this.drafts.read(role.draftId),review=role.chain === "review" ? record.reviews.at(-1) : undefined;
       if(review && draft?.status === "completed" && !review.settled)await this.settleReview(record,draft);
       const result=review && draft?.status === "completed" ? compileReviewConclusion(draft,review.contract) : null,units=this.publication(record).units;
-      const reason=role.chain === "reproduction" && !draft ? "reproduction_handoff" : role.chain === "review" && !draft ? "review_ready" : result?.verdict === "closure_gap" && units.some(item=>!item.published) ? "review_forward" : result?.verdict === "closure_gap" && units.every(item=>record.accepted[item.unit.key]) ? "review_next" : role.chain === "planning" && !draft ? "context_handoff" : draft?.status === "waiting_for_answers" && draft.runtimeInputs.some(item=>item.active) && draft.runtimeInputs.every(item=>!item.active || item.answer) ? "human_answers" : null;
-      if(reason)pending.push({workspace_id:record.workspaceId,issue_id:record.issueId,agent_id:role.agentId,user_id:review?.userId ?? record.createdBy,task_id:stableId(`multica:engineering:continuation:${role.draftId}:${draft?.sequence ?? 0}`),expected_revision:record.contextContract.binding.revision,expected_sequence:draft?.sequence ?? 0,reason});
+      const reason=role.chain === "feedback-triage" && !draft ? "feedback_ready" : role.chain === "reproduction" && !draft ? "reproduction_handoff" : role.chain === "review" && !draft ? "review_ready" : result?.verdict === "closure_gap" && units.some(item=>!item.published) ? "review_forward" : result?.verdict === "closure_gap" && units.every(item=>record.accepted[item.unit.key]) ? "review_next" : role.chain === "planning" && !draft ? "context_handoff" : draft?.status === "waiting_for_answers" && draft.runtimeInputs.some(item=>item.active) && draft.runtimeInputs.every(item=>!item.active || item.answer) ? "human_answers" : null;
+      if(reason)pending.push({workspace_id:record.workspaceId,issue_id:record.issueId,agent_id:role.agentId,user_id:feedback?.createdBy ?? review?.userId ?? record.createdBy,task_id:stableId(`multica:engineering:continuation:${role.draftId}:${draft?.sequence ?? 0}`),expected_revision:record.contextContract.binding.revision,expected_sequence:draft?.sequence ?? 0,reason});
     }return pending;
   }
   async invoke(request:ApplicationRequest){
@@ -301,6 +335,12 @@ export class RequirementApplication {
       return this.view(record);
     }
     if(!record)throw new Error("Requirement is not configured");
+    if(action === "feedback-restored"){if(actor.kind !== "host")throw new Error("Only the host can acknowledge native feedback restoration");const input=z.strictObject({batch_id:text,expected_version:sequence}).parse(request.payload);this.feedback.acknowledgeNativeRestore(record.workspaceId,record.issueId,input.batch_id,input.expected_version);return {acknowledged:true};}
+    if(action === "begin-feedback")return this.beginFeedback(record,request);
+    if(action === "cancel-feedback"){
+      if(actor.kind !== "human")throw new Error("Only a human can cancel feedback");
+      const input=z.strictObject({batch_id:text,expected_version:sequence,reason:text}).parse(request.payload);this.feedback.cancel(record.workspaceId,record.issueId,input.batch_id,input.expected_version,actor.userId,input.reason);return {cancelled:true};
+    }
     if(action === "publication")return this.publish(record,request);
     if(action === "publication-ack"){
       if(actor.kind !== "host")throw new Error("Only the host can acknowledge native publication");
@@ -311,7 +351,8 @@ export class RequirementApplication {
     if(action === "review-inputs"){if(actor.kind !== "host")throw new Error("Only the host can inspect requirement review inputs");const facts=await this.reviewFacts(record);return {review_units:facts.units};}
     if(action === "configure-review")return this.configureReview(record,request);
     if(action === "review-ack")return this.acknowledgeReview(record,request);
-    const role=this.role(record),review=record.reviews.at(-1);
+    const role=this.role(record),review=role.chain === "review" ? record.reviews.at(-1) : undefined,feedback=role.chain === "feedback-triage" ? this.activeFeedback(record) : undefined;
+    if(feedback && ["selection","prepare-run","bind","start","command","read"].includes(action))await this.validateFeedback(record,feedback);
     if(role.chain === "reproduction" && ["selection","prepare-run","bind","start","command","read"].includes(action))await this.validateReproduction(record);
     if(action === "completion" || action === "verified-binding"){
       if(actor.kind !== "host")throw new Error("Only the host can authorize requirement completion");
@@ -321,21 +362,21 @@ export class RequirementApplication {
     }
     if(action === "overview"){if(actor.kind !== "human")throw new Error("A human actor is required");return this.overview(record);}
     if(review && ["selection","prepare-run","bind","start","command","read"].includes(action))await this.validateReview(record,review);
-    if(action === "selection")return { ...(review ? {review_units:review.units} : {}),configured:actor.kind === "task" && role.agentId === actor.agentId,chain:role.chain,repository_path:record.repositoryPath,code_version:role.contract.binding.codeVersion};
+    if(action === "selection")return { ...(feedback ? {review_units:this.reviewUnits(record)} : review ? {review_units:review.units} : {}),configured:actor.kind === "task" && role.agentId === actor.agentId,chain:role.chain,repository_path:record.repositoryPath,code_version:role.contract.binding.codeVersion};
     if(action === "prepare-run"){
       if(actor.kind !== "human")throw new Error("Only a human can start a requirement run");
       const payload=z.object({expected_revision:sequence,expected_sequence:sequence,execution_resources:z.array(z.object({path:text,mode:z.enum(["in_place","worktree"])})).optional()}).parse(request.payload),draft=await this.drafts.read(role.draftId);
       if(payload.expected_revision !== record.contextContract.binding.revision || payload.expected_sequence !== (draft?.sequence ?? 0))throw new DraftConflictError("Requirement checkpoint changed");
-      if(draft?.status === "abandoned" || ["planning","review"].includes(role.chain) && draft?.status === "completed")throw new Error("Planning is finished; delivery publication and final review remain pending");
+      if(draft?.status === "abandoned" || ["planning","review","feedback-triage"].includes(role.chain) && draft?.status === "completed")throw new Error("Planning is finished; delivery publication and final review remain pending");
       if(draft?.runtimeInputs.some(item=>item.active && !item.answer))throw new Error("Answer all pending requirement questions first");
-      if(review && payload.execution_resources?.some(item=>item.mode !== record.deliveryPolicy!.mode))throw new Error("Reviewer execution mode differs from its frozen policy");
+      if((review || feedback) && payload.execution_resources?.some(item=>item.mode !== record.deliveryPolicy!.mode))throw new Error("Reviewer execution mode differs from its frozen policy");
       if(payload.execution_resources && (payload.execution_resources.length !== 1 || payload.execution_resources.some(item=>repositoryCommonDirectory(item.path) !== repositoryCommonDirectory(record.repositoryPath) || item.mode === "in_place" && repositorySnapshot(item.path,false).repositoryPath !== record.repositoryPath)))throw new Error("Bind exactly one matching project repository");
-      return {...(review ? {review_units:review.units} : {}),agent_id:role.agentId,revision:record.contextContract.binding.revision,sequence:draft?.sequence ?? 0};
+      return {...(feedback ? {review_units:this.reviewUnits(record)} : review ? {review_units:review.units} : {}),agent_id:role.agentId,revision:record.contextContract.binding.revision,sequence:draft?.sequence ?? 0};
     }
     if(action === "bind"){
       if(actor.kind !== "daemon" || actor.agentId !== role.agentId)throw new Error("Only the owning runtime can bind this requirement role");
       const payload=z.strictObject({work_dir:text,mode:z.enum(["in_place","worktree"]),overlays:z.array(z.strictObject({path:text,hash:text}))}).parse(request.payload),code=repositorySnapshot(payload.work_dir,false);
-      if(review && payload.mode !== record.deliveryPolicy!.mode)throw new Error("Reviewer execution mode differs from its frozen policy");
+      if((review || feedback) && payload.mode !== record.deliveryPolicy!.mode)throw new Error("Reviewer execution mode differs from its frozen policy");
       if(repositoryCommonDirectory(code.repositoryPath) !== repositoryCommonDirectory(record.repositoryPath) || payload.mode === "in_place" && code.repositoryPath !== record.repositoryPath)throw new Error("Requirement execution belongs to another repository");
       const overlays=captureRepositoryOverlays(code.repositoryPath,payload.overlays,true),snapshot=repositorySnapshot(code.repositoryPath,true,overlays);
       if(snapshot.codeVersion !== role.contract.binding.codeVersion)throw new Error("Requirement execution is not at the frozen repository commit");
@@ -348,7 +389,7 @@ export class RequirementApplication {
       if(!row)throw new Error("The runtime must bind its requirement repository first");const execution=executionSchema.parse(JSON.parse(String(row.payload))),code=repositorySnapshot(execution.repositoryPath,true,execution.overlays);
       if(code.codeVersion !== role.contract.binding.codeVersion)throw new Error("Requirement repository changed from its frozen snapshot");
     }
-    const engine=new CommandChainEngine(this.drafts,role.chain === "review" ? createReviewHandlers(review!.contract) : role.chain === "reproduction" ? createReproductionHandlers(record.reproduction!.contract!) : role.chain === "context" ? createContextHandlers(record.contextContract) : createPlanningHandlers(record.planningContract!));let draft=await this.drafts.read(role.draftId);
+    const engine=new CommandChainEngine(this.drafts,role.chain === "feedback-triage" ? createFeedbackTriageHandlers(feedback!.contract) : role.chain === "review" ? createReviewHandlers(review!.contract) : role.chain === "reproduction" ? createReproductionHandlers(record.reproduction!.contract!) : role.chain === "context" ? createContextHandlers(record.contextContract) : createPlanningHandlers(record.planningContract!));let draft=await this.drafts.read(role.draftId);
     if(action === "start" && actor.kind === "task"){
       if(!draft)draft=await engine.create({id:role.draftId,chain:parseCommandChainDefinition(role.source,role.profile),binding:role.contract.binding,attemptId:actor.attemptId});
       else if(draft.status === "abandoned")throw new Error("Requirement draft was abandoned");
@@ -364,12 +405,13 @@ export class RequirementApplication {
     const view=this.view(record,draft);
     if(actor.kind === "task" && draft?.status === "completed" && role.chain === "context")await this.settleContext(record,draft);
     if(actor.kind === "task" && draft?.status === "completed" && role.chain === "reproduction")await this.settleReproduction(record,draft);
+    if(feedback && draft?.status === "completed"){this.readonlyExecution(record,{agentId:feedback.policy!.agentId,contract:feedback.contract},draft);await this.feedback.settleTriage(record.workspaceId,record.issueId,feedback.id,feedback.version);}
     return view;
   }
   private view(record:Record,draft?:ChainDraft){
     const role=this.role(record),phase=draft?.phase ? draft.definition.phases[draft.phase] : undefined;
     return {chain:role.chain,agentId:role.agentId,repositoryPath:record.repositoryPath,contract:role.contract,draft:draft ?? null,
       instructions:phase?.type === "builtin" ? `${phase.builtin}: ${role.chain === "reproduction" ? "Reproduce without modifying persistent repository files. Preserve exact Existing Expected; distinguish current observations from reports and root-cause hypotheses. Only reproduced may hand off to planning. Missing facts require not_reproduced and human input. After answers, rewind investigation and obtain fresh observations before changing the verdict." : role.chain === "review" ? "Reconcile original obligations and combined final behavior against frozen independent verification. Do not run tests, invent delivery facts, or treat development claims as proof. Record a closure gap when evidence does not establish composition; forward complete units instead of a report. Human reading acknowledgement is separate." : "Read the frozen inputs."} Requirement acceptances use acceptance.put/remove only in their definition phase. ${decisionPolicies[record.contextContract.decisionMode]}` : phase?.instructions,
-      decisionSchema:z.toJSONSchema(decisionProposalSchema),conclusion:draft?.status === "completed" ? role.chain === "reproduction" ? compileReproductionConclusion(draft,record.reproduction!.contract!) : role.chain === "review" ? compileReviewConclusion(draft,record.reviews.at(-1)!.contract) : role.chain === "context" ? compileContextConclusion(draft,record.contextContract) : compilePlanningConclusion(draft,record.planningContract!) : null,receipts:[]};
+      decisionSchema:z.toJSONSchema(decisionProposalSchema),conclusion:draft?.status === "completed" ? role.chain === "feedback-triage" ? compileFeedbackTriageConclusion(draft,this.activeFeedback(record)!.contract) : role.chain === "reproduction" ? compileReproductionConclusion(draft,record.reproduction!.contract!) : role.chain === "review" ? compileReviewConclusion(draft,record.reviews.at(-1)!.contract) : role.chain === "context" ? compileContextConclusion(draft,record.contextContract) : compilePlanningConclusion(draft,record.planningContract!) : null,receipts:[]};
   }
 }

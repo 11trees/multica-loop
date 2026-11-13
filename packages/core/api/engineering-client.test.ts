@@ -127,3 +127,11 @@ it("freezes a bug reproducer and rejects malformed reproduction overview facts",
  respond({...body,chain:"reproduction",requirement});expect(await client.getEngineeringOverview("bug")).toMatchObject({chain:"reproduction",requirement:{reproduction:{observation:{status:"not_reproduced"}}}});
  for(const reproduction of [null,{...requirement.reproduction,observation:{...requirement.reproduction.observation,status:"passed"}},{...requirement.reproduction,result:{verdict:"not_reproduced",report:"Not observed",code_version:"old"}}]){respond({...body,chain:"reproduction",requirement:{...requirement,reproduction}});await expect(client.getEngineeringOverview("bug")).rejects.toThrow(/Invalid engineering overview/);}
 });
+
+it("captures only native comment identities and refuses malformed feedback acknowledgements",async()=>{
+ const client=new ApiClient("https://api.example.test"),input={requestId:"019a0000-0000-7000-8000-000000000071",expectedRevision:1,expectedSequence:25,expectedBatchNumber:0,agentId:"triager",verifierId:"feedback-verifier",commentIds:["comment"]};
+ respond({configured:true,batch_id:input.requestId,reopen_required:true});await client.beginEngineeringFeedback("parent",input);expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]![1]?.body))).toEqual({request_id:input.requestId,expected_revision:1,expected_sequence:25,expected_batch_number:0,agent_id:"triager",verifier_id:"feedback-verifier",comment_ids:["comment"]});
+ respond({configured:"true",batch_id:input.requestId,reopen_required:true});await expect(client.beginEngineeringFeedback("parent",input)).rejects.toThrow(/Invalid feedback capture/);
+ respond({cancelled:true});await client.cancelEngineeringFeedback("parent",{batchId:input.requestId,expectedVersion:2,reason:"Preserve pending work"});expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]![1]?.body))).toEqual({batch_id:input.requestId,expected_version:2,reason:"Preserve pending work"});
+ respond({...body,chain:"feedback-triage",requirement:null});await expect(client.getEngineeringOverview("parent")).rejects.toThrow(/Invalid engineering overview/);
+});

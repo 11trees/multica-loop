@@ -8,12 +8,12 @@ import type { EngineeringOverview } from "@multica/core/issues";
 import { renderWithI18n } from "../../test/i18n";
 import { EngineeringPanel } from "./engineering-panel";
 
-const endpoints = vi.hoisted(() => ({ getEngineeringOverview: vi.fn(), listAgents: vi.fn(), answerEngineering: vi.fn(), abandonEngineering: vi.fn(), configureEngineering: vi.fn(), configureRequirementEngineering:vi.fn(), configureRequirementReview:vi.fn(),acknowledgeRequirementReview:vi.fn(),authorizeEngineeringDelivery:vi.fn(),publishEngineeringUnits:vi.fn(),runEngineering: vi.fn() }));
+const endpoints = vi.hoisted(() => ({ getEngineeringOverview: vi.fn(), beginEngineeringFeedback:vi.fn(),cancelEngineeringFeedback:vi.fn(),listComments:vi.fn(), listAgents: vi.fn(), answerEngineering: vi.fn(), abandonEngineering: vi.fn(), configureEngineering: vi.fn(), configureRequirementEngineering:vi.fn(), configureRequirementReview:vi.fn(),acknowledgeRequirementReview:vi.fn(),authorizeEngineeringDelivery:vi.fn(),publishEngineeringUnits:vi.fn(),runEngineering: vi.fn() }));
 vi.mock("@multica/core/api", async importOriginal => ({ ...await importOriginal<typeof import("@multica/core/api")>(), api: endpoints }));
 vi.mock("@multica/core/hooks", async importOriginal => ({ ...await importOriginal<typeof import("@multica/core/hooks")>(), useWorkspaceId: () => "workspace" }));
 const issue = { id: "issue", title: "Fixture delivery", revision: 4 } as Issue;
 const initial: EngineeringOverview = {
-  autoContinue: false, enabled: true, configured: true, chain: "verification", agentId: "verifier", revision: 2, sequence: 7,
+  feedbackAllowed:false,autoContinue: false, enabled: true, configured: true, chain: "verification", agentId: "verifier", revision: 2, sequence: 7,
   codeVersion: "commit-fixture", repositoryPath: "/fixture", draftId: "draft", status: "waiting_for_answers", currentPhase: "plan", hasActiveRun: false,
   phases: [{ id: "inputs", status: "completed" }, { id: "plan", status: "current" }],
   sources: [{ key: "ac1", kind: "acceptance", description: "Survives reload", oracle: "Title visible", sourceRef: "ISSUE:fixture" }],
@@ -136,20 +136,20 @@ it("requires an explicit structured choice and never submits the recommendation 
 
 it("shows planned units and requirement acceptances without offering to rerun a finished plan",async()=>{
   state.chain="planning";state.status="completed";state.questions=[];
-  state.requirement={reproduction:null,review_enabled:false,review:null,delivery_units:[],delivery_policy:null,accepted:{},progress:[],publication:null,kind:"requirement",input:"Original request",context:{intent:"Reader continues",changeSummary:"New action",acceptances:[{id:"acceptance",key:"heading",statement:"Shows Ready",oracle:"Exact visible Ready",sourceRef:"Input",revision:1}]},plan:{rationale:"Two observable outcomes",coverage:"Complete",units:[{key:"action",title:"Continue action",actor:"Reader",trigger:"Click",observableOutcome:"Next page",acceptance:"Continue works",sourceRefs:[],dependsOn:["heading"]}]}};
+  state.requirement={feedback:null,reproduction:null,review_enabled:false,review:null,delivery_units:[],delivery_policy:null,accepted:{},progress:[],publication:null,kind:"requirement",input:"Original request",context:{intent:"Reader continues",changeSummary:"New action",acceptances:[{id:"acceptance",key:"heading",statement:"Shows Ready",oracle:"Exact visible Ready",sourceRef:"Input",revision:1}]},plan:{rationale:"Two observable outcomes",coverage:"Complete",units:[{key:"action",title:"Continue action",actor:"Reader",trigger:"Click",observableOutcome:"Next page",acceptance:"Continue works",sourceRefs:[],dependsOn:["heading"]}]}};
   const user=userEvent.setup();renderPanel();await screen.findByText("Plan ready. Delivery and final review are still required.");expect(screen.queryByRole("button",{name:/Start run|Continue run/})).not.toBeInTheDocument();await user.click(screen.getByText("Requirement acceptances",{exact:true}));await screen.findByText("Exact visible Ready");await screen.findByText("Prerequisites: heading");
 });
 
 
 it("keeps a failed publication retryable and freezes the plan after publication intent exists",async()=>{
- state.chain="planning";state.status="completed";state.questions=[];state.requirement={reproduction:null,review_enabled:false,review:null,delivery_units:[],delivery_policy:null,accepted:{},progress:[],publication:null,kind:"requirement",input:"Request",context:null,plan:{rationale:"One outcome",coverage:"Complete",units:[]}};
+ state.chain="planning";state.status="completed";state.questions=[];state.requirement={feedback:null,reproduction:null,review_enabled:false,review:null,delivery_units:[],delivery_policy:null,accepted:{},progress:[],publication:null,kind:"requirement",input:"Request",context:null,plan:{rationale:"One outcome",coverage:"Complete",units:[]}};
  const user=userEvent.setup();vi.mocked(api.publishEngineeringUnits).mockRejectedValueOnce(new Error("Publication interrupted; retry"));renderPanel();await user.click(await screen.findByRole("button",{name:"Publish units"}));await screen.findByText("Publication interrupted; retry");
  vi.mocked(api.publishEngineeringUnits).mockImplementationOnce(async()=>{state.requirement!.publication={requestedBy:"human",units:[{issueId:"child",published:true,unit:{key:"heading",title:"Heading"}}]};});await user.click(screen.getByRole("button",{name:"Publish units"}));await screen.findByText("Units published. Delivery and final review are still required.");expect(api.publishEngineeringUnits).toHaveBeenLastCalledWith("issue",{expectedRevision:2,expectedSequence:7});expect(screen.queryByRole("button",{name:"New revision"})).not.toBeInTheDocument();
 });
 
 it("authorizes distinct frozen delivery roles, keeps failures editable and shows accepted progress",async()=>{
   state.chain="planning";state.status="completed";state.questions=[];
-  state.requirement={reproduction:null,review_enabled:false,review:null,delivery_units:[],delivery_policy:null,accepted:{},progress:[],publication:{requestedBy:"human",units:[{issueId:"child",published:true,unit:{key:"heading",title:"Ready heading"}}]},kind:"requirement",input:"Request",context:null,plan:{rationale:"One outcome",coverage:"Complete",units:[{key:"heading",title:"Ready heading",actor:"Reader",trigger:"Open",observableOutcome:"Ready",acceptance:"Ready visible",sourceRefs:[],dependsOn:[]}]}};
+  state.requirement={feedback:null,reproduction:null,review_enabled:false,review:null,delivery_units:[],delivery_policy:null,accepted:{},progress:[],publication:{requestedBy:"human",units:[{issueId:"child",published:true,unit:{key:"heading",title:"Ready heading"}}]},kind:"requirement",input:"Request",context:null,plan:{rationale:"One outcome",coverage:"Complete",units:[{key:"heading",title:"Ready heading",actor:"Reader",trigger:"Open",observableOutcome:"Ready",acceptance:"Ready visible",sourceRefs:[],dependsOn:[]}]}};
   vi.mocked(api.listAgents).mockResolvedValue([{id:"analyst",name:"Analyst"},{id:"developer",name:"Developer"},{id:"verifier",name:"Verifier"}] as Agent[]);
   const user=userEvent.setup();renderPanel();await user.click(await screen.findByRole("button",{name:"Start deliveries"}));const dialog=screen.getByRole("dialog");
   expect(within(dialog).getByRole("button",{name:"Authorize and start"})).toBeDisabled();
@@ -161,7 +161,7 @@ it("authorizes distinct frozen delivery roles, keeps failures editable and shows
 
 it("selects a separate reviewer and records reading only against the current report",async()=>{
  state.chain="planning";state.status="completed";state.questions=[];
- state.requirement={reproduction:null,review_enabled:true,review:null,delivery_units:[],delivery_policy:{analystId:"analyst",developerId:"developer",verifierId:"verifier",maxReworks:1,mode:"in_place",userId:"human"},accepted:{heading:{workspaceId:"workspace",issueId:"child",revision:1,contractVersion:"spec",codeVersion:"verified"}},progress:[],publication:{requestedBy:"human",units:[{issueId:"child",published:true,unit:{key:"heading",title:"Heading"}}]},kind:"requirement",input:"Original",context:null,plan:{rationale:"One unit",coverage:"Complete",units:[]}};
+ state.requirement={feedback:null,reproduction:null,review_enabled:true,review:null,delivery_units:[],delivery_policy:{analystId:"analyst",developerId:"developer",verifierId:"verifier",maxReworks:1,mode:"in_place",userId:"human"},accepted:{heading:{workspaceId:"workspace",issueId:"child",revision:1,contractVersion:"spec",codeVersion:"verified"}},progress:[],publication:{requestedBy:"human",units:[{issueId:"child",published:true,unit:{key:"heading",title:"Heading"}}]},kind:"requirement",input:"Original",context:null,plan:{rationale:"One unit",coverage:"Complete",units:[]}};
  vi.mocked(api.listAgents).mockResolvedValue([{id:"analyst",name:"Analyst"},{id:"developer",name:"Developer"},{id:"verifier",name:"Verifier"},{id:"reviewer",name:"Reviewer"}] as Agent[]);
  const user=userEvent.setup();renderPanel();await user.click(await screen.findByRole("button",{name:"Start final review"}));const dialog=screen.getByRole("dialog");await user.click(within(dialog).getByRole("combobox",{name:"Review agent"}));expect(screen.queryByRole("option",{name:"Developer"})).not.toBeInTheDocument();await user.click(await screen.findByRole("option",{name:"Reviewer"}));
  vi.mocked(api.configureRequirementReview).mockImplementationOnce(async()=>{state.chain="review";state.status="unstarted";state.sequence=0;state.agentId="reviewer";state.requirement!.review={generation:1,draft_id:"review",agent_id:"reviewer",report_hash:null,acknowledgement:null,result:null,history:[]};});await user.click(within(dialog).getByRole("button",{name:"Start final review"}));await waitFor(()=>expect(screen.queryByRole("dialog")).not.toBeInTheDocument());expect(api.configureRequirementReview).toHaveBeenLastCalledWith("issue",{expectedRevision:2,expectedSequence:7,reviewerId:"reviewer"});
@@ -182,6 +182,33 @@ it("requires a separate bug reproducer and keeps an unsuccessful freeze editable
 });
 
 it("shows pending reproduction facts without offering planning or publication",async()=>{
- state.chain="reproduction";state.requirement={reproduction:{agent_id:"repro",draft_id:"reproduction",status:"waiting_for_answers",observation:{status:"not_reproduced",expectedBehavior:"Continue activates",actualBehavior:"Continue works",environment:"Local",stability:"Once",impactScope:"Reader"},result:null},review_enabled:true,review:null,delivery_units:[],delivery_policy:null,accepted:{},progress:[],publication:null,kind:"bug",input:"Reported mismatch",context:null,plan:null};
+ state.chain="reproduction";state.requirement={feedback:null,reproduction:{agent_id:"repro",draft_id:"reproduction",status:"waiting_for_answers",observation:{status:"not_reproduced",expectedBehavior:"Continue activates",actualBehavior:"Continue works",environment:"Local",stability:"Once",impactScope:"Reader"},result:null},review_enabled:true,review:null,delivery_units:[],delivery_policy:null,accepted:{},progress:[],publication:null,kind:"bug",input:"Reported mismatch",context:null,plan:null};
  renderPanel();await screen.findByText("Not reproduced under the recorded conditions. Delivery planning remains blocked.");await screen.findByText("Which entry should be verified?");expect(screen.queryByRole("button",{name:"Publish units"})).not.toBeInTheDocument();expect(screen.queryByRole("button",{name:"Start run"})).not.toBeInTheDocument();
+});
+
+function completedFeedbackRequirement() {
+ state.chain="review";state.status="completed";state.questions=[];state.feedbackAllowed=true;
+ state.requirement={feedback:{enabled:true,active:false,unresolved_count:0,expected_batch_number:0,batches:[]},reproduction:null,review_enabled:true,review:{generation:1,draft_id:"review",agent_id:"reviewer",report_hash:"a".repeat(64),acknowledgement:null,result:{verdict:"report_ready",report:"# Prior closure report",gaps:[],units:[]},history:[]},delivery_units:[],delivery_policy:{analystId:"analyst",developerId:"developer",verifierId:"verifier",maxReworks:1,mode:"in_place",userId:"human"},accepted:{},progress:[],publication:{requestedBy:"human",units:[{issueId:"child",published:true,unit:{key:"heading",title:"Heading"}}]},kind:"requirement",input:"Original scope",context:null,plan:null};
+}
+
+it("captures selected native comments on a closed requirement with separate roles and a retryable request",async()=>{
+ completedFeedbackRequirement();
+ vi.mocked(api.listAgents).mockResolvedValue([{id:"developer",name:"Developer"},{id:"triager",name:"Triager"},{id:"feedback-verifier",name:"Feedback verifier"}] as Agent[]);
+ vi.mocked(api.listComments).mockResolvedValue([{id:"comment",issue_id:"issue",author_type:"member",author_id:"human",type:"comment",content:"Explain the Continue control",parent_id:null,reactions:[],deleted_at:null,attachments:[],created_at:"2026-11-14T00:00:00Z",updated_at:"2026-11-14T00:00:00Z",resolved_at:null,resolved_by_type:null,resolved_by_id:null}]);
+ const user=userEvent.setup();renderWithI18n(<QueryClientProvider client={client}><EngineeringPanel issue={issue} closed /></QueryClientProvider>,{locale:"en"});
+ await user.click(await screen.findByRole("button",{name:"Process feedback"}));const dialog=screen.getByRole("dialog");
+ expect(within(dialog).getByRole("button",{name:"Process feedback"})).toBeDisabled();
+ await user.click(within(dialog).getByRole("combobox",{name:"Triage agent"}));expect(screen.queryByRole("option",{name:"Developer"})).not.toBeInTheDocument();await user.click(await screen.findByRole("option",{name:"Triager"}));
+ await user.click(within(dialog).getByRole("combobox",{name:"Feedback verification agent"}));expect(screen.queryByRole("option",{name:"Triager"})).not.toBeInTheDocument();await user.click(await screen.findByRole("option",{name:"Feedback verifier"}));
+ await user.click(await within(dialog).findByText("Explain the Continue control"));
+ vi.mocked(api.beginEngineeringFeedback).mockRejectedValueOnce(new Error("Capture interrupted; retry"));await user.click(within(dialog).getByRole("button",{name:"Process feedback"}));await within(dialog).findByText("Capture interrupted; retry");expect(within(dialog).getByRole("checkbox")).toBeChecked();
+ const first=vi.mocked(api.beginEngineeringFeedback).mock.calls[0]![1];
+ vi.mocked(api.beginEngineeringFeedback).mockResolvedValueOnce();await user.click(within(dialog).getByRole("button",{name:"Process feedback"}));await waitFor(()=>expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+ expect(first).toEqual({requestId:expect.any(String),expectedRevision:2,expectedSequence:7,expectedBatchNumber:0,agentId:"triager",verifierId:"feedback-verifier",commentIds:["comment"]});expect(api.beginEngineeringFeedback).toHaveBeenLastCalledWith("issue",first);
+});
+
+it("keeps cancelled unresolved feedback visible and removes the current report closing action",async()=>{
+ completedFeedbackRequirement();state.requirement!.feedback={enabled:true,active:false,unresolved_count:1,expected_batch_number:1,batches:[{id:"batch",number:1,version:3,status:"cancelled",agent_id:"triager",summary:"New reader scope",comments:[],groups:[{id:"group",key:"addition",workType:"scope_addition",status:"waiting_for_plan",title:"Additional reader action",reason:"New scope",response:"",commentIds:["comment"],affectedDeliveryUnits:[],acceptance:["Separate outcome verified"]}]}]};
+ const user=userEvent.setup();renderPanel();await screen.findByText("Feedback has unfinished work. The requirement cannot close.");await screen.findByText("Additional reader action");expect(screen.queryByRole("button",{name:"I have read it; close requirement"})).not.toBeInTheDocument();
+ await user.click(screen.getByText("Previous report",{exact:true}));expect(screen.getByRole("heading",{name:"Prior closure report"})).toBeVisible();expect(screen.queryByRole("button",{name:"Cancel feedback processing"})).not.toBeInTheDocument();
 });

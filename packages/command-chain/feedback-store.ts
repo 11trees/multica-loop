@@ -10,10 +10,11 @@ const text=z.string().trim().min(1),seq=z.number().int().nonnegative();
 const {batchId:_batchId,previousFeedback:_previousFeedback,...captureShape}=feedbackTriageContractSchema.shape;
 const captureContractSchema=z.strictObject(captureShape);
 const definitionsSchema=z.strictObject({triage:text,verify:text});
+const policySchema=z.strictObject({agentId:z.uuid(),verifierId:z.uuid(),repositoryPath:text,mode:z.enum(["in_place","worktree"]),reviewDraftId:text,reportHash:text,restoreDone:z.boolean()});
 const triageResult=feedbackTriageConclusionSchema,verifyResult=feedbackVerifyConclusionSchema;
 const verificationSchema=z.strictObject({draftId:text,contract:feedbackVerifyContractSchema,result:verifyResult.optional()});
 const groupSchema=z.strictObject({id:text,descriptor:feedbackGroupSchema,status:z.enum(["waiting_for_repro","waiting_for_plan","waiting_for_report","verifying","completed","reopened","cancelled"]),work:feedbackWorkEvidenceSchema.optional(),verifications:z.record(z.string(),verificationSchema)});
-const batchSchema=z.strictObject({workspaceId:text,issueId:text,id:text,number:z.number().int().positive(),version:seq,requestId:text,requestHash:text,createdBy:text,definitions:definitionsSchema,contract:feedbackTriageContractSchema,triageDraftId:text,triage:triageResult.optional(),groups:z.array(groupSchema),status:z.enum(["triaging","executing","verifying","completed","cancelled"]),cancellation:z.strictObject({userId:text,reason:text,at:z.iso.datetime()}).optional()});
+const batchSchema=z.strictObject({workspaceId:text,issueId:text,id:text,number:z.number().int().positive(),version:seq,requestId:text,requestHash:text,createdBy:text,policy:policySchema.optional(),definitions:definitionsSchema,contract:feedbackTriageContractSchema,triageDraftId:text,triage:triageResult.optional(),groups:z.array(groupSchema),status:z.enum(["triaging","executing","verifying","completed","cancelled"]),nativeRestored:z.boolean().default(false),cancellation:z.strictObject({userId:text,reason:text,at:z.iso.datetime()}).optional()});
 export type FeedbackBatch=z.infer<typeof batchSchema>;
 const commentStateSchema=z.strictObject({batchId:text,fingerprint:text,status:z.enum(["submitted","in_progress","resolved","reopened"]),verification:verifyResult.optional()});
 const hash=(value:unknown)=>createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -37,8 +38,8 @@ export class FeedbackStore {
   if(result.changes !== 1)throw new DraftConflictError("Feedback batch changed; reload its current version");
  }
  private atomic<T>(work:()=>T){this.db.exec("BEGIN IMMEDIATE");try{const result=work();this.db.exec("COMMIT");return result;}catch(error){this.db.exec("ROLLBACK");throw error;}}
- capture(input:{requestId:string;userId:string;expectedBatchNumber:number;definitions:z.infer<typeof definitionsSchema>;contract:Omit<FeedbackTriageContract,"batchId"|"previousFeedback">}){
-  const request=z.strictObject({requestId:text,userId:text,expectedBatchNumber:seq,definitions:definitionsSchema,contract:captureContractSchema}).parse(input),{workspaceId,issueId}=request.contract.binding;
+ capture(input:{requestId:string;userId:string;expectedBatchNumber:number;policy?:z.infer<typeof policySchema>;definitions:z.infer<typeof definitionsSchema>;contract:Omit<FeedbackTriageContract,"batchId"|"previousFeedback">}){
+  const request=z.strictObject({requestId:text,userId:text,expectedBatchNumber:seq,policy:policySchema.optional(),definitions:definitionsSchema,contract:captureContractSchema}).parse(input),{workspaceId,issueId}=request.contract.binding;
   parseCommandChainDefinition(request.definitions.triage,feedbackTriageProfile);parseCommandChainDefinition(request.definitions.verify,feedbackVerifyProfile);
   const id=stableId(`feedback:${workspaceId}:${issueId}:${request.requestId}`),requestHash=hash(request);
   return this.atomic(()=>{
@@ -48,7 +49,7 @@ export class FeedbackStore {
    const previousFeedback:FeedbackTriageContract["previousFeedback"]=[];
    for(const comment of request.contract.comments){const previous=this.comment({workspaceId,issueId},comment.id);if(previous?.status === "resolved" && previous.fingerprint === hash(comment))throw new Error("The same comment version is already resolved");if(previous?.status === "reopened" && previous.verification)previousFeedback.push({ref:`FEEDBACK_VERIFICATION:${previous.verification.draftId}`,version:String(previous.verification.sequence),content:JSON.stringify(previous.verification)});}
    const value={...request.contract,batchId:id,previousFeedback},binding={...value.binding,contractVersion:hash(value)},contract=feedbackTriageContractSchema.parse({...value,binding});
-   const batch=batchSchema.parse({workspaceId,issueId,id,number:request.expectedBatchNumber+1,version:0,requestId:request.requestId,requestHash,createdBy:request.userId,definitions:request.definitions,contract,triageDraftId:stableId(`feedback-triage:${id}`),groups:[],status:"triaging"});
+   const batch=batchSchema.parse({workspaceId,issueId,id,number:request.expectedBatchNumber+1,version:0,requestId:request.requestId,requestHash,createdBy:request.userId,policy:request.policy,definitions:request.definitions,contract,triageDraftId:stableId(`feedback-triage:${id}`),groups:[],status:"triaging"});
    this.db.prepare("INSERT INTO engineering_feedback_batch(workspace_id,issue_id,batch_id,number,version,payload) VALUES(?,?,?,?,?,?)").run(workspaceId,issueId,id,batch.number,0,JSON.stringify(batch));
    for(const comment of contract.comments)this.saveComment(batch,comment.id,{batchId:id,fingerprint:hash(comment),status:"in_progress"});return batch;
   });
@@ -101,6 +102,11 @@ export class FeedbackStore {
   });
  }
  unresolved(workspaceId:string,issueId:string){return this.db.prepare("SELECT comment_id,payload FROM engineering_feedback_comment WHERE workspace_id=? AND issue_id=?").all(workspaceId,issueId).flatMap(row=>{const state=commentStateSchema.parse(JSON.parse(String(row.payload)));return state.status === "resolved" ? [] : [{commentId:String(row.comment_id),...state}];});}
+ acknowledgeNativeRestore(workspaceId:string,issueId:string,batchId:string,expectedVersion:number){return this.atomic(()=>{
+  const current=this.require(workspaceId,issueId,batchId);if(current.nativeRestored)return current;
+  if(current.status !== "completed" || !current.policy?.restoreDone || current.version !== expectedVersion || this.unresolved(workspaceId,issueId).length || current.groups.some(group=>!["reply","historical_correction","learning_only"].includes(group.descriptor.workType)))throw new DraftConflictError("Feedback native restoration no longer matches its completed snapshot");
+  current.nativeRestored=true;this.save(current,expectedVersion);return current;
+ });}
  cancel(workspaceId:string,issueId:string,batchId:string,expectedVersion:number,userId:string,reason:string){
   const cancellation={userId:text.parse(userId),reason:text.parse(reason),at:new Date().toISOString()};return this.atomic(()=>{
    const current=this.require(workspaceId,issueId,batchId);if(current.status === "cancelled")return current;if(current.status === "completed" || current.version !== expectedVersion)throw new DraftConflictError("Only the current active feedback batch can be cancelled");

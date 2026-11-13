@@ -59,6 +59,12 @@ func (h *Handler) GetEngineeringOverview(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	response["has_active_run"], _ = json.Marshal(active)
+	category, err := issuestatus.CategoryWithError(r.Context(), h.Queries, issue.WorkspaceID, issue.Status)
+	if err != nil {
+		engineeringControlError(w, err)
+		return
+	}
+	response["feedback_allowed"], _ = json.Marshal(!active && !issue.TriageState.Valid && category != issuestatus.CategoryClosed)
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, response)
 }
