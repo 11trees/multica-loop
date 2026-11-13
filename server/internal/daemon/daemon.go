@@ -8138,6 +8138,9 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// LocalWorkDir into execenv. handleTask already validated + locked the
 	// path for worker tasks; leader tasks intentionally skip the assignment.
 	localAssignment, _ := localDirectoryAssignmentForTask(task, d.cfg.DaemonID)
+	if task.EngineeringChain != "" && (localAssignment == nil || task.EngineeringRepository == "" || task.EngineeringCommit == "") {
+		return TaskResult{}, asEnvironmentSetupFailure(errors.New("engineering requires a mapped local_directory resource and frozen repository commit"))
+	}
 	// Reuse intentionally skipped for local_directory tasks: the prior
 	// WorkDir is the user's own path (always present) but the reuse path
 	// loses the envRoot association the GC loop needs, and re-running
@@ -8423,7 +8426,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 			Task:                  taskCtx,
 		}
 		if localAssignment.UsesWorktree() {
-			prepParams.LocalWorktree = &execenv.LocalWorktreeParams{LocalPath: localAssignment.AbsPath}
+			prepParams.LocalWorktree = &execenv.LocalWorktreeParams{LocalPath: localAssignment.AbsPath, PinnedCommit: task.EngineeringCommit}
 			// Take the per-path mutex for the snapshot alone, then hand it
 			// straight back — long enough to read a consistent tree, short
 			// enough that worktree tasks still overlap for the run itself.
@@ -8725,6 +8728,9 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	runtimeBrief, err := execenv.InjectRuntimeConfig(env.WorkDir, provider, taskCtx)
 	runtimeBriefWritten := err == nil
 	if err != nil {
+		if task.EngineeringChain != "" {
+			return TaskResult{}, asEnvironmentSetupFailure(err)
+		}
 		d.logger.Warn("execenv: inject runtime config failed (non-fatal)", "error", err)
 	}
 	// An exempt turn runs in the user's directory without having queued for it,
@@ -9154,6 +9160,9 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	}
 	stopUsageFlush := d.startUsageFlush(ctx, task.ID, &liveUsage, taskLog)
 	defer stopUsageFlush()
+	if err := d.bindEngineeringEnvironment(ctx, task, env, provider); err != nil {
+		return TaskResult{}, asEnvironmentSetupFailure(err)
+	}
 	result, tools, err := d.executeAndDrain(ctx, backend, prompt, execOpts, taskLog, task.ID, env.CodexHome, &msgSeq)
 	if err != nil {
 		return TaskResult{}, err
@@ -9208,6 +9217,9 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 			}
 		}
 		freshPrompt := BuildPrompt(task, provider, promptOptions...)
+		if err := d.bindEngineeringEnvironment(ctx, task, env, provider); err != nil {
+			return TaskResult{}, asEnvironmentSetupFailure(err)
+		}
 
 		receiptInput.Prompt = freshPrompt
 		receiptInput.RuntimeBrief = freshBrief

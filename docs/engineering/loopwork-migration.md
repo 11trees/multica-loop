@@ -107,7 +107,8 @@ Development gates now cover frozen scope, implementation claims, recovery
 resolutions, code review, current captured command checks, and clean commits.
 The same issue can hand the actual development commit and unchanged frozen
 oracles to a different verification agent. Structured receipt capture currently
-supports Codex; other providers and workspace mapping remain pending. See
+supports Codex. Native local-directory and pinned-worktree bindings are now
+connected; other providers and remote clone mapping remain pending. See
 [development handoff](development-handoff.md) for the exact provenance and limits.
 Other engineering builtin implementations are pending. The
 engine rejects completion of a builtin without its host handler. Generic
@@ -115,7 +116,9 @@ runtime tests use explicit stubs; verification tests use its migrated gates.
 Neither is evidence of a delivered real unit. The opt-in local application now
 persists contracts and drafts in the managed environment's SQLite database.
 Human configuration freezes sources and the actual clean Git HEAD; the service
-checks that repository again on every agent operation. Active drafts must be
+checks the bound execution repository on every agent operation. The daemon
+projects generated context by digest and pins worktrees to the selected commit;
+see [repository binding](repository-binding.md). Active drafts must be
 explicitly abandoned before their contract is replaced. Additional observation capture,
 remote-daemon repository mapping, issue-deletion retention, and authoritative
 result publication remain pending.
@@ -140,7 +143,7 @@ The first synchronous [issue completion boundary](issue-completion.md) now check
 ordinary/description/batch updates, PR automation, and workflow remaps against
 the latest passed verification and current clean commit. It preserves the
 existing non-atomic batch semantics and does not supply a cross-database handoff
-transaction. Final review, question UI, automatic continuation, workspace mapping,
+transaction. Final review, question UI, automatic continuation, remote repository mapping,
 remaining chains, and real delivery acceptance are still pending. These local
 integration steps do not complete milestone 2 or the migration.
 

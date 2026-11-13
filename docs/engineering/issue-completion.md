@@ -3,9 +3,15 @@
 With `MULTICA_ENGINEERING_ENABLED=true`, an issue with a registered engineering
 contract can enter a built-in or custom `done` category only after the latest
 revision's independent verification has completed with a passed verdict. A
-development-enabled contract also requires its committed handoff. The registered
-repository must still be clean and at the exact verified commit. A newer pending
+development-enabled contract also requires its committed handoff. The current
+delivery must still name the verified commit, and an active verification
+checkout must remain clean after its recorded runtime projection. A newer pending
 or abandoned revision cannot reuse an older pass.
+
+The [runtime repository binding](repository-binding.md) distinguishes an active
+execution checkout from the registered repository. In-place checks account for
+exact generated runtime files. Worktree deliveries use the retained delivery
+branch after native reclamation and reject a changed delivery ref.
 
 This applies to human and agent writes alike. The Go host projects workspace and
 issue identity into a private worker `completion` call; the agent cannot submit
@@ -44,7 +50,7 @@ item after previous items have committed. No global concurrent-edit or
 cross-database atomicity guarantee is claimed.
 
 This first boundary enforces the migrated development/verification protocol.
-Requirement planning, analysis, final review, automatic scheduling, worktree
+Requirement planning, analysis, final review, automatic scheduling, remote clone
 mapping, and real-provider acceptance still need migration. A process exit or a
 merged PR alone cannot replace the current independent verification verdict.
 

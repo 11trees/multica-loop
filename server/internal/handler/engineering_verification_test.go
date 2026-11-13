@@ -39,10 +39,13 @@ func TestEngineeringClaimInstructions(t *testing.T) {
 		response   json.RawMessage
 		err        error
 		configured bool
+		invalid    bool
 	}{
-		{"configured", json.RawMessage(`{"configured":true,"chain":"development"}`), nil, true},
-		{"unregistered", json.RawMessage(`{"configured":false}`), nil, false},
-		{"unavailable", nil, errors.New("unavailable"), false},
+		{"configured", json.RawMessage(`{"configured":true,"chain":"development","repository_path":"/fixture/repository","code_version":"0123456789abcdef0123456789abcdef01234567"}`), nil, true, false},
+		{"unregistered", json.RawMessage(`{"configured":false}`), nil, false, false},
+		{"unavailable", nil, errors.New("unavailable"), false, false},
+		{"malformed", json.RawMessage(`{}`), nil, false, true},
+		{"missing snapshot", json.RawMessage(`{"configured":true,"chain":"development"}`), nil, false, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
@@ -61,7 +64,7 @@ func TestEngineeringClaimInstructions(t *testing.T) {
 			h := *testHandler
 			h.EngineeringWorker = &engineeringRecorder{response: tc.response, err: tc.err}
 			response, _, _, _, _, failure := h.buildClaimedTaskResponse(newRequest(http.MethodPost, "/claim", nil), &task, runtime, runtimeID, testWorkspaceID)
-			if tc.err != nil {
+			if tc.err != nil || tc.invalid {
 				if failure == nil {
 					t.Fatal("unavailable role lookup did not stop claim")
 				}
@@ -82,6 +85,9 @@ func TestEngineeringClaimInstructions(t *testing.T) {
 			}
 			if tc.configured && response.EngineeringChain != "development" {
 				t.Fatal("development capture capability missing from claim")
+			}
+			if tc.configured && (response.EngineeringRepository != "/fixture/repository" || response.EngineeringCommit != "0123456789abcdef0123456789abcdef01234567") {
+				t.Fatal("claim omitted the frozen execution snapshot")
 			}
 		})
 	}
