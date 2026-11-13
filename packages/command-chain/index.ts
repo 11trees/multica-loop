@@ -19,3 +19,5 @@ export type {
   DraftStore,
   MutationContext,
 } from "./runtime";
+export { createVerificationHandlers, compileVerificationConclusion } from "./verification";
+export type { VerificationContract } from "./verification";
