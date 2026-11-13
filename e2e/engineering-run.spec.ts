@@ -28,7 +28,7 @@ test("live Multica run identity binds verification, human checkpoints, and recla
       builtins: Object.fromEntries(["verification-inputs", "verification-plan", "verification-execution", "verification-finalize"].map(id => [id, { acceptsArtifacts: true }])),
       metadataKeys: [], repositoryAdapters: [],
     };
-    const chain = parseCommandChainDefinition(await readFile(new URL("../packages/command-chain/fixtures/verification.yaml", import.meta.url), "utf8"), profile);
+    const chain = parseCommandChainDefinition(await readFile(new URL("../packages/command-chain/definitions/verification.yaml", import.meta.url), "utf8"), profile);
     const contract: VerificationContract = {
       binding: { workspaceId: run.workspaceId, issueId: run.issueId, revision: 1, contractVersion: "fixture-spec-v1", codeVersion: "fixture-code-v1" },
       sources: [{ key: "ac1", kind: "acceptance", description: "Fixture issue persists", oracle: "Fixture title is preserved", sourceRef: "FIXTURE:ac1:r1" }],

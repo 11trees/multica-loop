@@ -136,7 +136,7 @@ pnpm --filter @multica/command-chain typecheck
 pnpm --filter @multica/command-chain lint
 ```
 
-`fixtures/development.yaml` and `fixtures/verification.yaml` are unchanged
+`fixtures/development.yaml` and `definitions/verification.yaml` are unchanged
 copies of LoopWork's `command-chains/default/dev-agent.yaml` and
 `command-chains/default/test-agent.yaml` from commit
 `17982f2b93100b42d65ed650869c9cc97ff92b5a`. Tests exercise both real definitions
@@ -147,5 +147,9 @@ connections, and invalidate downstream output. Generic runtime tests use
 deliberate stub handlers. `verification.test.ts` exercises the actual migrated
 verification handlers, including coverage, attribution, stale contract/code
 bindings, blocked observations, and passed/failed conclusion compilation.
-These fixtures are migration evidence, not live configuration. No agent
-accounts or user databases are accessed by these tests.
+The development fixture is import evidence only. The unchanged verification
+definition is also embedded in the executable application worker. Package tests
+use temporary repositories/databases and do not access agent accounts or user
+databases. See [the engineering service](../../docs/engineering/engineering-service.md)
+for its authenticated host API, native CLI, durable contracts, actual Git checks,
+and integration evidence.

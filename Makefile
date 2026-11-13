@@ -182,6 +182,7 @@ env-exec: ## Run a command with this environment's variables (ARGS="-- pnpm dev:
 # The commit ldflag is what makes /health's identity useful: without it every
 # environment reports "unknown" and cannot prove which revision it is serving.
 api-dev: ## Run only the Go backend for the current env file
+	@if [ "$(MULTICA_ENGINEERING_ENABLED)" = true ]; then pnpm --filter @multica/command-chain build; fi
 	cd server && go run -ldflags "-X main.commit=$(COMMIT)" ./cmd/server
 
 web-dev: ## Run only the Next.js dev server for the current env file

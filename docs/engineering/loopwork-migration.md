@@ -100,16 +100,19 @@ every acceptance. Blocked observations remain at the execution checkpoint.
 The kernel can suspend a question batch, persist authenticated human answers,
 and resume the same phase on a new run attempt after all answers arrive. It
 preserves questions superseded by rewind and does not convert answers into
-passing evidence. Human authentication, question UI, and automatic continuation
-in Multica are not connected yet.
+passing evidence. Human authentication and answer/abandon APIs are connected;
+question UI and automatic continuation remain pending.
 
 Development and other engineering builtin implementations are pending. The
 engine rejects completion of a builtin without its host handler. Generic
 runtime tests use explicit stubs; verification tests use its migrated gates.
-Neither is evidence of a delivered real unit. The local adapter is not wired
-into application storage, and production storage, evidence capture, trusted version
-lookup, and authoritative result publication remain pending. Version comparison
-against a supplied contract is not proof of the current worktree commit.
+Neither is evidence of a delivered real unit. The opt-in local application now
+persists contracts and drafts in the managed environment's SQLite database.
+Human configuration freezes sources and the actual clean Git HEAD; the service
+checks that repository again on every agent operation. Active drafts must be
+explicitly abandoned before their contract is replaced. Evidence capture,
+remote-daemon repository mapping, issue-deletion retention, and authoritative
+result publication remain pending.
 
 The fork also has an opt-in local single-user entry, shared Web/Desktop
 automatic login, and managed development profile support. A task-token-only
@@ -120,10 +123,16 @@ fixture test covers pause, storage reopen, host-provided human answer, reclaimed
 credentials, and continuation. See [run binding](run-binding.md) for its exact
 trust and verification boundary.
 
-Plugin deployment/tool injection, authoritative contract/code lookup, the
-synchronous handoff boundary, human-facing continuation, and automatic execution
-of engineering chains inside Multica are still pending. Completing local access
-and the bridge alone does not complete milestone 2 or the migration.
+The native `multica engineering` CLI and Go host endpoints now execute the
+verification chain through a bundled Node worker. Claim assembly injects
+instructions only for the configured verifier role. A live native-CLI fixture
+test covers frozen Git identity, phase commands, human answers, reclaimed
+continuation, and refusal after repository edits. See
+[engineering service](engineering-service.md) for setup and limits.
+
+The synchronous handoff boundary, question UI, automatic continuation, remaining
+chains, and real delivery acceptance are still pending. These local integration
+steps do not complete milestone 2 or the migration.
 
 ## Cutover and rollback
 

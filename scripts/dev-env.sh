@@ -623,6 +623,10 @@ api_identity_matches() {
 
 start_api() {
   local launched_at health waited=0 expected_commit
+  if [ "${MULTICA_ENGINEERING_ENABLED:-}" = true ]; then
+    export MULTICA_ENGINEERING_WORKER="$REPO_ROOT/packages/command-chain/dist/worker.mjs"
+    export MULTICA_ENGINEERING_DATABASE="$STATE_DIR/engineering.sqlite"
+  fi
   expected_commit="$(checkout_commit)"
   if health="$(health_json)" && [ -n "$health" ] && component_pid api >/dev/null; then
     if api_identity_matches "$health" "$expected_commit"; then
@@ -1799,6 +1803,10 @@ cmd_exec() {
   export PORT="$BACKEND_PORT" FRONTEND_PORT DATABASE_URL POSTGRES_DB="$DB_NAME"
   export TMPDIR="$DEV_TMPDIR" TMP="$DEV_TMPDIR" TEMP="$DEV_TMPDIR"
   export MULTICA_DEV_PROFILE="$PROFILE"
+  if [ "${MULTICA_ENGINEERING_ENABLED:-}" = true ]; then
+    export MULTICA_ENGINEERING_WORKER="$REPO_ROOT/packages/command-chain/dist/worker.mjs"
+    export MULTICA_ENGINEERING_DATABASE="$STATE_DIR/engineering.sqlite"
+  fi
   # Read by scripts/desktop-cdp.mjs to find this environment's Desktop.
   export MULTICA_DEV_DESKTOP_RENDERER_URL="http://localhost:${DESKTOP_RENDERER_PORT}"
   if [ -n "${DESKTOP_CDP_PORT:-}" ]; then

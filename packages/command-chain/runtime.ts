@@ -46,7 +46,7 @@ export const draftSchema = z.strictObject({
   definition: commandChainDefinitionSchema,
   sequence,
   attemptId: text,
-  status: z.enum(["editing", "waiting_for_answers", "completed"]),
+  status: z.enum(["editing", "waiting_for_answers", "completed", "abandoned"]),
   phase: text.nullable(),
   inputs: z.record(text, text),
   artifacts: z.array(artifactItem),
@@ -96,7 +96,7 @@ export type BuiltinHandler = {
 };
 export type BuiltinHandlers = Readonly<Record<string, BuiltinHandler>>;
 
-const commandSchema = z.discriminatedUnion("type", [
+export const chainCommandSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("artifact.put"), ref: text, key: text.max(120).optional(), content: text }),
   z.strictObject({ type: z.literal("artifact.remove"), ref: text, key: text.max(120).optional() }),
   z.strictObject({ type: z.literal("metadata.set"), input: text, value: text }),
@@ -105,7 +105,7 @@ const commandSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("phase.complete"), confirmation: text.optional() }),
   z.strictObject({ type: z.literal("phase.rewind"), to: text, reason: text.max(4000) }),
 ]);
-export type ChainCommand = z.infer<typeof commandSchema>;
+export type ChainCommand = z.infer<typeof chainCommandSchema>;
 
 function itemKey(draft: ChainDraft, ref: string, key?: string): string {
   const block = artifactBlock(draft.definition, ref);
@@ -221,8 +221,18 @@ export class CommandChainEngine {
     return structuredClone(draft);
   }
 
+  async abandon(id: string, expectedSequence: number, reason: string, userId: string): Promise<ChainDraft> {
+    const draft = await this.read(id);
+    if (draft.sequence !== expectedSequence) throw new DraftConflictError("Draft changed; reload before abandoning");
+    if (draft.status === "completed" || draft.status === "abandoned") throw new Error("Draft is already terminal");
+    draft.status = "abandoned";
+    recordEvent(draft, "draft.abandon", text.max(4000).parse(reason), text.parse(userId));
+    await this.store.save(draft, expectedSequence);
+    return draft;
+  }
+
   async execute(id: string, context: MutationContext, input: ChainCommand): Promise<ChainDraft> {
-    const command = commandSchema.parse(input);
+    const command = chainCommandSchema.parse(input);
     const draft = await this.read(id);
     if (draft.sequence !== context.expectedSequence || draft.attemptId !== context.attemptId) {
       throw new DraftConflictError("Draft version or run attempt changed; reload the current checkpoint");

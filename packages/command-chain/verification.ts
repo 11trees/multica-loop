@@ -26,7 +26,7 @@ const resultSchema = z.object({
   actualBehavior: text.nullish(),
 });
 const reviewSchema = z.object({ summary: text, residualRisk: text.nullish() });
-const contractSchema = z.strictObject({
+export const verificationContractSchema = z.strictObject({
   binding: draftSchema.shape.binding,
   sources: z.array(sourceSchema.extend({ key: text.max(120) })).min(1),
 }).superRefine((value, ctx) => {
@@ -38,7 +38,7 @@ const contractSchema = z.strictObject({
   }
 });
 
-export type VerificationContract = z.infer<typeof contractSchema>;
+export type VerificationContract = z.infer<typeof verificationContractSchema>;
 
 function withRuntimeInputs(handler: BuiltinHandler): BuiltinHandler {
   return Object.assign(handler, { runtimeInputs: true });
@@ -120,7 +120,7 @@ function finalErrors(draft: Readonly<ChainDraft>, contract: VerificationContract
 
 /** Contract data must come from a trusted frozen host snapshot, never agent arguments. */
 export function createVerificationHandlers(input: VerificationContract): BuiltinHandlers {
-  const contract = contractSchema.parse(input);
+  const contract = verificationContractSchema.parse(input);
   return {
     "verification-inputs": draft => {
       const errors = bindingErrors(draft, contract);
@@ -158,7 +158,7 @@ export function createVerificationHandlers(input: VerificationContract): Builtin
 
 /** Compiles a stored completed draft; this is not a signed host handoff receipt. */
 export function compileVerificationConclusion(draft: Readonly<ChainDraft>, input: VerificationContract) {
-  const contract = contractSchema.parse(input);
+  const contract = verificationContractSchema.parse(input);
   const errors = finalErrors(draft, contract);
   const order = Object.keys(draft.definition.phases);
   if (draft.status !== "completed" || draft.phase !== null || JSON.stringify(draft.completedPhases) !== JSON.stringify(order)) {

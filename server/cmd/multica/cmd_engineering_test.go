@@ -1,0 +1,46 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+)
+
+func TestEngineeringCommandPreservesJSONEscapes(t *testing.T) {
+	t.Chdir(t.TempDir())
+	clearDaemonTaskEnv(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/engineering/verification/commands" {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		var body struct {
+			Command struct {
+				Content string `json:"content"`
+			} `json:"command"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		if body.Command.Content != "summary: 审查\nevidence: fixture" {
+			t.Errorf("content was altered: %q", body.Command.Content)
+		}
+		fmt.Fprint(w, `{"draft":{"sequence":2}}`)
+	}))
+	defer server.Close()
+	setCLITestServerEnv(t, server.URL)
+	cmd, _, err := engineeringCmd.Find([]string{"command"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd.SetContext(context.Background())
+	if err := cmd.Flags().Set("payload", `{"expected_sequence":1,"command":{"type":"artifact.put","ref":"verification.evidence-review","content":"summary: 审查\nevidence: fixture"}}`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cmd.Flags().Set("payload", "") })
+	if _, err := captureStdout(t, func() error { return cmd.RunE(cmd, nil) }); err != nil {
+		t.Fatal(err)
+	}
+}
