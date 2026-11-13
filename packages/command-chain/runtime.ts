@@ -21,6 +21,8 @@ const event = z.strictObject({
   userId: text.optional(),
 });
 const writeRule = z.strictObject({ ref: text, mode: z.enum(["append-only", "sealed"]), phase: text });
+export const acceptanceDraftSchema = z.strictObject({key:text.max(120).regex(/^[a-z0-9][a-z0-9._:-]*$/).refine(key=>!key.startsWith("unit:"),"unit: is reserved for delivery acceptances"),statement:text.max(4000),oracle:text.max(4000),source:text.max(4000)});
+
 const runtimeInputFields = {
   key: text.max(120), title: text.max(200), question: text.max(4000),
   why: text.max(1000), recommendation: text.max(2000),
@@ -58,6 +60,7 @@ export const draftSchema = z.strictObject({
   completedPhases: z.array(text),
   events: z.array(event),
   decisions: z.array(decisionStateSchema).max(200).optional(),
+  acceptances: z.array(acceptanceDraftSchema).max(200).optional(),
   development: z.strictObject({
     reviewFingerprint: text.optional(),
     claims: z.array(z.strictObject({ key: text, evidence: text, attemptId: text })),
@@ -116,6 +119,8 @@ export const chainCommandSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("runtime-input.remove"), key: text.max(120) }),
   z.strictObject({ type: z.literal("phase.complete"), confirmation: text.optional() }),
   z.strictObject({ type: z.literal("phase.rewind"), to: text, reason: text.max(4000) }),
+  z.strictObject({ type: z.literal("acceptance.put"), acceptance:acceptanceDraftSchema }),
+  z.strictObject({ type: z.literal("acceptance.remove"), key:text }),
   z.strictObject({ type: z.literal("acceptance.assess"), key: text, evidence: text }),
   z.strictObject({ type: z.literal("check.record"), key: text, receipt_id: text, summary: text }),
   z.strictObject({ type: z.literal("check.remove"), key: text }),

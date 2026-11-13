@@ -3,6 +3,8 @@
 The contract's `auto_continue` policy authorizes handoff and answered-question
 transitions:
 
+- A completed [requirement context](requirements.md) freezes acceptance identities
+  and planning sources, then queues the configured planner.
 - A completed [analysis chain](analysis.md) freezes its delivery contract, then
   the coordinator queues the configured developer (or verifier when development
   was not configured).
@@ -71,8 +73,7 @@ and proves the same draft/phase/answer survives. Worktree and explicit manual
 continuation retain separate coverage. The fixture claims simulate runtime
 metadata and never execute an installed provider or call a model.
 
-The [bounded implementation rework](rework.md) path is connected. Requirement
-planning, system arbitration, and final review,
+The [bounded implementation rework](rework.md) path is connected. Native child publication/unit orchestration, system arbitration, and final review,
 remaining command chains, other provider receipts, remote repository mapping,
 and real delivered-business acceptance remain pending. A task process completing
 is still insufficient for the synchronous issue completion gate.

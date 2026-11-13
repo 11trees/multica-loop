@@ -70,3 +70,15 @@ it("validates structured decision snapshots and sends the selected option withou
   await new ApiClient("https://api.example.test").answerEngineering("issue",{expectedSequence:7,requestId:"q1",answer:"",selectedOption:"bottom"});
   expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]![1]?.body))).toEqual({expected_sequence:7,request_id:"q1",answer:"",selected_option:"bottom"});
 });
+
+
+it("validates requirement context/plan projections and fails closed when their frozen input is missing",async()=>{
+  respond({...body,chain:"context",requirement:{kind:"requirement",input:"Original request",context:null,plan:null}});
+  expect(await new ApiClient("https://api.example.test").getEngineeringOverview("issue")).toMatchObject({requirement:{input:"Original request"}});
+  respond({...body,chain:"planning"});await expect(new ApiClient("https://api.example.test").getEngineeringOverview("issue")).rejects.toThrow(/Invalid engineering overview/);
+});
+it("sends a distinct requirement configuration without inventing delivery sources or verifier identity",async()=>{
+  respond({contract:{binding:{issueId:"issue",revision:1}},draft:null});
+  await new ApiClient("https://api.example.test").configureRequirementEngineering("issue",{expectedRevision:0,contextAgentId:"backlog",plannerAgentId:"planner",repositoryPath:"/fixture",input:"Original request",kind:"bug",decisionMode:"balanced",autoContinue:true});
+  expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]![1]?.body))).toEqual({kind:"requirement",expected_revision:0,agent_id:"backlog",planner_agent_id:"planner",repository_path:"/fixture",input:"Original request",item_kind:"bug",decision_mode:"balanced",auto_continue:true});
+});

@@ -118,6 +118,10 @@ connected; other providers and remote clone mapping remain pending. See
 structured decisions and authenticated human option choices, answer review, and
 frozen-spec handoff to development. The original acceptances remain unchanged;
 analysis-derived guardrail/focus sources are appended with draft provenance.
+[Requirement context and planning](requirements.md) now publish stable, versioned
+acceptance entities and compile source-covered ordered units on the requirement
+issue. They use native context/planner runs and authenticated human decisions.
+Child-issue publication, unit orchestration and final review remain pending.
 Other engineering builtin implementations are pending. The
 engine rejects completion of a builtin without its host handler. Generic
 runtime tests use explicit stubs; verification tests use its migrated gates.

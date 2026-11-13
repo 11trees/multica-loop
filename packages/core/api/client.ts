@@ -1,6 +1,6 @@
 import type { ZodType } from "zod";
 import { EngineeringOverviewSchema, EngineeringWriteSchema } from "./schemas";
-import type { EngineeringCheckpoint, EngineeringConfiguration, EngineeringOverview } from "../issues/engineering-schema";
+import type { EngineeringCheckpoint, RequirementConfiguration, EngineeringConfiguration, EngineeringOverview } from "../issues/engineering-schema";
 import { AgentRuntimeSchema, EMPTY_RUNTIME } from "../runtimes/schema";
 import type { IssueWakeup, IssueWakeupInput, IssueWakeupSummaryRow, PausedWakeup, SystemWakeup, WakeupRun, WorkspaceSystemWakeup } from "../types/issue-wakeup";
 import type { WorkspaceWakeupPage, WorkspaceWakeupFilters } from "../types/issue-wakeup";
@@ -3024,6 +3024,10 @@ export class ApiClient {
   async configureEngineering(issueId: string, input: EngineeringConfiguration): Promise<void> {
     await this.writeEngineering(issueId, "", { expected_revision: input.expectedRevision, agent_id: input.verifierId,
       max_reworks: input.maxReworks ?? 0, auto_continue: input.autoContinue ?? false, analyst_agent_id:input.analystId,unit:input.unit,decision_mode:input.decisionMode,dependency_issues:input.dependencyIssues?.map(item=>({key:item.key,issue_id:item.issueId})),developer_agent_id: input.developerId, repository_path: input.repositoryPath, implementation_guidance: input.implementationGuidance, sources: input.sources });
+  }
+
+  async configureRequirementEngineering(issueId:string,input:RequirementConfiguration):Promise<void>{
+    await this.writeEngineering(issueId,"",{kind:"requirement",expected_revision:input.expectedRevision,agent_id:input.contextAgentId,planner_agent_id:input.plannerAgentId,repository_path:input.repositoryPath,input:input.input,item_kind:input.kind,decision_mode:input.decisionMode,auto_continue:input.autoContinue});
   }
 
   async answerEngineering(issueId: string, input: { expectedSequence: number; requestId: string; answer: string; selectedOption?:string }): Promise<void> {

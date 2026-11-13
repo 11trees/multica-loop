@@ -582,6 +582,11 @@ export class TestApiClient {
       const { DatabaseSync } = await import("node:sqlite");
       const database = new DatabaseSync(process.env.MULTICA_ENGINEERING_DATABASE);
       try {
+        if(database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='requirement_contract'").get())for(const issueId of this.createdIssueIds){
+          const rows=database.prepare("SELECT payload FROM requirement_contract WHERE workspace_id=? AND issue_id=?").all(this.workspaceId,issueId);
+          for(const row of rows){const record=JSON.parse(String(row.payload));for(const id of [record.contextDraftId,record.planDraftId])database.prepare("DELETE FROM chain_drafts WHERE id=?").run(id);}
+          for(const table of ["requirement_execution","requirement_acceptance","requirement_contract"])database.prepare(`DELETE FROM ${table} WHERE workspace_id=? AND issue_id=?`).run(this.workspaceId,issueId);
+        }
         if (database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'engineering_contract'").get()) for (const issueId of this.createdIssueIds) {
           const rows = database.prepare("SELECT payload FROM engineering_contract WHERE workspace_id = ? AND issue_id = ?").all(this.workspaceId, issueId);
           for (const row of rows) database.prepare("DELETE FROM chain_drafts WHERE id = ?").run(JSON.parse(String(row.payload)).draftId);

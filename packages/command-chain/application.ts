@@ -1,3 +1,4 @@
+import { RequirementApplication, type RequirementDefinitions } from "./requirement-application";
 import { createHash, randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { existsSync } from "node:fs";
@@ -10,8 +11,8 @@ import { compileVerificationConclusion, createVerificationHandlers, verification
 import { commandReceiptSchema, createDevelopmentHandlers, compileDevelopmentConclusion, type CommandReceipt } from "./development";
 import { git, repositorySnapshot as snapshot, repositoryFingerprint, repositoryCommonDirectory, repositoryBranch, captureRepositoryOverlays } from "./repository";
 import { artifactBlock } from "./artifacts";
-import { decisionProposalSchema } from "./decisions";
-import { analysisContractSchema, analysisProfile, analysisPolicies, deliveryUnitSchema, createAnalysisHandlers, createAnalysisRework, compileAnalysisConclusion } from "./analysis";
+import { decisionProposalSchema, decisionPolicies } from "./decisions";
+import { analysisContractSchema, analysisProfile, deliveryUnitSchema, createAnalysisHandlers, createAnalysisRework, compileAnalysisConclusion } from "./analysis";
 
 const text = z.string().trim().min(1);
 const sequence = z.number().int().nonnegative();
@@ -86,8 +87,9 @@ const developmentProfile: CommandChainProfile = {
 export class EngineeringApplication {
   private readonly db: DatabaseSync;
   private readonly drafts: SqliteDraftStore;
+  private readonly requirements:RequirementApplication;
 
-  constructor(database: string, private readonly definitionSource: string, private readonly developmentSource?: string, private readonly analysisSource?: string) {
+  constructor(database: string, private readonly definitionSource: string, private readonly developmentSource?: string, private readonly analysisSource?: string,requirementDefinitions?:RequirementDefinitions) {
     parseCommandChainDefinition(definitionSource, profile);
     this.db = new DatabaseSync(database);
     this.db.exec(`CREATE TABLE IF NOT EXISTS engineering_contract (
@@ -96,6 +98,7 @@ export class EngineeringApplication {
     )`);
     this.drafts = new SqliteDraftStore(database);
     this.db.exec("CREATE TABLE IF NOT EXISTS engineering_receipt (draft_id TEXT NOT NULL, receipt_id TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY (draft_id, receipt_id))");
+    this.requirements=new RequirementApplication(this.db,this.drafts,requirementDefinitions);
     this.db.exec("CREATE TABLE IF NOT EXISTS engineering_execution (workspace_id TEXT NOT NULL, issue_id TEXT NOT NULL, revision INTEGER NOT NULL, agent_id TEXT NOT NULL, attempt_id TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY (workspace_id, issue_id, revision, agent_id, attempt_id))");
   }
 
@@ -168,7 +171,7 @@ export class EngineeringApplication {
     if(actor.kind === "task" && draft?.status === "completed")await this.settleAnalysis(record,draft);
     const phase=draft?.phase ? draft.definition.phases[draft.phase] : undefined;
     return {chain:"analysis",agentId:analysis.agentId,repositoryPath:execution?.repositoryPath ?? record.repositoryPath,contract:analysis.contract,draft:draft ?? null,
-      instructions:phase?.type === "builtin" ? `${phase.builtin}: Read the frozen delivery unit and sources. Use decision.propose in proposal; decision.ask/resolve/reopen in resolution. Never impersonate a human selection. ${analysisPolicies[analysis.contract.decisionMode]}` : phase?.instructions,
+      instructions:phase?.type === "builtin" ? `${phase.builtin}: Read the frozen delivery unit and sources. Use decision.propose in proposal; decision.ask/resolve/reopen in resolution. Never impersonate a human selection. ${decisionPolicies[analysis.contract.decisionMode]}` : phase?.instructions,
       decisionSchema:z.toJSONSchema(decisionProposalSchema),decisionCommands:[{type:"decision.propose",decision:"See decisionSchema"},{type:"decision.ask",key:"<decision key>"},{type:"decision.resolve",key:"<decision key>",option:"<option id>",authority:"user | upstream | project_evidence | agent_authority",decision:"<decision text>",rationale:"<why>",evidence:"<source>"},{type:"decision.reopen",key:"<decision key>"}],
       conclusion,receipts:[],rework:this.reworkView(record),recovery:record.reworkFrom?.kind === "specification" ? this.analysisRecovery(record) : null};
   }
@@ -366,9 +369,16 @@ export class EngineeringApplication {
     const { actor, action } = request;
     if (actor.kind === "coordinator") {
       if (action !== "continuations") throw new Error("Coordinator credentials cannot edit engineering state");
-      return this.continuations();
+      return [...await this.requirements.continuations(),...await this.continuations()];
     }
     if (action === "continuations") throw new Error("Only the host coordinator can list continuations");
+    const requirement=this.requirements.current(actor.workspaceId,actor.issueId);
+    const mode=z.object({kind:z.string().optional()}).passthrough().safeParse(request.payload);
+    if(action === "configure" && mode.success && mode.data.kind === "requirement"){
+      if(this.current(actor.workspaceId,actor.issueId))throw new Error("This issue already owns a delivery workflow; use a parent issue for requirement planning");
+      return this.requirements.invoke(request);
+    }
+    if(requirement){if(action === "configure")throw new Error("This issue owns a requirement workflow; configure a requirement revision");return this.requirements.invoke(request);}
     let record = this.current(actor.workspaceId, actor.issueId);
     if (action === "overview" || action === "prepare-run") {
       if (actor.kind !== "human") throw new Error("A human actor is required for engineering controls");

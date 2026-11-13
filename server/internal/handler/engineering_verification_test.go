@@ -42,6 +42,8 @@ func TestEngineeringClaimInstructions(t *testing.T) {
 		invalid    bool
 	}{
 		{"configured", json.RawMessage(`{"configured":true,"chain":"development","repository_path":"/fixture/repository","code_version":"0123456789abcdef0123456789abcdef01234567"}`), nil, true, false},
+		{"context", json.RawMessage(`{"configured":true,"chain":"context","repository_path":"/fixture/repository","code_version":"0123456789abcdef0123456789abcdef01234567"}`), nil, true, false},
+		{"planning", json.RawMessage(`{"configured":true,"chain":"planning","repository_path":"/fixture/repository","code_version":"0123456789abcdef0123456789abcdef01234567"}`), nil, true, false},
 		{"analysis", json.RawMessage(`{"configured":true,"chain":"analysis","repository_path":"/fixture/repository","code_version":"0123456789abcdef0123456789abcdef01234567"}`), nil, true, false},
 		{"unknown role", json.RawMessage(`{"configured":true,"chain":"unknown","repository_path":"/fixture/repository","code_version":"0123456789abcdef0123456789abcdef01234567"}`), nil, false, true},
 		{"unregistered", json.RawMessage(`{"configured":false}`), nil, false, false},
@@ -166,5 +168,19 @@ func TestEngineeringConfigureChecksAnalysisReferencesBeforeWorker(t *testing.T) 
 				t.Fatal("unchecked analysis references reached the worker")
 			}
 		})
+	}
+}
+
+func TestEngineeringConfigureChecksPlannerBeforeWorker(t *testing.T) {
+	runtimeID := dbfx.Runtime(t, "Requirement planning runtime")
+	agentID := dbfx.Agent(t, "Requirement context agent", runtimeID)
+	issueID := dbfx.Issue(t, "Requirement planning issue")
+	h := *testHandler
+	worker := &engineeringRecorder{}
+	h.EngineeringWorker = worker
+	request := withURLParam(newRequest(http.MethodPost, "/api/issues/"+issueID+"/engineering/verification", map[string]any{"kind": "requirement", "agent_id": agentID, "planner_agent_id": "019a0000-0000-7000-8000-000000000099"}), "id", issueID)
+	testutil.Call(t, h.ConfigureEngineeringVerification, request).Want(http.StatusNotFound)
+	if len(worker.inputs) != 0 {
+		t.Fatal("unchecked planner reached worker")
 	}
 }
