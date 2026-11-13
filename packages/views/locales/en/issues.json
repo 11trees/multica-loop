@@ -2011,6 +2011,8 @@
     "acceptance_required": "Keep at least one acceptance item.",
     "no_agents": "Create agents before configuring delivery.",
     "ready_to_resume": "Ready to continue",
-    "developer_runtime_notice": "Development checks currently require a Codex runtime."
+    "developer_runtime_notice": "Development checks currently require a Codex runtime.",
+    "auto_continue": "Continue automatically",
+    "auto_continue_notice": "Queues independent verification after development and resumes after all answers. The previous run must finish first."
   }
 }

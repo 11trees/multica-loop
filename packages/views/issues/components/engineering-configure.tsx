@@ -32,6 +32,7 @@ export function EngineeringConfigure({ workspaceId, issue, revision, repositoryP
   const id = useId();
   const [open, setOpen] = useState(false);
   const [repository, setRepository] = useState(repositoryPath);
+  const [autoContinue, setAutoContinue] = useState(true);
   const [includeDevelopment, setIncludeDevelopment] = useState(true);
   const [developer, setDeveloper] = useState("");
   const [verifier, setVerifier] = useState("");
@@ -53,13 +54,14 @@ export function EngineeringConfigure({ workspaceId, issue, revision, repositoryP
       <form onSubmit={async event => {
         event.preventDefault(); if (!valid || pending) return; setError("");
         try {
-          await onSave({ expectedRevision: revision, verifierId: verifier, developerId: includeDevelopment ? developer : undefined, repositoryPath: repository.trim(), implementationGuidance: includeDevelopment ? guidance.trim() : undefined,
+          await onSave({ autoContinue, expectedRevision: revision, verifierId: verifier, developerId: includeDevelopment ? developer : undefined, repositoryPath: repository.trim(), implementationGuidance: includeDevelopment ? guidance.trim() : undefined,
             sources: scope.map(row => ({ key: `scope-${row.id + 1}`, kind: row.kind, description: row.description.trim(), oracle: row.oracle.trim(), sourceRef: `ISSUE:${issue.id}${issue.revision ? `:r${issue.revision}` : ""}:scope-${row.id + 1}` })) });
           setOpen(false);
         } catch (error) { setError(error instanceof Error ? error.message : t($ => $.engineering.save_error)); }
       }} className="space-y-4">
         <fieldset disabled={pending} className="max-h-[60vh] space-y-4 overflow-y-auto px-1">
           <div className="space-y-1.5"><Label htmlFor={`${id}-repository`}>{t($ => $.engineering.repository)}</Label><Input id={`${id}-repository`} value={repository} onChange={event => setRepository(event.target.value)} required autoComplete="off" /></div>
+          <div className="space-y-1.5"><div className="flex items-center gap-2"><Switch id={`${id}-auto`} checked={autoContinue} onCheckedChange={setAutoContinue} aria-describedby={`${id}-auto-notice`} /><Label htmlFor={`${id}-auto`}>{t($ => $.engineering.auto_continue)}</Label></div><p id={`${id}-auto-notice`} className="text-caption text-muted-foreground">{t($ => $.engineering.auto_continue_notice)}</p></div>
           <div className="flex items-center gap-2"><Switch id={`${id}-development`} checked={includeDevelopment} onCheckedChange={setIncludeDevelopment} /><Label htmlFor={`${id}-development`}>{t($ => $.engineering.include_development)}</Label></div>
           <div className="grid gap-4 sm:grid-cols-2">
             {includeDevelopment && <div className="space-y-1.5"><Label htmlFor={`${id}-developer`}>{t($ => $.engineering.developer)}</Label><AgentChoice id={`${id}-developer`} value={developer} onChange={setDeveloper} agents={available} placeholder={t($ => $.engineering.select_agent)} /></div>}

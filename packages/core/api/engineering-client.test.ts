@@ -12,9 +12,14 @@ afterEach(() => vi.unstubAllGlobals());
 it("parses overview identity and answer attribution and maps wire fields at the API boundary", async () => {
   respond(body);
   const state = await new ApiClient("https://api.example.test").getEngineeringOverview("issue");
-  expect(state).toMatchObject({ agentId: "verifier", revision: 2, sequence: 7, hasActiveRun: false, currentPhase: null, artifacts: [],
+  expect(state).toMatchObject({ autoContinue: false, agentId: "verifier", revision: 2, sequence: 7, hasActiveRun: false, currentPhase: null, artifacts: [],
     sources: [{ sourceRef: "ISSUE:fixture:r1" }], questions: [{ answer: { text: "Local entry", userId: "human", sequence: 7 } }] });
   expect(state).not.toHaveProperty("agent_id");
+});
+
+it("reads an explicitly enabled automatic continuation policy", async () => {
+  respond({ ...body, auto_continue: true });
+  expect(await new ApiClient("https://api.example.test").getEngineeringOverview("issue")).toMatchObject({ autoContinue: true });
 });
 
 it("keeps unknown statuses readable and treats absent run availability as unknown", async () => {

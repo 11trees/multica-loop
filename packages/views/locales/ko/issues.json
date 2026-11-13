@@ -1936,6 +1936,8 @@
     "acceptance_required": "인수 조건을 하나 이상 유지하세요.",
     "no_agents": "인도를 설정하기 전에 에이전트를 생성하세요.",
     "ready_to_resume": "계속할 수 있음",
-    "developer_runtime_notice": "개발 검사에는 현재 Codex 런타임이 필요합니다."
+    "developer_runtime_notice": "개발 검사에는 현재 Codex 런타임이 필요합니다.",
+    "auto_continue": "자동으로 계속",
+    "auto_continue_notice": "개발 후 독립 검증을 시작하고 모든 답변 후 재개합니다. 이전 실행이 먼저 끝나야 합니다."
   }
 }

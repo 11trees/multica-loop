@@ -79,7 +79,8 @@ development claims/checks and implementation guidance. Multica's wider native
 issue/conversation context projection still needs acceptance review.
 
 Claim instructions now select the verifier role; the next verifier run is still
-started manually through Multica. This handoff does not itself update the issue
+started manually through Multica or by the authorized
+[automatic coordinator](automatic-continuation.md). This handoff does not itself update the issue
 status or enqueue an agent. A crash between draft completion and handoff can
 re-enter handoff from the completed draft; the commit and checks are revalidated.
 It is not a single transaction with Multica's issue/task database.
@@ -103,6 +104,6 @@ It passed with a recorded screenshot. Its runtime report is supplied by the
 fixture control plane; actual provider/model execution remains unverified.
 
 Development plus verification is not the full migration: requirement context,
-planning/analysis, final review, other workflow paths, automatic continuation,
+planning/analysis, final review, other workflow paths, automatic failure/rework,
 remote repository mapping, final-review integration, and cross-database
 handoff acceptance remain.

@@ -72,6 +72,31 @@ it("checks the selected project repository before queueing and resumes interrupt
   expect(resumed.draft).toMatchObject({ id: state.draft!.id, phase: "implement", binding: state.draft!.binding });
 });
 
+it("derives stable continuation tasks only for fully answered published checkpoints and retains them across restart", async () => {
+  const pending = () => app.invoke({ actor: { kind: "coordinator" }, action: "continuations" });
+  await expect(app.invoke({ actor: task, action: "continuations" })).rejects.toThrow(/Only the host/);
+  await expect(app.invoke({ actor: { kind: "coordinator" }, action: "configure" })).rejects.toThrow(/cannot edit/);
+  await invoke(human, "configure", { expected_revision: 0, agent_id: task.agentId, repository_path: repo, sources, auto_continue: true });
+  expect(await pending()).toEqual([]);
+  let state = await invoke(task, "start");
+  const command = async (value: unknown) => { state = await invoke(task, "command", { expected_sequence: state.draft!.sequence, command: value }); };
+  await command({ type: "phase.complete" });
+  for (const key of ["entry", "data"]) await command({ type: "runtime-input.put", key, title: key, question: "Which fixture?", why: "Need isolated data", recommendation: "Use the local fixture" });
+  expect(await pending()).toEqual([]);
+  await command({ type: "phase.complete" });
+  expect(await pending()).toEqual([]);
+  for (const [index, question] of state.draft!.runtimeInputs.entries()) {
+    state = await invoke(human, "answer", { expected_sequence: state.draft!.sequence, request_id: question.id, answer: "Use the local fixture" });
+    if (index === 0) expect(await pending()).toEqual([]);
+  }
+  const expected = await pending();
+  expect(expected).toEqual([expect.objectContaining({ agent_id: task.agentId, user_id: human.userId, reason: "human_answers", expected_sequence: state.draft!.sequence })]);
+  app.close(); app = new EngineeringApplication(join(dir, "application.sqlite"), source, await readFile(new URL("./definitions/development.yaml", import.meta.url), "utf8"));
+  expect(await pending()).toEqual(expected);
+  await invoke(human, "abandon", { expected_sequence: state.draft!.sequence, reason: "Oracle changed" });
+  expect(await pending()).toEqual([]);
+});
+
 it("requires a runtime-owned repository binding and rejects an unrelated checkout or agent binding", async () => {
   await configure();
   await expect(app.invoke({ actor: task, action: "start" })).rejects.toThrow(/runtime must bind/);
@@ -207,7 +232,7 @@ it("preserves abandoned history and creates a new pinned revision", async () => 
 
 it("hands a committed development result and frozen oracles to a different verification agent", async () => {
   const verifier = { ...task, agentId: human.userId, attemptId: "test:claim1" };
-  await invoke(human, "configure", { expected_revision: 0, agent_id: verifier.agentId, developer_agent_id: task.agentId,
+  await invoke(human, "configure", { auto_continue: true, expected_revision: 0, agent_id: verifier.agentId, developer_agent_id: task.agentId,
     implementation_guidance: "Implement the frozen fixture acceptance without changing its oracle", repository_path: repo, sources });
   await expect(invoke(verifier, "start")).rejects.toThrow(/not handed off/);
   expect(await app.invoke({actor:task,action:"selection"})).toMatchObject({configured:true,chain:"development"});
@@ -232,7 +257,10 @@ it("hands a committed development result and frozen oracles to a different verif
   await command({ type: "phase.complete", confirmation: "Evidence and commit match" });
   expect(state.draft?.status).toBe("completed");
   expect(state.conclusion).toMatchObject({ kind: "development", commit: git("rev-parse", "HEAD") });
+  const pending = await app.invoke({ actor: { kind: "coordinator" }, action: "continuations" });
+  expect(pending).toEqual([expect.objectContaining({ agent_id: verifier.agentId, reason: "development_handoff", expected_sequence: 0 })]);
   const testing = await invoke(verifier, "start");
+  expect(await app.invoke({ actor: { kind: "coordinator" }, action: "continuations" })).toEqual([]);
   expect(testing.chain).toBe("verification");
   expect(testing.contract.binding.codeVersion).toBe(git("rev-parse", "HEAD"));
   expect(testing.contract.sources).toEqual(sources);

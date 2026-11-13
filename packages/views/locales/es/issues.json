@@ -2011,6 +2011,8 @@
     "acceptance_required": "Conserva al menos un criterio de aceptación.",
     "no_agents": "Crea agentes antes de configurar la entrega.",
     "ready_to_resume": "Listo para continuar",
-    "developer_runtime_notice": "Las comprobaciones de desarrollo requieren actualmente un entorno Codex."
+    "developer_runtime_notice": "Las comprobaciones de desarrollo requieren actualmente un entorno Codex.",
+    "auto_continue": "Continuar automáticamente",
+    "auto_continue_notice": "Inicia la verificación independiente tras el desarrollo y reanuda al recibir todas las respuestas, cuando termine la ejecución anterior."
   }
 }

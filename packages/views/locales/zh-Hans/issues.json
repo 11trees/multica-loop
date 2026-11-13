@@ -1936,6 +1936,8 @@
     "acceptance_required": "至少保留一项验收目标。",
     "no_agents": "配置交付前需先创建智能体。",
     "ready_to_resume": "可继续运行",
-    "developer_runtime_notice": "开发检查目前需要使用 Codex 运行环境。"
+    "developer_runtime_notice": "开发检查目前需要使用 Codex 运行环境。",
+    "auto_continue": "自动继续",
+    "auto_continue_notice": "开发完成后派发独立验证，问题全部答复后恢复运行；均须等待上一次运行结束。"
   }
 }

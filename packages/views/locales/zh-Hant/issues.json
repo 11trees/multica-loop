@@ -1936,6 +1936,8 @@
     "acceptance_required": "至少保留一項驗收目標。",
     "no_agents": "設定交付前須先建立 AI 代理。",
     "ready_to_resume": "可繼續執行",
-    "developer_runtime_notice": "開發檢查目前需要使用 Codex 執行環境。"
+    "developer_runtime_notice": "開發檢查目前需要使用 Codex 執行環境。",
+    "auto_continue": "自動繼續",
+    "auto_continue_notice": "開發完成後派發獨立驗證，問題全部答覆後恢復執行；皆須等待上一次執行結束。"
   }
 }

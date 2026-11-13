@@ -13,7 +13,7 @@ vi.mock("@multica/core/api", async importOriginal => ({ ...await importOriginal<
 vi.mock("@multica/core/hooks", async importOriginal => ({ ...await importOriginal<typeof import("@multica/core/hooks")>(), useWorkspaceId: () => "workspace" }));
 const issue = { id: "issue", title: "Fixture delivery", revision: 4 } as Issue;
 const initial: EngineeringOverview = {
-  enabled: true, configured: true, chain: "verification", agentId: "verifier", revision: 2, sequence: 7,
+  autoContinue: false, enabled: true, configured: true, chain: "verification", agentId: "verifier", revision: 2, sequence: 7,
   codeVersion: "commit-fixture", repositoryPath: "/fixture", draftId: "draft", status: "waiting_for_answers", currentPhase: "plan", hasActiveRun: false,
   phases: [{ id: "inputs", status: "completed" }, { id: "plan", status: "current" }],
   sources: [{ key: "ac1", kind: "acceptance", description: "Survives reload", oracle: "Title visible", sourceRef: "ISSUE:fixture" }],
@@ -99,7 +99,7 @@ it("configures frozen scope with separate roles and preserves the form on failur
   await user.click(within(dialog).getByRole("button", { name: "Freeze scope" }));
   await within(dialog).findByText("Repository has uncommitted changes");
   expect(within(dialog).getByLabelText("Expected result")).toHaveValue("Title remains visible");
-  expect(api.configureEngineering).toHaveBeenCalledWith("issue", expect.objectContaining({ expectedRevision: 0, developerId: "developer", verifierId: "verifier", repositoryPath: "/fixture/repo",
+  expect(api.configureEngineering).toHaveBeenCalledWith("issue", expect.objectContaining({ autoContinue: true, expectedRevision: 0, developerId: "developer", verifierId: "verifier", repositoryPath: "/fixture/repo",
     sources: [{ key: "scope-1", kind: "acceptance", description: "Survives reload", oracle: "Title remains visible", sourceRef: "ISSUE:issue:r4:scope-1" }] }));
 });
 

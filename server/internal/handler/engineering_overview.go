@@ -53,7 +53,7 @@ func (h *Handler) GetEngineeringOverview(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusServiceUnavailable, "invalid engineering overview")
 		return
 	}
-	active, err := h.Queries.HasActiveTaskForIssue(r.Context(), issue.ID)
+	active, err := h.Queries.HasUnfinishedEngineeringIssueTask(r.Context(), issue.ID)
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, "run status lookup is unavailable")
 		return
@@ -113,7 +113,7 @@ func (h *Handler) RunEngineering(w http.ResponseWriter, r *http.Request) {
 		h.writeDispatchBlocked(w, http.StatusForbidden, ReasonInvocationNotAllowed)
 		return
 	}
-	active, err := h.Queries.HasActiveTaskForIssue(r.Context(), issue.ID)
+	active, err := h.Queries.HasUnfinishedEngineeringIssueTask(r.Context(), issue.ID)
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, "run status lookup is unavailable")
 		return
@@ -122,37 +122,9 @@ func (h *Handler) RunEngineering(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "an issue run is still active; wait for it to finish before starting engineering")
 		return
 	}
-	if !issue.ProjectID.Valid || !agent.RuntimeID.Valid {
-		writeError(w, http.StatusConflict, "bind this issue to a project and choose a local runtime before starting engineering")
-		return
-	}
-	runtime, err := h.Queries.GetAgentRuntime(r.Context(), agent.RuntimeID)
-	if err != nil || runtime.WorkspaceID != issue.WorkspaceID || runtime.RuntimeMode != "local" || !runtime.DaemonID.Valid || runtime.DaemonID.String == "" {
-		writeError(w, http.StatusConflict, "engineering requires a local runtime with a registered daemon")
-		return
-	}
-	resources, err := h.Queries.ListProjectResourcesInWorkspace(r.Context(), db.ListProjectResourcesInWorkspaceParams{ProjectID: issue.ProjectID, WorkspaceID: issue.WorkspaceID})
+	mappings, err := h.engineeringExecutionResources(r.Context(), issue, agent)
 	if err != nil {
-		writeError(w, http.StatusServiceUnavailable, "project directory lookup is unavailable")
-		return
-	}
-	mappings := make([]map[string]string, 0)
-	for _, resource := range resources {
-		if resource.ResourceType != "local_directory" {
-			continue
-		}
-		var ref localDirectoryRef
-		if json.Unmarshal(resource.ResourceRef, &ref) != nil || ref.DaemonID != runtime.DaemonID.String {
-			continue
-		}
-		mode := ref.ExecutionMode
-		if mode == "" {
-			mode = localDirectoryModeInPlace
-		}
-		mappings = append(mappings, map[string]string{"path": ref.LocalPath, "mode": mode})
-	}
-	if len(mappings) != 1 {
-		writeError(w, http.StatusConflict, "bind one project directory to the selected runtime before starting engineering")
+		engineeringControlError(w, err)
 		return
 	}
 	checked, err := h.EngineeringWorker.Call(r.Context(), map[string]any{"action": "prepare-run", "actor": map[string]string{"kind": "human", "userId": userID, "workspaceId": uuidToString(issue.WorkspaceID), "issueId": uuidToString(issue.ID)}, "payload": map[string]any{"expected_revision": payload.ExpectedRevision, "expected_sequence": payload.ExpectedSequence, "execution_resources": mappings}})

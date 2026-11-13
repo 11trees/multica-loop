@@ -848,6 +848,11 @@ func main() {
 	if err := schedulerMgr.Register(scheduler.SearchIndexChangePruneJob(queries)); err != nil {
 		slog.Warn("scheduler: failed to register search index change prune job", "error", err)
 	}
+	if h.EngineeringWorker != nil {
+		if err := schedulerMgr.Register(scheduler.EngineeringContinuationJob(h)); err != nil {
+			slog.Error("scheduler: register engineering continuations", "error", err)
+		}
+	}
 	if err := schedulerMgr.Register(scheduler.IssueWakeupJob(&service.IssueWakeupService{Tasks: taskSvc})); err != nil {
 		slog.Error("scheduler: register issue wakeups", "error", err)
 	}

@@ -92,6 +92,7 @@ export function EngineeringPanel({ issue, closed = false }: { issue: Issue; clos
       <EngineeringConfigure key={state.revision ?? 0} workspaceId={workspaceId} issue={issue} revision={state.revision ?? 0} repositoryPath={state.repositoryPath} pending={actions.configure.isPending || query.isError} onSave={input => actions.configure.mutateAsync(input)} />}
     {state?.configured && <>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-caption"><span>{state.chain === "development" ? t($ => $.engineering.development) : state.chain === "verification" ? t($ => $.engineering.verification) : state.chain}</span><span className="text-muted-foreground">{t($ => $.engineering.revision, { revision: state.revision })}</span><span>{agents.data?.find(agent => agent.id === state.agentId)?.name}</span></div>
+      {state.autoContinue && <p className="text-caption text-muted-foreground">{t($ => $.engineering.auto_continue_notice)}</p>}
       <ol className="flex flex-wrap gap-x-4 gap-y-2" aria-label={t($ => $.engineering.progress)}>{state.phases.map(phase => <li key={phase.id} aria-current={phase.status === "current" ? "step" : undefined} className={`flex items-center gap-1.5 text-caption ${phase.status === "current" ? "font-medium text-foreground" : "text-muted-foreground"}`}>
         {phase.status === "completed" && <Check className="size-3.5" aria-hidden="true" />}{phaseLabels[phase.id] ?? phase.id}
       </li>)}</ol>

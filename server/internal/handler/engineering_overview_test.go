@@ -55,6 +55,12 @@ func TestEngineeringOverviewAvailabilityAndRunTarget(t *testing.T) {
 	testutil.Call(t, h.RunEngineering, request(http.MethodPost, map[string]any{"expected_revision": 1, "expected_sequence": 7})).Want(http.StatusConflict)
 	var count int
 	dbfx.QueryRow(t, `SELECT count(*) FROM agent_task_queue WHERE issue_id=$1`, issueID).Scan(&count)
+	dbfx.Exec(t, `UPDATE agent_task_queue SET status='deferred' WHERE issue_id=$1`, issueID)
+	testutil.Call(t, h.GetEngineeringOverview, request(http.MethodGet, nil)).Want(http.StatusOK).JSON(&overview)
+	if overview["has_active_run"] != true {
+		t.Fatal("deferred run was not shown as unfinished")
+	}
+	testutil.Call(t, h.RunEngineering, request(http.MethodPost, map[string]any{"expected_revision": 1, "expected_sequence": 7})).Want(http.StatusConflict)
 	if count != 1 {
 		t.Fatalf("repeat dispatch created %d runs", count)
 	}

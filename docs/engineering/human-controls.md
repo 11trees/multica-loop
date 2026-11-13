@@ -11,7 +11,9 @@ On an accepted, open issue, choose **Configure delivery**. Set the repository
 path on the API host, choose an independent verifier, and add observable scope
 items with their judging criteria. At least one acceptance is required. Enable
 development to choose a different developer and supply implementation guidance.
-Development command receipts currently require a Codex runtime. Freezing resolves
+Development command receipts currently require a Codex runtime. **Continue
+automatically** authorizes development handoff and answered-question continuation;
+turn it off for manual control. Freezing resolves
 the actual clean Git HEAD and retains the source references and contract revision.
 
 Bind the issue to a project with exactly one local-directory resource for the
@@ -37,7 +39,8 @@ the current sequence. Failed requests retain the text for correction or retry.
 Answers and superseded questions remain available in the history.
 
 After every active question is answered and the previous task has finished,
-**Continue run** queues the frozen role. Its new task claim resumes the same draft
+**Continue run** queues the frozen role. With automatic continuation enabled, the
+[host coordinator](automatic-continuation.md) queues it without another click. Its new task claim resumes the same draft
 and unfinished phase. Questions still being edited by an interrupted agent are
 not yet published to humans and do not prevent that agent from recovering.
 Partial development edits can survive such recovery; independent verification
@@ -71,8 +74,8 @@ dispatch, daemon-specific project resources, and refusal while a run is active.
 Kernel tests cover repository preflight and interrupted development recovery.
 
 The shared component is wired into Web and Desktop issue detail; the packaged
-desktop app has not been exercised. Dev-to-verifier scheduling, automatic
-continuation, bounded failure/rework orchestration, the remaining command chains,
+desktop app has not been exercised. Automatic development handoff and answered
+question continuation are connected. Bounded failure/rework orchestration, the remaining command chains,
 remote repository mapping, and real business/provider acceptance remain pending.
 SQLite checkpoints, PostgreSQL queue admission, and filesystem checks are separate
 operations; these controls do not establish a cross-database transaction or global

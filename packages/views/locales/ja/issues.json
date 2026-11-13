@@ -1936,6 +1936,8 @@
     "acceptance_required": "受け入れ条件を1項目以上残してください。",
     "no_agents": "デリバリーを設定する前にエージェントを作成してください。",
     "ready_to_resume": "続行可能",
-    "developer_runtime_notice": "開発チェックには現在 Codex ランタイムが必要です。"
+    "developer_runtime_notice": "開発チェックには現在 Codex ランタイムが必要です。",
+    "auto_continue": "自動的に続行",
+    "auto_continue_notice": "開発後に独立検証を開始し、すべての回答後に再開します。前の実行が終了している必要があります。"
   }
 }
