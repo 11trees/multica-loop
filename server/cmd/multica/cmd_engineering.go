@@ -15,10 +15,10 @@ func init() {
 	engineeringCmd.GroupID = groupCore
 	rootCmd.AddCommand(engineeringCmd)
 	for _, operation := range []struct{ name, path, short string }{
-		{"start", "/api/engineering/verification/start", "Start or resume this run's verification checkpoint"},
-		{"status", "/api/engineering/verification", "Read this run's verification checkpoint"},
+		{"start", "/api/engineering/verification/start", "Start or resume this run's engineering checkpoint"},
+		{"status", "/api/engineering/verification", "Read this run's engineering checkpoint"},
 		{"command", "/api/engineering/verification/commands", "Execute a JSON phase/artifact/runtime-input command"},
-		{"configure <issue-id>", "configure", "Freeze a verification contract and clean repository commit (human only)"},
+		{"configure <issue-id>", "configure", "Freeze a delivery contract and clean repository commit (human only)"},
 		{"inspect <issue-id>", "inspect", "Read the issue's contract and questions (human only)"},
 		{"answer <issue-id>", "answer", "Answer a pending runtime input (human only)"},
 		{"abandon <issue-id>", "abandon", "Abandon an active verification draft (human only)"},

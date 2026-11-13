@@ -636,6 +636,12 @@ func (c *Client) ReportTaskMessages(ctx context.Context, taskID string, messages
 	}, nil)
 }
 
+func (c *Client) ReportEngineeringCommand(ctx context.Context, taskID, claim, id string, sequence int, result agent.CommandResult) error {
+	return c.postJSON(ctx, fmt.Sprintf("/api/daemon/tasks/%s/engineering-receipts", taskID), map[string]any{
+		"dispatched_at": claim, "id": id, "sequence": sequence, "result": result,
+	}, nil)
+}
+
 func (c *Client) CompleteTask(ctx context.Context, taskID, output, branchName, sessionID, workDir string, sessionRolloutMissing bool, retiredSessionID, durableWorkDir string) error {
 	return c.completeTaskWithRetrySchedule(ctx, taskID, output, branchName, sessionID, workDir, sessionRolloutMissing, retiredSessionID, durableWorkDir, defaultTerminalRetrySchedule)
 }

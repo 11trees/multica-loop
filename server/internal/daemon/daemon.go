@@ -9026,6 +9026,9 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		ClaudeSettingsPath:     env.ClaudeSettingsPath,
 		QwenpawWorkspace:       env.QwenpawWorkspace,
 	}
+	if task.EngineeringChain == "development" {
+		execOpts.EngineeringClaim = task.DispatchedAt
+	}
 	// Some providers do not reliably load the per-task runtime config files we
 	// write into the task workdir:
 	//   - openclaw is pinned to the task workdir via the per-task config we
@@ -10156,6 +10159,13 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 					}
 					s := msgSeq.Add(1)
 					taskLog.Info("tool_result observed", "seq", s, "tool", toolName, "call_id", msg.CallID)
+					if opts.EngineeringClaim != "" && msg.CommandResult != nil && msg.CallID != "" {
+						receipt := *msg.CommandResult
+						receipt.Command = redact.Text(receipt.Command)
+						if err := d.client.ReportEngineeringCommand(drainCtx, taskID, opts.EngineeringClaim, transcriptCallID(msg.CallID), int(s), receipt); err != nil {
+							taskLog.Warn("engineering command receipt was not captured", "error", err)
+						}
+					}
 					batch = append(batch, TaskMessageData{
 						Seq:       int(s),
 						Type:      "tool_result",

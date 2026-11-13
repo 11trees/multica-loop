@@ -3758,6 +3758,26 @@ func (c *codexClient) completeAgentMessage(itemID, text string) {
 	stream.pending.WriteString(suffix)
 }
 
+func codexCommandResult(item map[string]any) *CommandResult {
+	command, _ := item["command"].(string)
+	cwd, _ := item["cwd"].(string)
+	if strings.TrimSpace(command) == "" || strings.TrimSpace(cwd) == "" {
+		return nil
+	}
+	status, _ := item["status"].(string)
+	if status == "" {
+		status = "unknown"
+	}
+	result := &CommandResult{Command: command, Cwd: cwd, Status: status}
+	if raw, ok := item["exitCode"].(float64); ok {
+		value := int64(raw)
+		if float64(value) == raw {
+			result.ExitCode = &value
+		}
+	}
+	return result
+}
+
 func (c *codexClient) handleItemNotification(method string, params map[string]any) {
 	item, _ := params["item"].(map[string]any)
 	itemType, _ := item["type"].(string)
@@ -3798,10 +3818,11 @@ func (c *codexClient) handleItemNotification(method string, params map[string]an
 		output, _ := item["aggregatedOutput"].(string)
 		if c.onMessage != nil {
 			c.onMessage(Message{
-				Type:   MessageToolResult,
-				Tool:   "exec_command",
-				CallID: itemID,
-				Output: output,
+				CommandResult: codexCommandResult(item),
+				Type:          MessageToolResult,
+				Tool:          "exec_command",
+				CallID:        itemID,
+				Output:        output,
 			})
 		}
 

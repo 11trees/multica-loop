@@ -55,6 +55,11 @@ export const draftSchema = z.strictObject({
   runtimeInputs: z.array(runtimeInputSchema),
   completedPhases: z.array(text),
   events: z.array(event),
+  development: z.strictObject({
+    reviewFingerprint: text.optional(),
+    claims: z.array(z.strictObject({ key: text, evidence: text, attemptId: text })),
+    checks: z.array(z.strictObject({ key: text, receiptId: text, summary: text })),
+  }).optional(),
 });
 
 export type ChainDraft = z.infer<typeof draftSchema>;
@@ -93,6 +98,10 @@ export type BuiltinResult = {
 export type BuiltinHandler = {
   (draft: Readonly<ChainDraft>): BuiltinResult | Promise<BuiltinResult>;
   readonly runtimeInputs?: boolean;
+  readonly command?: (draft: ChainDraft, command: ChainCommand) => void | Promise<void>;
+  readonly rewind?: (draft: ChainDraft, target: string) => void;
+  readonly finalize?: (draft: Readonly<ChainDraft>) => readonly string[];
+  readonly beforeComplete?: (draft: ChainDraft) => void;
 };
 export type BuiltinHandlers = Readonly<Record<string, BuiltinHandler>>;
 
@@ -104,6 +113,9 @@ export const chainCommandSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("runtime-input.remove"), key: text.max(120) }),
   z.strictObject({ type: z.literal("phase.complete"), confirmation: text.optional() }),
   z.strictObject({ type: z.literal("phase.rewind"), to: text, reason: text.max(4000) }),
+  z.strictObject({ type: z.literal("acceptance.assess"), key: text, evidence: text }),
+  z.strictObject({ type: z.literal("check.record"), key: text, receipt_id: text, summary: text }),
+  z.strictObject({ type: z.literal("check.remove"), key: text }),
 ]);
 export type ChainCommand = z.infer<typeof chainCommandSchema>;
 
@@ -270,8 +282,12 @@ export class CommandChainEngine {
       }
     } else if (command.type === "phase.rewind") {
       this.rewind(draft, command.to);
-    } else {
+    } else if (command.type === "phase.complete") {
       await this.complete(draft, command.confirmation);
+    } else {
+      const handler = phase.type === "builtin" && Object.hasOwn(this.builtins, phase.builtin) ? this.builtins[phase.builtin] : undefined;
+      if (!handler?.command) throw new Error("Command is not enabled in the current phase");
+      await handler.command(draft, command);
     }
     recordEvent(draft, command.type === "phase.complete" && draft.status === "waiting_for_answers" ? "phase.wait" : command.type,
       command.type === "phase.rewind" ? command.reason : command.type === "phase.complete" ? command.confirmation : undefined);
@@ -296,6 +312,7 @@ export class CommandChainEngine {
     for (const request of draft.runtimeInputs) if (order.indexOf(request.phase) >= target) request.active = false;
     draft.completedPhases = draft.completedPhases.slice(0, target);
     draft.phase = to;
+    for (const handler of Object.values(this.builtins)) handler.rewind?.(draft, to);
   }
 
   private async complete(draft: ChainDraft, confirmation?: string): Promise<void> {
@@ -305,6 +322,7 @@ export class CommandChainEngine {
       draft.status = "waiting_for_answers";
       return;
     }
+    for (const capability of Object.values(this.builtins)) capability.beforeComplete?.(draft);
     const errors = phase.inputs.filter(key => draft.definition.inputs[key]?.required && !draft.inputs[key])
       .map(key => `Required input ${key} is missing`);
     if (phase.type === "confirmation" && !confirmation) errors.push("An explicit confirmation is required");
@@ -334,6 +352,8 @@ export class CommandChainEngine {
     const order = Object.keys(draft.definition.phases);
     const next = order[order.indexOf(draft.phase!) + 1];
     if (!next) {
+      const finalErrors = Object.values(this.builtins).flatMap(handler => handler.finalize?.(draft) ?? []);
+      if (finalErrors.length) throw new PhaseValidationError(finalErrors);
       const allRefs = Object.entries(draft.definition.artifacts).flatMap(([id, artifact]) => Object.keys(artifact.blocks).map(block => `${id}.${block}`));
       const missing = requiredArtifactErrors(draft, allRefs);
       if (missing.length) throw new PhaseValidationError(missing);

@@ -4,10 +4,11 @@ import { EngineeringApplication, applicationRequestSchema } from "./application"
 import { DraftConflictError } from "./runtime";
 
 declare const DEFAULT_VERIFICATION_SOURCE: string;
+declare const DEFAULT_DEVELOPMENT_SOURCE: string;
 const database = process.argv[2];
 if (!database) throw new Error("Engineering database path is required");
 mkdirSync(dirname(database), { recursive: true, mode: 0o700 });
-const app = new EngineeringApplication(database, DEFAULT_VERIFICATION_SOURCE);
+const app = new EngineeringApplication(database, DEFAULT_VERIFICATION_SOURCE, DEFAULT_DEVELOPMENT_SOURCE);
 try {
   const request = applicationRequestSchema.parse(JSON.parse(readFileSync(0, "utf8")));
   const result = await app.invoke(request);

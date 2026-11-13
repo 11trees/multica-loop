@@ -40,7 +40,7 @@ func TestEngineeringClaimInstructions(t *testing.T) {
 		err        error
 		configured bool
 	}{
-		{"configured", json.RawMessage(`{"configured":true}`), nil, true},
+		{"configured", json.RawMessage(`{"configured":true,"chain":"development"}`), nil, true},
 		{"unregistered", json.RawMessage(`{"configured":false}`), nil, false},
 		{"unavailable", nil, errors.New("unavailable"), false},
 	} {
@@ -79,6 +79,9 @@ func TestEngineeringClaimInstructions(t *testing.T) {
 			}
 			if response.Agent == nil || strings.Contains(response.Agent.Instructions, "multica engineering start") != tc.configured {
 				t.Fatal("configured role did not receive command-chain instructions")
+			}
+			if tc.configured && response.EngineeringChain != "development" {
+				t.Fatal("development capture capability missing from claim")
 			}
 		})
 	}

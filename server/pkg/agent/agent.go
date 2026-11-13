@@ -24,6 +24,7 @@ type Backend interface {
 
 // ExecOptions configures a single execution.
 type ExecOptions struct {
+	EngineeringClaim string
 	// EnableTaskSupplement installs provider hooks only for runs whose daemon/server
 	// capability handshake enabled additional messages.
 	EnableTaskSupplement bool
@@ -259,15 +260,23 @@ const (
 
 // Message is a unified event emitted by an agent during execution.
 type Message struct {
-	Type      MessageType
-	Content   string         // text content (Text, Error, Log)
-	Tool      string         // tool name (ToolUse, ToolResult)
-	CallID    string         // tool call ID (ToolUse, ToolResult)
-	Input     map[string]any // tool input (ToolUse)
-	Output    string         // tool output (ToolResult)
-	Status    string         // agent status string (Status)
-	Level     string         // log level (Log)
-	SessionID string         // backend session id (Status), for early resume-pointer pinning
+	CommandResult *CommandResult // Optional native command outcome; never inferred from output text.
+	Type          MessageType
+	Content       string         // text content (Text, Error, Log)
+	Tool          string         // tool name (ToolUse, ToolResult)
+	CallID        string         // tool call ID (ToolUse, ToolResult)
+	Input         map[string]any // tool input (ToolUse)
+	Output        string         // tool output (ToolResult)
+	Status        string         // agent status string (Status)
+	Level         string         // log level (Log)
+	SessionID     string         // backend session id (Status), for early resume-pointer pinning
+}
+
+type CommandResult struct {
+	Command  string `json:"command"`
+	Cwd      string `json:"cwd"`
+	Status   string `json:"status"`
+	ExitCode *int64 `json:"exit_code"`
 }
 
 // TokenUsage tracks token consumption for a single model.

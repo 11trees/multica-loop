@@ -251,9 +251,10 @@ export class TestApiClient {
   }
 
   /** Seeds a running task credential; never starts a daemon, model, or agent CLI. */
-  async seedEngineeringRun() {
+  async seedEngineeringRun(existingIssueId?: string) {
     if (!this.workspaceId || !this.email || !process.env.DATABASE_URL) throw new Error("Engineering fixtures require the managed workspace/database");
-    const issue = await this.createIssue(`Engineering integration ${randomUUID()}`);
+    if (existingIssueId && !this.createdIssueIds.includes(existingIssueId)) throw new Error("Not an owned engineering fixture issue");
+    const issue = existingIssueId ? { id: existingIssueId } : await this.createIssue(`Engineering integration ${randomUUID()}`);
     const runtimeId = randomUUID(), agentId = randomUUID(), taskId = randomUUID();
     const taskToken = `mat_e2e_${randomUUID()}`;
     const client = new pg.Client(DATABASE_URL);
@@ -266,7 +267,7 @@ export class TestApiClient {
       await client.query(`INSERT INTO agent_runtime (id, workspace_id, name, runtime_mode, provider, status, owner_id, last_seen_at)
         VALUES ($1, $2, 'Engineering fixture', 'cloud', 'missing-engineering-test-executor', 'online', $3, now())`, [runtimeId, this.workspaceId, userId]);
       await client.query(`INSERT INTO agent (id, workspace_id, name, description, runtime_mode, runtime_id, owner_id)
-        VALUES ($1, $2, 'Engineering fixture verifier', '', 'cloud', $3, $4)`, [agentId, this.workspaceId, runtimeId, userId]);
+        VALUES ($1, $2, $5, '', 'cloud', $3, $4)`, [agentId, this.workspaceId, runtimeId, userId, `Engineering fixture ${agentId}`]);
       await client.query(`INSERT INTO agent_task_queue (id, agent_id, issue_id, runtime_id, status, attempt, dispatched_at, started_at)
         VALUES ($1, $2, $3, $4, 'running', 1, now() - interval '1 second', now())`, [taskId, agentId, issue.id, runtimeId]);
       await client.query(`INSERT INTO task_token (token_hash, task_id, agent_id, workspace_id, user_id, expires_at)
@@ -309,6 +310,18 @@ export class TestApiClient {
     const response = await this.authedFetch(`/api/issues/${issueId}/engineering/verification/${suffix}`, action === "inspect" ? undefined : { method: "POST", body: JSON.stringify(payload) });
     if (!response.ok) throw new Error(`engineering ${action} failed: ${response.status} ${await response.text()}`);
     return response.json();
+  }
+
+  async captureEngineeringReceipt(taskId: string, receipt: unknown) {
+    if (!this.engineeringRuns.some(run => run.taskId === taskId)) throw new Error("Not an owned engineering fixture");
+    const client = new pg.Client(DATABASE_URL);
+    await client.connect();
+    try {
+      const row = await client.query(`SELECT to_char(dispatched_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS generation FROM agent_task_queue WHERE id = $1`, [taskId]);
+      const result = await this.authedFetch(`/api/daemon/tasks/${taskId}/engineering-receipts`, { method: "POST", body: JSON.stringify({ dispatched_at: row.rows[0].generation, ...receipt as object }) });
+      if (!result.ok) throw new Error(`receipt capture failed: ${result.status} ${await result.text()}`);
+      return result.json();
+    } finally { await client.end(); }
   }
 
   /**
@@ -515,6 +528,13 @@ export class TestApiClient {
         if (database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'engineering_contract'").get()) for (const issueId of this.createdIssueIds) {
           const rows = database.prepare("SELECT payload FROM engineering_contract WHERE workspace_id = ? AND issue_id = ?").all(this.workspaceId, issueId);
           for (const row of rows) database.prepare("DELETE FROM chain_drafts WHERE id = ?").run(JSON.parse(String(row.payload)).draftId);
+          for (const row of rows) {
+            const development = JSON.parse(String(row.payload)).development;
+            if (development) {
+              database.prepare("DELETE FROM engineering_receipt WHERE draft_id = ?").run(development.draftId);
+              database.prepare("DELETE FROM chain_drafts WHERE id = ?").run(development.draftId);
+            }
+          }
           database.prepare("DELETE FROM engineering_contract WHERE workspace_id = ? AND issue_id = ?").run(this.workspaceId, issueId);
         }
       } finally { database.close(); }

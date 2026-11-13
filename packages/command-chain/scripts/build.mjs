@@ -7,5 +7,8 @@ await build({
   outfile: new URL("../dist/worker.mjs", import.meta.url).pathname,
   bundle: true, platform: "node", format: "esm", target: "node22.13",
   banner: { js: 'import { createRequire } from "node:module"; const require = createRequire(import.meta.url);' },
-  define: { DEFAULT_VERIFICATION_SOURCE: JSON.stringify(readFileSync(new URL("../definitions/verification.yaml", import.meta.url), "utf8")) },
+  define: {
+    DEFAULT_VERIFICATION_SOURCE: JSON.stringify(readFileSync(new URL("../definitions/verification.yaml", import.meta.url), "utf8")),
+    DEFAULT_DEVELOPMENT_SOURCE: JSON.stringify(readFileSync(new URL("../definitions/development.yaml", import.meta.url), "utf8")),
+  },
 });

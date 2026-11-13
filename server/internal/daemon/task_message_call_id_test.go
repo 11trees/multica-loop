@@ -4,12 +4,57 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"slices"
 	"sync/atomic"
 	"testing"
 
 	"github.com/multica-ai/multica/server/pkg/agent"
 )
+
+func TestExecuteAndDrain_ReportsEngineeringCommand(t *testing.T) {
+	d, _ := newTranscriptRecorder(t)
+	reported := make(chan map[string]any, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/daemon/tasks/task-engineering/engineering-receipts" {
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Error(err)
+			}
+			reported <- body
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+	d.client = NewClient(server.URL)
+	code := int64(0)
+	messages := make(chan agent.Message, 2)
+	messages <- agent.Message{Type: agent.MessageToolUse, Tool: "exec_command", CallID: "check", Input: map[string]any{"command": "npm test"}}
+	messages <- agent.Message{Type: agent.MessageToolResult, Tool: "exec_command", CallID: "check", CommandResult: &agent.CommandResult{Command: "npm test", Cwd: "/fixture", Status: "completed", ExitCode: &code}}
+	close(messages)
+	results := make(chan agent.Result, 1)
+	results <- agent.Result{Status: "completed"}
+	close(results)
+	var sequence atomic.Int32
+	_, _, err := d.executeAndDrain(context.Background(), sessionBackend{session: &agent.Session{Messages: messages, Result: results}}, "fixture", agent.ExecOptions{EngineeringClaim: "2026-11-13T00:00:00Z"}, slog.Default(), "task-engineering", "", &sequence)
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case body := <-reported:
+		if body["dispatched_at"] != "2026-11-13T00:00:00Z" || body["id"] == "" || body["sequence"] != float64(2) {
+			t.Fatalf("wrong runtime envelope: %+v", body)
+		}
+		result := body["result"].(map[string]any)
+		if result["exit_code"] != float64(0) || result["command"] != "npm test" {
+			t.Fatalf("wrong command facts: %+v", result)
+		}
+	default:
+		t.Fatal("no runtime receipt was reported")
+	}
+}
 
 func TestExecuteAndDrain_ScopesToolCallIdentity(t *testing.T) {
 	t.Parallel()
