@@ -11,10 +11,10 @@ definitions and host application are the implementation evidence.
 
 | LoopWork chain | Target status | Current evidence and boundary |
 | --- | --- | --- |
-| `idea-context` | Not migrated | No target definition or business-analysis host transition |
-| `business-design` | Not migrated | No target definition or business-design conclusion/publication |
-| `requirement-spec` | Not migrated | No target specification publication or source-bound spec lifecycle |
-| `spec-review` | Not migrated | No target independent spec review or structured return path |
+| `idea-context` | Protocol only | Imported definition, decision gates and intent compiler; native stage ownership is not connected |
+| `business-design` | Protocol only | Complete-solution and intent-return gates; native return/publication is not connected |
+| `requirement-spec` | Protocol only | Draft/verification/final gates and single-target returns; native specification lifecycle is not connected |
+| `spec-review` | Protocol only | Findings/verdict, approved specification and structured return compiler; independent native role and reading are not connected |
 | `requirement-context` | Implemented for the delivery path | [Context gates](../../packages/command-chain/context.ts), permanent acceptance entities, authenticated choices and native context/planner handoff |
 | `delivery-plan` | Implemented for the delivery path | [Planning gates](../../packages/command-chain/planning.ts), full source-key coverage, ordered dependencies and stable native child publication |
 | `delivery-analysis` | Implemented for managed units | [Analysis gates](../../packages/command-chain/analysis.ts), scoped dependencies, decision authority and specification rework |
@@ -29,8 +29,10 @@ definitions and host application are the implementation evidence.
 not imply real-provider acceptance, packaged Desktop verification, or historical
 data migration. The target [worker](../../packages/command-chain/worker.ts)
 currently embeds nine definitions, all with native entry points for the connected
-delivery paths, including bounded feedback report-expression correction. The four business-analysis chains remain absent and are
-not supplied by a generic prompt or a successful native process exit.
+delivery paths, including bounded feedback report-expression correction. Four
+additional business-analysis definitions and pure handlers are present;
+they are not embedded or dispatched by the native worker. See
+[business analysis protocol](business-analysis.md) for its verified boundary.
 
 ## Complete user pipelines
 
@@ -68,11 +70,12 @@ Neither this checklist nor a green subset of tests closes the objective.
 
 ## Next increment: business analysis and reviewed specifications
 
-The four business-analysis chains remain absent: `idea-context`,
-`business-design`, `requirement-spec` and `spec-review`. The next increment must
-inspect their actual source definitions, authority/return paths and artifact
-publication before connecting them to the delivered requirement path. A generic
-prompt or successful native task does not establish this migration.
+The four business-analysis definitions, pure profiles, completion gates and
+artifact compilers are present: `idea-context`, `business-design`,
+`requirement-spec` and `spec-review`. Their native role binding, historical
+publication, return transitions, specification reading/comments and End to End
+handoff remain to be connected. A generic prompt or successful native task does
+not establish this migration.
 
 Source inspection confirms these additional acceptance requirements in
 `businessAnalysisCompleteErrors` / result compilation
@@ -89,13 +92,15 @@ Source inspection confirms these additional acceptance requirements in
 | Business Analysis completion | The approved specification requires current-version reading; specification comments before reading revise Spec/Review while preserving Intent/Design and superseding old downstream revisions |
 | End to End handoff | Approved specifications automatically enter requirement context; this does not count as delivered code or close the parent |
 
-A parser probe with source-derived capability declarations accepts all four
-unmodified source YAML definitions and their phase order. This establishes
-authoring syntax compatibility only; it does not register runtime profiles,
-execute final gates, publish artifacts or dispatch native tasks.
+The [business protocol tests](../../packages/command-chain/business.test.ts)
+execute all four imported definitions against the actual handlers in temporary
+SQLite databases. All normal paths, six responsibility returns, conflicting
+outputs, authenticated decision options and re-asking after rewind, stored-proof
+revalidation and public source rendering are covered. Parsed YAML equality with
+the frozen original definitions was checked; only source comments were removed.
 
-The target has not implemented these gates or native publication/return paths.
-Their migration must retain source versions, owner/attempt checks, human decisions,
+The target has implemented these pure gates, not native publication/return paths.
+Native integration must retain source versions, owner/attempt checks, human decisions,
 old artifacts and reading history. Structural artifact presence and findings are
 protocol evidence; semantic specification quality still needs independent review.
 
