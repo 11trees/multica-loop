@@ -17,8 +17,21 @@ const event = z.strictObject({
   command: text,
   phase: text.nullable(),
   reason: text.optional(),
+  userId: text.optional(),
 });
 const writeRule = z.strictObject({ ref: text, mode: z.enum(["append-only", "sealed"]), phase: text });
+const runtimeInputFields = {
+  key: text.max(120), title: text.max(200), question: text.max(4000),
+  why: text.max(1000), recommendation: text.max(2000),
+};
+const runtimeInputSchema = z.strictObject({
+  ...runtimeInputFields,
+  id: text,
+  phase: text,
+  attemptId: text,
+  active: z.boolean(),
+  answer: z.strictObject({ text: text.max(20000), userId: text, sequence }).nullable(),
+});
 
 export const draftSchema = z.strictObject({
   schemaVersion: z.literal(1),
@@ -33,12 +46,13 @@ export const draftSchema = z.strictObject({
   definition: commandChainDefinitionSchema,
   sequence,
   attemptId: text,
-  status: z.enum(["editing", "completed"]),
+  status: z.enum(["editing", "waiting_for_answers", "completed"]),
   phase: text.nullable(),
   inputs: z.record(text, text),
   artifacts: z.array(artifactItem),
   frozen: z.array(z.strictObject({ ref: text, key: z.string(), phase: text })),
   writeRules: z.array(writeRule),
+  runtimeInputs: z.array(runtimeInputSchema),
   completedPhases: z.array(text),
   events: z.array(event),
 });
@@ -48,6 +62,11 @@ export type ChainBinding = ChainDraft["binding"];
 export type ArtifactItem = z.infer<typeof artifactItem>;
 export type ArtifactWrite = { ref: string; key?: string; content: string };
 export type MutationContext = { attemptId: string; expectedSequence: number };
+export type RuntimeInput = z.infer<typeof runtimeInputSchema>;
+
+export function pendingRuntimeInputs(draft: Readonly<ChainDraft>): RuntimeInput[] {
+  return draft.runtimeInputs.filter(input => input.active && input.answer === null);
+}
 
 export class DraftConflictError extends Error {}
 export class PhaseValidationError extends Error {
@@ -71,13 +90,18 @@ export type BuiltinResult = {
 };
 // Host-owned validators are read-only and must not perform delivery side effects.
 // Their output and phase completion become durable together in one store write.
-export type BuiltinHandler = (draft: Readonly<ChainDraft>) => BuiltinResult | Promise<BuiltinResult>;
+export type BuiltinHandler = {
+  (draft: Readonly<ChainDraft>): BuiltinResult | Promise<BuiltinResult>;
+  readonly runtimeInputs?: boolean;
+};
 export type BuiltinHandlers = Readonly<Record<string, BuiltinHandler>>;
 
 const commandSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("artifact.put"), ref: text, key: text.max(120).optional(), content: text }),
   z.strictObject({ type: z.literal("artifact.remove"), ref: text, key: text.max(120).optional() }),
   z.strictObject({ type: z.literal("metadata.set"), input: text, value: text }),
+  z.strictObject({ type: z.literal("runtime-input.put"), ...runtimeInputFields }),
+  z.strictObject({ type: z.literal("runtime-input.remove"), key: text.max(120) }),
   z.strictObject({ type: z.literal("phase.complete"), confirmation: text.optional() }),
   z.strictObject({ type: z.literal("phase.rewind"), to: text, reason: text.max(4000) }),
 ]);
@@ -119,9 +143,9 @@ function currentPhase(draft: ChainDraft) {
   return phase;
 }
 
-function recordEvent(draft: ChainDraft, command: string, reason?: string): void {
+function recordEvent(draft: ChainDraft, command: string, reason?: string, userId?: string): void {
   draft.sequence += 1;
-  draft.events.push({ sequence: draft.sequence, attemptId: draft.attemptId, command, phase: draft.phase, ...(reason ? { reason } : {}) });
+  draft.events.push({ sequence: draft.sequence, attemptId: draft.attemptId, command, phase: draft.phase, ...(reason ? { reason } : {}), ...(userId ? { userId } : {}) });
 }
 
 /** Authorization and trusted Multica run lookup belong to the caller, not tool arguments. */
@@ -148,7 +172,7 @@ export class CommandChainEngine {
     const draft = draftSchema.parse({
       schemaVersion: 1, id: input.id, binding: input.binding, definition: input.chain.definition,
       sequence: 0, attemptId: input.attemptId, status: "editing", phase: order[0],
-      inputs, artifacts: [], frozen: [], writeRules: [], completedPhases: [], events: [],
+      inputs, artifacts: [], frozen: [], writeRules: [], runtimeInputs: [], completedPhases: [], events: [],
     });
     for (const write of input.readonlyArtifacts ?? []) {
       if (artifactBlock(draft.definition, write.ref).writable) throw new Error(`Initial artifact ${write.ref} must be readonly`);
@@ -168,12 +192,32 @@ export class CommandChainEngine {
   async resume(id: string, expectedSequence: number, attemptId: string): Promise<ChainDraft> {
     const draft = await this.read(id);
     if (draft.sequence !== expectedSequence) throw new DraftConflictError("Draft changed; reload before resuming");
+    if (draft.status === "waiting_for_answers") {
+      if (pendingRuntimeInputs(draft).length) throw new Error("Runtime inputs still require human answers");
+      draft.status = "editing";
+    }
     currentPhase(draft);
     const nextAttemptId = text.parse(attemptId);
     if (draft.attemptId === nextAttemptId) throw new Error("Resume requires a new run attempt");
     draft.attemptId = nextAttemptId;
     recordEvent(draft, "attempt.resume");
     await this.store.save(draft, expectedSequence);
+    return structuredClone(draft);
+  }
+
+  /** Host-only: the caller must authenticate a human and derive their user ID. */
+  async answerRuntimeInput(id: string, input: {
+    expectedSequence: number; requestId: string; answer: string; userId: string;
+  }): Promise<ChainDraft> {
+    const draft = await this.read(id);
+    if (draft.sequence !== input.expectedSequence) throw new DraftConflictError("Draft changed; reload before answering");
+    if (draft.status !== "waiting_for_answers") throw new Error("Draft is not waiting for human answers");
+    const request = draft.runtimeInputs.find(request => request.id === input.requestId && request.active);
+    if (!request || request.answer !== null) throw new Error("Runtime input is missing, superseded, or already answered");
+    const answer = runtimeInputSchema.shape.answer.unwrap().parse({ text: input.answer, userId: input.userId, sequence: draft.sequence + 1 });
+    request.answer = answer;
+    recordEvent(draft, "runtime-input.answer", request.id, answer.userId);
+    await this.store.save(draft, input.expectedSequence);
     return structuredClone(draft);
   }
 
@@ -201,12 +245,26 @@ export class CommandChainEngine {
     } else if (command.type === "metadata.set") {
       if (phase.type !== "metadata" || !phase.inputs.includes(command.input)) throw new Error(`Input ${command.input} is outside the metadata phase`);
       draft.inputs[command.input] = command.value;
+    } else if (command.type === "runtime-input.put" || command.type === "runtime-input.remove") {
+      const handler = phase.type === "builtin" && Object.hasOwn(this.builtins, phase.builtin) ? this.builtins[phase.builtin] : undefined;
+      if (!handler?.runtimeInputs) throw new Error("Runtime inputs are not enabled for the current phase");
+      const existing = draft.runtimeInputs.find(request => request.key === command.key && request.active);
+      if (existing && (existing.phase !== draft.phase || existing.answer !== null)) throw new Error("Runtime input already has a human answer or belongs to another phase; use a new key");
+      if (command.type === "runtime-input.remove") {
+        if (!existing) throw new Error(`Runtime input ${command.key} does not exist`);
+        existing.active = false;
+      } else {
+        const { type: _type, ...fields } = command;
+        if (existing) Object.assign(existing, fields, { attemptId: draft.attemptId });
+        else draft.runtimeInputs.push({ ...fields, id: `${draft.id}:${draft.sequence + 1}`, phase: draft.phase!, attemptId: draft.attemptId, active: true, answer: null });
+      }
     } else if (command.type === "phase.rewind") {
       this.rewind(draft, command.to);
     } else {
       await this.complete(draft, command.confirmation);
     }
-    recordEvent(draft, command.type, command.type === "phase.rewind" ? command.reason : command.type === "phase.complete" ? command.confirmation : undefined);
+    recordEvent(draft, command.type === "phase.complete" && draft.status === "waiting_for_answers" ? "phase.wait" : command.type,
+      command.type === "phase.rewind" ? command.reason : command.type === "phase.complete" ? command.confirmation : undefined);
     await this.store.save(draft, context.expectedSequence);
     return structuredClone(draft);
   }
@@ -225,18 +283,23 @@ export class CommandChainEngine {
     draft.artifacts = draft.artifacts.filter(item => (firstOwner.get(item.ref) ?? -1) <= target);
     draft.frozen = draft.frozen.filter(item => order.indexOf(item.phase) < target);
     draft.writeRules = draft.writeRules.filter(rule => order.indexOf(rule.phase) < target);
+    for (const request of draft.runtimeInputs) if (order.indexOf(request.phase) >= target) request.active = false;
     draft.completedPhases = draft.completedPhases.slice(0, target);
     draft.phase = to;
   }
 
   private async complete(draft: ChainDraft, confirmation?: string): Promise<void> {
     const phase = currentPhase(draft);
+    const handler = phase.type === "builtin" && Object.hasOwn(this.builtins, phase.builtin) ? this.builtins[phase.builtin] : undefined;
+    if (handler?.runtimeInputs && pendingRuntimeInputs(draft).some(request => request.phase === draft.phase)) {
+      draft.status = "waiting_for_answers";
+      return;
+    }
     const errors = phase.inputs.filter(key => draft.definition.inputs[key]?.required && !draft.inputs[key])
       .map(key => `Required input ${key} is missing`);
     if (phase.type === "confirmation" && !confirmation) errors.push("An explicit confirmation is required");
     if (errors.length) throw new PhaseValidationError(errors);
     if (phase.type === "builtin") {
-      const handler = Object.hasOwn(this.builtins, phase.builtin) ? this.builtins[phase.builtin] : undefined;
       if (!handler) throw new PhaseValidationError([`Builtin ${phase.builtin} is not implemented`]);
       const result = await handler(structuredClone(draft));
       if (result.errors.length) throw new PhaseValidationError(result.errors);

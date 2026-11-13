@@ -6,6 +6,7 @@ import { parse, stringify } from "yaml";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   CommandChainEngine, compileVerificationConclusion, createVerificationHandlers, parseCommandChainDefinition,
+  pendingRuntimeInputs,
   type ChainCommand, type ChainDraft, type CommandChainProfile, type VerificationContract,
 } from "./index";
 import { SqliteDraftStore } from "./sqlite-store";
@@ -250,5 +251,94 @@ describe("independent verification builtins", () => {
     const duplicated = structuredClone(baseContract);
     duplicated.sources.push(duplicated.sources[0]!);
     expect(() => createVerificationHandlers(duplicated)).toThrow(/unique/);
+  });
+
+  it("waits for a batch of human answers, reopens storage, and resumes the same plan on a new run", async () => {
+    const { engine, draft, contract } = await setup();
+    let next = await execute(engine, draft, complete);
+    const request = { type: "runtime-input.put" as const, key: "test-url", title: "Test entry", question: "Which local URL should be tested?", why: "Need the real UI entry", recommendation: "Use the managed local Web URL" };
+    next = await execute(engine, next, request);
+    next = await execute(engine, next, { ...request, key: "test-data", title: "Fixture", question: "Which fixture can be changed?" });
+    next = await execute(engine, next, complete);
+    expect(next.status).toBe("waiting_for_answers");
+    expect(next.phase).toBe("plan");
+    expect(next.completedPhases).toEqual(["inputs"]);
+    expect(next.events.at(-1)?.command).toBe("phase.wait");
+    await expect(execute(engine, next, request)).rejects.toThrow(/no editable phase/);
+    await expect(engine.resume(next.id, next.sequence, "test-run-2")).rejects.toThrow(/require human answers/);
+
+    stores.pop()!.close();
+    const restarted = new CommandChainEngine(openStore(), createVerificationHandlers(contract));
+    next = await restarted.read(draft.id);
+    const [entry, fixture] = pendingRuntimeInputs(next);
+    next = await restarted.answerRuntimeInput(next.id, { expectedSequence: next.sequence, requestId: entry!.id, answer: "http://localhost:13649", userId: "local-human" });
+    expect(next.events.at(-1)).toMatchObject({ command: "runtime-input.answer", userId: "local-human" });
+    await expect(restarted.resume(next.id, next.sequence, "test-run-2")).rejects.toThrow(/require human answers/);
+    next = await restarted.answerRuntimeInput(next.id, { expectedSequence: next.sequence, requestId: fixture!.id, answer: "Use the isolated test workspace", userId: "local-human" });
+    expect(pendingRuntimeInputs(next)).toEqual([]);
+    await expect(execute(restarted, next, complete)).rejects.toThrow(/no editable phase/);
+    await expect(restarted.answerRuntimeInput(next.id, { expectedSequence: next.sequence, requestId: entry!.id, answer: "Overwrite answer", userId: "local-human" }))
+      .rejects.toThrow(/already answered/);
+    next = await restarted.resume(next.id, next.sequence, "test-run-2");
+    expect(next.phase).toBe("plan");
+    expect(next.binding).toEqual(contract.binding);
+    expect(next.runtimeInputs[0]?.answer).toMatchObject({ userId: "local-human", text: "http://localhost:13649" });
+    await expect(execute(restarted, next, request)).rejects.toThrow(/already has a human answer/);
+    next = await put(restarted, next, "scenarios", scenario, "s1");
+    expect((await execute(restarted, next, complete)).phase).toBe("execute");
+  });
+
+  it("does not turn a human answer into passed evidence for a blocked scenario", async () => {
+    const { engine, draft, contract } = await executionPhase();
+    let next = await put(engine, draft, "results", { status: "blocked", failureKind: "environment", evidence: "Local Web entry unavailable" }, "s1");
+    next = await execute(engine, next, {
+      type: "runtime-input.put", key: "environment", title: "Web unavailable", question: "Can the local Web service be started?",
+      why: "Cannot observe the acceptance", recommendation: "Start the managed environment",
+    });
+    next = await execute(engine, next, complete);
+    expect(next.status).toBe("waiting_for_answers");
+    expect(next.phase).toBe("execute");
+    next = await engine.answerRuntimeInput(next.id, { expectedSequence: next.sequence, requestId: pendingRuntimeInputs(next)[0]!.id, answer: "Service is running now", userId: "local-human" });
+    next = await engine.resume(next.id, next.sequence, "test-run-2");
+    await expect(execute(engine, next, complete)).rejects.toThrow(/resolve runtime input and rerun/);
+    await expect(put(engine, next, "scenarios", { ...scenario, expected: "Anything" }, "s1")).rejects.toThrow(/frozen/);
+    next = await put(engine, next, "results", { status: "passed", evidence: "New browser observation after the service started" }, "s1");
+    next = await execute(engine, next, complete);
+    next = await put(engine, next, "evidence-review", { summary: "Observed again after the environment answer" });
+    next = await execute(engine, next, complete);
+    next = await execute(engine, next, complete);
+    expect(compileVerificationConclusion(next, contract).verdict).toBe("passed");
+  });
+
+  it("preserves superseded questions and answers without applying them to a new question", async () => {
+    const { engine, draft } = await setup();
+    let next = await execute(engine, draft, complete);
+    const request = { type: "runtime-input.put" as const, key: "fixture", title: "Fixture", question: "Which fixture?", why: "Need isolated data", recommendation: "Use a test workspace" };
+    next = await execute(engine, next, request);
+    next = await execute(engine, next, complete);
+    const oldId = pendingRuntimeInputs(next)[0]!.id;
+    next = await engine.answerRuntimeInput(next.id, { expectedSequence: next.sequence, requestId: oldId, answer: "Old fixture", userId: "local-human" });
+    next = await engine.resume(next.id, next.sequence, "test-run-2");
+    next = await execute(engine, next, { type: "phase.rewind", to: "inputs", reason: "Recheck input preparation" });
+    expect(next.runtimeInputs[0]).toMatchObject({ id: oldId, active: false, answer: { text: "Old fixture" } });
+    next = await execute(engine, next, complete);
+    next = await execute(engine, next, { ...request, question: "Which fixture for the revised preparation?" });
+    next = await execute(engine, next, complete);
+    expect(pendingRuntimeInputs(next)[0]?.id).not.toBe(oldId);
+    await expect(engine.answerRuntimeInput(next.id, { expectedSequence: next.sequence, requestId: oldId, answer: "Stale answer", userId: "local-human" })).rejects.toThrow(/superseded/);
+    expect(pendingRuntimeInputs(await engine.read(next.id))).toHaveLength(1);
+  });
+
+  it("restricts question commands to host-enabled phases and rejects agent answer commands", async () => {
+    const { engine, draft } = await setup();
+    const request = { type: "runtime-input.put" as const, key: "fixture", title: "Fixture", question: "Which fixture?", why: "Need data", recommendation: "Use test data" };
+    await expect(execute(engine, draft, request)).rejects.toThrow(/not enabled/);
+    let next = await execute(engine, draft, complete);
+    next = await execute(engine, next, request);
+    next = await execute(engine, next, { type: "runtime-input.remove", key: "fixture" });
+    expect(pendingRuntimeInputs(next)).toEqual([]);
+    expect(next.runtimeInputs[0]?.active).toBe(false);
+    await expect(execute(engine, next, JSON.parse('{"type":"runtime-input.answer","answer":"Agent self approval"}'))).rejects.toThrow();
+    expect(await engine.read(next.id)).toEqual(next);
   });
 });

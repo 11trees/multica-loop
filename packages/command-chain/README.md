@@ -51,10 +51,35 @@ The main package entry has no Node or database imports. Other adapters must
 honor the same atomic create/compare-and-swap contract.
 
 The engine does **not** authenticate Multica runs, capture shell receipts, judge
-evidence truth, wait for human answers, or change issue status. Callers must
+evidence truth, or change issue status. Callers must
 derive identity and version bindings from trusted host state. A draft marked
 `completed` only means its configured handlers and phase checks accepted it;
 no production delivery result or handoff is issued.
+
+## Runtime input and human answers
+
+Builtin handlers explicitly opt into runtime inputs; YAML cannot grant this
+capability. Verification planning and execution support `runtime-input.put`
+and `runtime-input.remove`. Questions include a stable key, title, question,
+reason, and recommendation. Completing a phase with an unanswered active
+question persists `waiting_for_answers` without advancing or validating the
+unfinished phase. Agent mutations stop while the draft is waiting.
+
+Host-only `answerRuntimeInput` requires the draft sequence, request ID, answer,
+and authenticated human user ID. Answers are immutable and recorded with their
+author and sequence. This method is not an agent command; the integration must
+authenticate a human before invoking it. Partial answers keep the whole batch
+waiting. Once every active question is answered, host-only `resume` assigns a
+new run attempt and returns to the same phase, preserving the contract, artifacts,
+and frozen plan. The old run cannot continue, even if it learns the new sequence.
+
+An answer does not turn blocked observations into passing results. Verification
+must run again and update its observations before completion. Answered questions
+cannot be rewritten or silently asked again under the same active key. Rewind
+supersedes questions at/after the target while preserving their answers for
+inspection; a new question receives a new request ID so a stale answer cannot
+close it. Removed unanswered questions are retained as inactive records too.
+Multica's human-facing question UI and automatic run scheduling remain pending.
 
 ## Independent verification builtins
 
@@ -93,9 +118,9 @@ specification findings point to analysis; implementation-only failures point
 to development. These are routing hints, not actual host transitions.
 The conclusion is not a signed host receipt or proof that supplied
 evidence describes an independently observed event. Captured evidence,
-runtime-input suspension, human answers, and host handoff enforcement are
-still pending. Until suspension is connected, blocked observations stay at
-the execution checkpoint and cannot produce a final conclusion.
+and host handoff enforcement are still pending. Blocked observations stay at
+the execution checkpoint and can suspend for human input; after an answer,
+they still cannot produce a conclusion until observations are updated.
 
 ## Verification
 

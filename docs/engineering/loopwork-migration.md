@@ -96,8 +96,12 @@ results, and recheck evidence review before compiling a passed/failed conclusion
 New scenarios in execution are append-only. They reject stale
 workspace/issue/revision/contract/code bindings. This preserves the current
 LoopWork minimum of one frontend acceptance scenario, not frontend coverage of
-every acceptance. Blocked observations remain at the execution checkpoint;
-runtime-input suspension and human answers are not implemented yet.
+every acceptance. Blocked observations remain at the execution checkpoint.
+The kernel can suspend a question batch, persist authenticated human answers,
+and resume the same phase on a new run attempt after all answers arrive. It
+preserves questions superseded by rewind and does not convert answers into
+passing evidence. Human authentication, question UI, and automatic continuation
+in Multica are not connected yet.
 
 Development and other engineering builtin implementations are pending. The
 engine rejects completion of a builtin without its host handler. Generic
