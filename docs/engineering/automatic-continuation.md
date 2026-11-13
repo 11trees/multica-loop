@@ -3,6 +3,9 @@
 The contract's `auto_continue` policy authorizes handoff and answered-question
 transitions:
 
+- A completed [analysis chain](analysis.md) freezes its delivery contract, then
+  the coordinator queues the configured developer (or verifier when development
+  was not configured).
 - A completed development chain hands its actual clean commit and unchanged
   scope to the independent verifier, then the coordinator queues that verifier.
 - A published question batch receives every active human answer, then the
@@ -67,7 +70,7 @@ continuation retain separate coverage. The fixture claims simulate runtime
 metadata and never execute an installed provider or call a model.
 
 The [bounded implementation rework](rework.md) path is connected. Requirement
-planning/analysis and final review,
+planning, specification-failure reanalysis, and final review,
 remaining command chains, other provider receipts, remote repository mapping,
 and real delivered-business acceptance remain pending. A task process completing
 is still insufficient for the synchronous issue completion gate.

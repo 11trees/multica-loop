@@ -3077,7 +3077,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		invalid := selectErr != nil || json.Unmarshal(selection, &role) != nil || role.Configured == nil
 		if !invalid && *role.Configured {
 			commit, err := hex.DecodeString(role.Commit)
-			invalid = err != nil || (len(commit) != 20 && len(commit) != 32) || role.Repository == "" || (role.Chain != "development" && role.Chain != "verification")
+			invalid = err != nil || (len(commit) != 20 && len(commit) != 32) || role.Repository == "" || (role.Chain != "analysis" && role.Chain != "development" && role.Chain != "verification")
 		}
 		if invalid {
 			return resp, nil, nil, 0, 0, h.failClaimedTaskBeforeLaunch(r.Context(), task, "Engineering role lookup is unavailable.", taskfailure.ReasonEnvironmentPrepareFailed, "engineering_unavailable", http.StatusServiceUnavailable, "engineering unavailable")

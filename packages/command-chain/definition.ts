@@ -62,7 +62,7 @@ const phase = z.discriminatedUnion("type", [
 ]);
 
 export const commandChainDefinitionSchema = z.strictObject({
-  version: z.literal(1),
+  version: z.union([z.literal(1), z.literal(2)]),
   id: identifier,
   agent: identifier,
   inputs: z.record(identifier, z.strictObject({
@@ -83,6 +83,7 @@ export type BuiltinCapability = {
 
 // The host supplies these capabilities; YAML cannot weaken its own requirements.
 export type CommandChainProfile = {
+  definitionVersions?: readonly (1 | 2)[];
   id: string;
   agent: string;
   requiredBuiltins: readonly string[];
@@ -99,6 +100,7 @@ export type LoadedCommandChain = {
 /** Loads authoring definitions only; it does not execute builtins or authorize delivery. */
 export function parseCommandChainDefinition(source: string, profile: CommandChainProfile): LoadedCommandChain {
   const chain = commandChainDefinitionSchema.parse(parse(source));
+  if(!(profile.definitionVersions ?? [1]).includes(chain.version))throw new Error(`Unsupported authoring version ${chain.version} for ${profile.id}`);
   if (chain.id !== profile.id || chain.agent !== profile.agent) {
     throw new Error(`Expected chain ${profile.id} for agent ${profile.agent}`);
   }

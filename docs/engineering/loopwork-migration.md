@@ -81,7 +81,7 @@ must be designed together rather than assuming a per-issue workflow choice.
 
 ## Current implementation
 
-The standalone kernel and original development/verification YAML definitions are in
+The standalone kernel and imported delivery-analysis/development/verification YAML definitions are in
 `packages/command-chain`. The loader validates authoring structure. The engine
 supports scoped artifact and metadata edits, field validation, phase completion,
 explicit confirmations, rewind invalidation, item freezing, and run-attempt
@@ -114,6 +114,10 @@ oracles to a different verification agent. Structured receipt capture currently
 supports Codex. Native local-directory and pinned-worktree bindings are now
 connected; other providers and remote clone mapping remain pending. See
 [development handoff](development-handoff.md) for the exact provenance and limits.
+[Delivery analysis](analysis.md) now covers frozen units/dependencies, impact scans,
+structured decisions and authenticated human option choices, answer review, and
+frozen-spec handoff to development. The original acceptances remain unchanged;
+analysis-derived guardrail/focus sources are appended with draft provenance.
 Other engineering builtin implementations are pending. The
 engine rejects completion of a builtin without its host handler. Generic
 runtime tests use explicit stubs; verification tests use its migrated gates.
@@ -147,7 +151,7 @@ The first synchronous [issue completion boundary](issue-completion.md) now check
 ordinary/description/batch updates, PR automation, and workflow remaps against
 the latest passed verification and current clean commit. It preserves the
 existing non-atomic batch semantics and does not supply a cross-database handoff
-transaction. Final review, analysis/arbitration integration, remote repository mapping,
+transaction. Final review, specification-failure reanalysis/arbitration, remote repository mapping,
 remaining chains, and real delivery acceptance are still pending. These local
 integration steps do not complete milestone 2 or the migration.
 

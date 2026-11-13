@@ -32,6 +32,12 @@ export function EngineeringConfigure({ workspaceId, issue, revision, repositoryP
   const id = useId();
   const [open, setOpen] = useState(false);
   const [repository, setRepository] = useState(repositoryPath);
+  const [includeAnalysis,setIncludeAnalysis]=useState(false);
+  const [analyst,setAnalyst]=useState("");
+  const [unitActor,setUnitActor]=useState("");
+  const [unitTrigger,setUnitTrigger]=useState("");
+  const [unitOutcome,setUnitOutcome]=useState("");
+  const [decisionMode,setDecisionMode]=useState<NonNullable<EngineeringConfiguration["decisionMode"]>>("balanced");
   const [maxReworks, setMaxReworks] = useState(3);
   const [autoContinue, setAutoContinue] = useState(true);
   const [includeDevelopment, setIncludeDevelopment] = useState(true);
@@ -44,8 +50,8 @@ export function EngineeringConfigure({ workspaceId, issue, revision, repositoryP
   const agents = useQuery({ ...agentListOptions(workspaceId), enabled: open && !!workspaceId });
   const available = (agents.data ?? []).filter(agent => !agent.archived_at);
   const kindLabels = { acceptance: t($ => $.engineering.acceptance), focus: t($ => $.engineering.focus), guardrail: t($ => $.engineering.guardrail), recovery: t($ => $.engineering.recovery) };
-  const sameAgent = includeDevelopment && !!developer && developer === verifier;
-  const valid = (!autoContinue || !includeDevelopment || Number.isInteger(maxReworks) && maxReworks >= 0 && maxReworks <= 10) && repository.trim() && verifier && (!includeDevelopment || developer && guidance.trim()) && !sameAgent && scope.some(row => row.kind === "acceptance") && scope.every(row => row.description.trim() && row.oracle.trim());
+  const sameAgent = includeDevelopment && !!developer && developer === verifier || includeAnalysis && !!analyst && (analyst === verifier || includeDevelopment && analyst === developer);
+  const valid = (!autoContinue || !includeDevelopment || Number.isInteger(maxReworks) && maxReworks >= 0 && maxReworks <= 10) && (!includeAnalysis || analyst && unitActor.trim() && unitTrigger.trim() && unitOutcome.trim()) && repository.trim() && verifier && (!includeDevelopment || developer && (includeAnalysis || guidance.trim())) && !sameAgent && scope.some(row => row.kind === "acceptance") && scope.every(row => row.description.trim() && row.oracle.trim());
   const update = (key: number, patch: Partial<Scope>) => setScope(rows => rows.map(row => row.id === key ? { ...row, ...patch } : row));
 
   return <Dialog open={open} onOpenChange={value => { if (!pending) setOpen(value); }}>
@@ -55,8 +61,11 @@ export function EngineeringConfigure({ workspaceId, issue, revision, repositoryP
       <form onSubmit={async event => {
         event.preventDefault(); if (!valid || pending) return; setError("");
         try {
-          await onSave({ maxReworks: autoContinue && includeDevelopment ? maxReworks : 0, autoContinue, expectedRevision: revision, verifierId: verifier, developerId: includeDevelopment ? developer : undefined, repositoryPath: repository.trim(), implementationGuidance: includeDevelopment ? guidance.trim() : undefined,
-            sources: scope.map(row => ({ key: `scope-${row.id + 1}`, kind: row.kind, description: row.description.trim(), oracle: row.oracle.trim(), sourceRef: `ISSUE:${issue.id}${issue.revision ? `:r${issue.revision}` : ""}:scope-${row.id + 1}` })) });
+          const sourceRef=(key:number)=>`ISSUE:${issue.id}${issue.revision ? `:r${issue.revision}` : ""}:scope-${key+1}`;
+          await onSave({ analystId:includeAnalysis ? analyst : undefined,decisionMode:includeAnalysis ? decisionMode : undefined,
+            unit:includeAnalysis ? {key:issue.id,title:issue.title,actor:unitActor.trim(),trigger:unitTrigger.trim(),observableOutcome:unitOutcome.trim(),acceptance:scope.filter(row=>row.kind === "acceptance").map(row=>row.description.trim()).join("\n"),dependsOn:[],sourceRefs:scope.map(row=>({key:`scope-${row.id+1}`,kind:row.kind === "acceptance" ? "acceptance" : row.kind === "guardrail" ? "preserve" : "technical",content:row.description.trim(),sourceRef:sourceRef(row.id)}))} : undefined,
+            maxReworks: autoContinue && includeDevelopment ? maxReworks : 0, autoContinue, expectedRevision: revision, verifierId: verifier, developerId: includeDevelopment ? developer : undefined, repositoryPath: repository.trim(), implementationGuidance: includeDevelopment && !includeAnalysis ? guidance.trim() : undefined,
+            sources: scope.map(row => ({ key: `scope-${row.id + 1}`, kind: row.kind, description: row.description.trim(), oracle: row.oracle.trim(), sourceRef: sourceRef(row.id) })) });
           setOpen(false);
         } catch (error) { setError(error instanceof Error ? error.message : t($ => $.engineering.save_error)); }
       }} className="space-y-4">
@@ -65,6 +74,14 @@ export function EngineeringConfigure({ workspaceId, issue, revision, repositoryP
           <div className="space-y-1.5"><div className="flex items-center gap-2"><Switch id={`${id}-auto`} checked={autoContinue} onCheckedChange={setAutoContinue} aria-describedby={`${id}-auto-notice`} /><Label htmlFor={`${id}-auto`}>{t($ => $.engineering.auto_continue)}</Label></div><p id={`${id}-auto-notice`} className="text-caption text-muted-foreground">{t($ => $.engineering.auto_continue_notice)}</p></div>
           <div className="flex items-center gap-2"><Switch id={`${id}-development`} checked={includeDevelopment} onCheckedChange={setIncludeDevelopment} /><Label htmlFor={`${id}-development`}>{t($ => $.engineering.include_development)}</Label></div>
           {autoContinue && includeDevelopment && <div className="space-y-1.5"><Label htmlFor={`${id}-reworks`}>{t($ => $.engineering.max_reworks)}</Label><Input id={`${id}-reworks`} type="number" min={0} max={10} step={1} value={Number.isNaN(maxReworks) ? "" : maxReworks} onChange={event => setMaxReworks(event.target.valueAsNumber)} aria-describedby={`${id}-reworks-notice`} required /><p id={`${id}-reworks-notice`} className="text-caption text-muted-foreground">{t($ => $.engineering.rework_notice)}</p></div>}
+          <div className="flex items-center gap-2"><Switch id={`${id}-analysis`} checked={includeAnalysis} onCheckedChange={setIncludeAnalysis} /><Label htmlFor={`${id}-analysis`}>{t($=>$.engineering.include_analysis)}</Label></div>
+          {includeAnalysis && <fieldset className="space-y-3 rounded-lg border p-3"><legend className="px-1 text-label">{t($=>$.engineering.delivery_unit)}</legend>
+            <div className="space-y-1.5"><Label htmlFor={`${id}-analyst`}>{t($=>$.engineering.analyst)}</Label><AgentChoice id={`${id}-analyst`} value={analyst} onChange={setAnalyst} agents={available} placeholder={t($=>$.engineering.select_agent)} /></div>
+            <div className="space-y-1.5"><Label htmlFor={`${id}-actor`}>{t($=>$.engineering.unit_actor)}</Label><Input id={`${id}-actor`} value={unitActor} onChange={event=>setUnitActor(event.target.value)} required /></div>
+            <div className="space-y-1.5"><Label htmlFor={`${id}-trigger`}>{t($=>$.engineering.unit_trigger)}</Label><Textarea id={`${id}-trigger`} value={unitTrigger} onChange={event=>setUnitTrigger(event.target.value)} rows={2} required /></div>
+            <div className="space-y-1.5"><Label htmlFor={`${id}-outcome`}>{t($=>$.engineering.unit_outcome)}</Label><Textarea id={`${id}-outcome`} value={unitOutcome} onChange={event=>setUnitOutcome(event.target.value)} rows={2} required /></div>
+            <div className="space-y-1.5"><Label htmlFor={`${id}-mode`}>{t($=>$.engineering.decision_mode)}</Label><Select items={[{value:"conservative",label:t($=>$.engineering.mode_conservative)},{value:"balanced",label:t($=>$.engineering.mode_balanced)},{value:"autonomous",label:t($=>$.engineering.mode_autonomous)},{value:"fully_autonomous",label:t($=>$.engineering.mode_fully_autonomous)}]} value={decisionMode} onValueChange={value=>{if(value === "conservative" || value === "balanced" || value === "autonomous" || value === "fully_autonomous")setDecisionMode(value);}}><SelectTrigger id={`${id}-mode`}><SelectValue /></SelectTrigger><SelectContent>{["conservative","balanced","autonomous","fully_autonomous"].map(mode=><SelectItem key={mode} value={mode}>{mode === "conservative" ? t($=>$.engineering.mode_conservative) : mode === "balanced" ? t($=>$.engineering.mode_balanced) : mode === "autonomous" ? t($=>$.engineering.mode_autonomous) : t($=>$.engineering.mode_fully_autonomous)}</SelectItem>)}</SelectContent></Select>{decisionMode === "fully_autonomous" && <p className="text-caption text-muted-foreground">{t($=>$.engineering.decision_mode_notice)}</p>}</div>
+          </fieldset>}
           <div className="grid gap-4 sm:grid-cols-2">
             {includeDevelopment && <div className="space-y-1.5"><Label htmlFor={`${id}-developer`}>{t($ => $.engineering.developer)}</Label><AgentChoice id={`${id}-developer`} value={developer} onChange={setDeveloper} agents={available} placeholder={t($ => $.engineering.select_agent)} /></div>}
             <div className="space-y-1.5"><Label htmlFor={`${id}-verifier`}>{t($ => $.engineering.verifier)}</Label><AgentChoice id={`${id}-verifier`} value={verifier} onChange={setVerifier} agents={available} placeholder={t($ => $.engineering.select_agent)} /></div>
@@ -72,8 +89,8 @@ export function EngineeringConfigure({ workspaceId, issue, revision, repositoryP
           {agents.isError && <p role="alert" className="text-caption text-destructive">{t($ => $.engineering.agents_error)}</p>}
           {agents.isSuccess && available.length === 0 && <p className="text-caption text-muted-foreground">{t($ => $.engineering.no_agents)}</p>}
           {includeDevelopment && <p className="text-caption text-muted-foreground">{t($ => $.engineering.developer_runtime_notice)}</p>}
-          {sameAgent && <p role="alert" className="text-caption text-destructive">{t($ => $.engineering.separate_agents)}</p>}
-          {includeDevelopment && <div className="space-y-1.5"><Label htmlFor={`${id}-guidance`}>{t($ => $.engineering.guidance)}</Label><Textarea id={`${id}-guidance`} value={guidance} onChange={event => setGuidance(event.target.value)} required rows={2} /></div>}
+          {sameAgent && <p role="alert" className="text-caption text-destructive">{includeAnalysis ? t($=>$.engineering.separate_analysis_agents) : t($ => $.engineering.separate_agents)}</p>}
+          {includeDevelopment && !includeAnalysis && <div className="space-y-1.5"><Label htmlFor={`${id}-guidance`}>{t($ => $.engineering.guidance)}</Label><Textarea id={`${id}-guidance`} value={guidance} onChange={event => setGuidance(event.target.value)} required rows={2} /></div>}
           {scope.map((row, index) => <fieldset key={row.id} className="space-y-3 rounded-lg border p-3">
             <legend className="px-1 text-label">{t($ => $.engineering.scope_item, { number: index + 1 })}</legend>
             <div className="flex items-center gap-2"><Select items={kinds.map(kind => ({ value: kind, label: kindLabels[kind] }))} value={row.kind} onValueChange={value => update(row.id, { kind: kinds.find(kind => kind === value) ?? "acceptance" })}><SelectTrigger aria-label={t($ => $.engineering.scope_kind, { number: index + 1 })}><SelectValue>{kindLabels[row.kind]}</SelectValue></SelectTrigger><SelectContent>{kinds.map(kind => <SelectItem value={kind} key={kind}>{kindLabels[kind]}</SelectItem>)}</SelectContent></Select>

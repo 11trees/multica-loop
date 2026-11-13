@@ -42,6 +42,8 @@ func TestEngineeringClaimInstructions(t *testing.T) {
 		invalid    bool
 	}{
 		{"configured", json.RawMessage(`{"configured":true,"chain":"development","repository_path":"/fixture/repository","code_version":"0123456789abcdef0123456789abcdef01234567"}`), nil, true, false},
+		{"analysis", json.RawMessage(`{"configured":true,"chain":"analysis","repository_path":"/fixture/repository","code_version":"0123456789abcdef0123456789abcdef01234567"}`), nil, true, false},
+		{"unknown role", json.RawMessage(`{"configured":true,"chain":"unknown","repository_path":"/fixture/repository","code_version":"0123456789abcdef0123456789abcdef01234567"}`), nil, false, true},
 		{"unregistered", json.RawMessage(`{"configured":false}`), nil, false, false},
 		{"unavailable", nil, errors.New("unavailable"), false, false},
 		{"malformed", json.RawMessage(`{}`), nil, false, true},
@@ -83,7 +85,11 @@ func TestEngineeringClaimInstructions(t *testing.T) {
 			if response.Agent == nil || strings.Contains(response.Agent.Instructions, "multica engineering start") != tc.configured {
 				t.Fatal("configured role did not receive command-chain instructions")
 			}
-			if tc.configured && response.EngineeringChain != "development" {
+			expectedChain := "development"
+			if tc.name == "analysis" {
+				expectedChain = "analysis"
+			}
+			if tc.configured && response.EngineeringChain != expectedChain {
 				t.Fatal("development capture capability missing from claim")
 			}
 			if tc.configured && (response.EngineeringRepository != "/fixture/repository" || response.EngineeringCommit != "0123456789abcdef0123456789abcdef01234567") {
@@ -134,5 +140,31 @@ func TestEngineeringApplicationActorBoundaries(t *testing.T) {
 	testutil.Call(t, auth(h.ConfigureEngineeringVerification), request(session, `{"agent_id":"not-a-uuid"}`)).Want(http.StatusBadRequest)
 	if len(recorder.inputs) != 2 {
 		t.Fatal("invalid agent selection reached worker")
+	}
+}
+
+func TestEngineeringConfigureChecksAnalysisReferencesBeforeWorker(t *testing.T) {
+	runtimeID := dbfx.Runtime(t, "Analysis references runtime")
+	verifierID := dbfx.Agent(t, "Analysis reference verifier", runtimeID)
+	analystID := dbfx.Agent(t, "Analysis reference analyst", runtimeID)
+	issueID := dbfx.Issue(t, "Analysis references issue")
+	for _, tc := range []struct{ name, analyst, dependency string }{
+		{"missing analyst", "019a0000-0000-7000-8000-000000000099", ""},
+		{"missing dependency", analystID, "019a0000-0000-7000-8000-000000000098"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := *testHandler
+			worker := &engineeringRecorder{}
+			h.EngineeringWorker = worker
+			payload := map[string]any{"expected_revision": 0, "agent_id": verifierID, "analyst_agent_id": tc.analyst}
+			if tc.dependency != "" {
+				payload["dependency_issues"] = []map[string]string{{"key": "prior", "issue_id": tc.dependency}}
+			}
+			request := withURLParam(newRequest(http.MethodPost, "/api/issues/"+issueID+"/engineering/verification", payload), "id", issueID)
+			testutil.Call(t, h.ConfigureEngineeringVerification, request).Want(http.StatusNotFound)
+			if len(worker.inputs) != 0 {
+				t.Fatal("unchecked analysis references reached the worker")
+			}
+		})
 	}
 }

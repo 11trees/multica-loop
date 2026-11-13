@@ -1,6 +1,7 @@
 # Engineering verification service
 
-The local fork can run independent verification, optionally following development,
+The local fork can run independent verification, optionally following
+[delivery analysis](analysis.md) and development,
 through the native Multica CLI. Go authenticates each request, projects the human/run identity, and
 invokes a bundled Node worker over private stdin/stdout. The worker owns frozen
 contracts and drafts in a local SQLite database. It receives no bearer credential,
@@ -135,7 +136,7 @@ passed current independent verification is required for a registered issue's
 done-category write. Native execution now requires a project local-directory
 resource and a runtime-owned [repository binding](repository-binding.md); both
 in-place and pinned-worktree modes are supported on the API host. The other
-chains, additional provider receipt adapters, analysis/arbitration integration,
+chains, additional provider receipt adapters, specification-failure reanalysis/arbitration,
 remote clone mapping, and cross-database handoff
 acceptance remain required for cutover. Successful process exit is not evidence
 of engineering delivery.

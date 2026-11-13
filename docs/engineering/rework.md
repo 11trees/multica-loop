@@ -57,8 +57,8 @@ Only a fresh current passed conclusion can satisfy the issue completion gate.
 The shared issue panel shows the round/budget, stop reason, and prior failed
 reports with their commits and observations. Before an unstarted generation is
 queued, a human can freeze a replacement configuration. Stopped specification,
-stagnation, or budget cases require human action; the analysis chain and system
-arbitration agent are still migration work. An explicit new human configuration
+stagnation, or budget cases require human action; the [forward analysis chain](analysis.md) is connected, while automatic
+specification-failure reanalysis and the system arbitration agent remain pending. An explicit new human configuration
 starts a new root and budget; it does not erase stored prior revisions.
 
 ![Failed verification retained while rework waits](assets/rework-pending.png)
@@ -85,6 +85,6 @@ owned fixture metadata; no installed agent CLI or model is executed.
 
 The SQLite transition is separate from native task admission and filesystem
 effects. This does not establish a cross-database transaction, external-effect
-deduplication, or complete failure arbitration. Requirement planning/analysis,
+deduplication, or complete failure arbitration. Requirement planning, specification-failure reanalysis,
 final review, remaining chains, other provider receipt adapters, and real
 business/provider acceptance remain required for the full migration.

@@ -587,7 +587,9 @@ export class TestApiClient {
           for (const row of rows) database.prepare("DELETE FROM chain_drafts WHERE id = ?").run(JSON.parse(String(row.payload)).draftId);
           if (database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'engineering_execution'").get()) database.prepare("DELETE FROM engineering_execution WHERE workspace_id = ? AND issue_id = ?").run(this.workspaceId, issueId);
           for (const row of rows) {
-            const development = JSON.parse(String(row.payload)).development;
+            const record = JSON.parse(String(row.payload));
+            if(record.analysis) database.prepare("DELETE FROM chain_drafts WHERE id = ?").run(record.analysis.draftId);
+            const development = record.development;
             if (development) {
               database.prepare("DELETE FROM engineering_receipt WHERE draft_id = ?").run(development.draftId);
               database.prepare("DELETE FROM chain_drafts WHERE id = ?").run(development.draftId);

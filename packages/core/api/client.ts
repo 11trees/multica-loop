@@ -3023,11 +3023,11 @@ export class ApiClient {
 
   async configureEngineering(issueId: string, input: EngineeringConfiguration): Promise<void> {
     await this.writeEngineering(issueId, "", { expected_revision: input.expectedRevision, agent_id: input.verifierId,
-      max_reworks: input.maxReworks ?? 0, auto_continue: input.autoContinue ?? false, developer_agent_id: input.developerId, repository_path: input.repositoryPath, implementation_guidance: input.implementationGuidance, sources: input.sources });
+      max_reworks: input.maxReworks ?? 0, auto_continue: input.autoContinue ?? false, analyst_agent_id:input.analystId,unit:input.unit,decision_mode:input.decisionMode,dependency_issues:input.dependencyIssues?.map(item=>({key:item.key,issue_id:item.issueId})),developer_agent_id: input.developerId, repository_path: input.repositoryPath, implementation_guidance: input.implementationGuidance, sources: input.sources });
   }
 
-  async answerEngineering(issueId: string, input: { expectedSequence: number; requestId: string; answer: string }): Promise<void> {
-    await this.writeEngineering(issueId, "/answers", { expected_sequence: input.expectedSequence, request_id: input.requestId, answer: input.answer });
+  async answerEngineering(issueId: string, input: { expectedSequence: number; requestId: string; answer: string; selectedOption?:string }): Promise<void> {
+    await this.writeEngineering(issueId, "/answers", { expected_sequence: input.expectedSequence, request_id: input.requestId, answer: input.answer, selected_option:input.selectedOption });
   }
 
   async abandonEngineering(issueId: string, input: { expectedSequence: number; reason: string }): Promise<void> {

@@ -10,6 +10,8 @@ import { compileVerificationConclusion, createVerificationHandlers, verification
 import { commandReceiptSchema, createDevelopmentHandlers, compileDevelopmentConclusion, type CommandReceipt } from "./development";
 import { git, repositorySnapshot as snapshot, repositoryFingerprint, repositoryCommonDirectory, repositoryBranch, captureRepositoryOverlays } from "./repository";
 import { artifactBlock } from "./artifacts";
+import { decisionProposalSchema } from "./decisions";
+import { analysisContractSchema, analysisProfile, analysisPolicies, deliveryUnitSchema, createAnalysisHandlers, compileAnalysisConclusion } from "./analysis";
 
 const text = z.string().trim().min(1);
 const sequence = z.number().int().nonnegative();
@@ -22,7 +24,7 @@ const coordinator = z.strictObject({ kind: z.literal("coordinator") });
 const actor = z.discriminatedUnion("kind", [human, task, daemon, host, coordinator]);
 export const applicationRequestSchema = z.strictObject({
   actor,
-  action: z.enum(["configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations"]),
+  action: z.enum(["configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations", "verified-binding"]),
   payload: z.unknown().optional(),
 });
 export type ApplicationRequest = z.infer<typeof applicationRequestSchema>;
@@ -30,6 +32,9 @@ const configuration = z.strictObject({
   expected_revision: sequence,
   agent_id: z.uuid(), repository_path: text,
   developer_agent_id: z.uuid().optional(),
+  analyst_agent_id: z.uuid().optional(), unit: deliveryUnitSchema.optional(),
+  decision_mode: analysisContractSchema.shape.decisionMode.optional(),
+  dependency_issues: z.array(z.strictObject({key:text,issue_id:z.uuid()})).optional().default([]),
   implementation_guidance: text.optional(),
   auto_continue: z.boolean().optional().default(false),
   max_reworks: z.number().int().min(0).max(10).optional().default(0),
@@ -48,7 +53,8 @@ const recordSchema = z.strictObject({
   reworkFrom: z.strictObject({ revision: z.number().int().positive(), draftId: z.uuid() }).optional(),
   failure: z.strictObject({ signature: text, codeTree: text, decision: z.enum(["rework", "analysis", "stagnant", "budget", "manual"]) }).optional(),
   contract: verificationContractSchema,
-  development: z.strictObject({ agentId: z.uuid(), draftId: z.uuid(), definitionSource: text, baseCodeVersion: text, implementationGuidance: text, handoff: z.boolean(), conclusion: z.json().optional() }).optional(),
+  development: z.strictObject({ agentId: z.uuid(), draftId: z.uuid(), definitionSource: text, baseCodeVersion: text, implementationGuidance: text.optional(), handoff: z.boolean(), conclusion: z.json().optional() }).optional(),
+  analysis: z.strictObject({agentId:z.uuid(),draftId:z.uuid(),definitionSource:text,contract:analysisContractSchema,handoff:z.boolean(),conclusion:z.json().optional()}).optional(),
   delivery: executionSchema.optional(), verificationExecution: executionSchema.optional(),
 });
 type Record = z.infer<typeof recordSchema>;
@@ -81,7 +87,7 @@ export class EngineeringApplication {
   private readonly db: DatabaseSync;
   private readonly drafts: SqliteDraftStore;
 
-  constructor(database: string, private readonly definitionSource: string, private readonly developmentSource?: string) {
+  constructor(database: string, private readonly definitionSource: string, private readonly developmentSource?: string, private readonly analysisSource?: string) {
     parseCommandChainDefinition(definitionSource, profile);
     this.db = new DatabaseSync(database);
     this.db.exec(`CREATE TABLE IF NOT EXISTS engineering_contract (
@@ -96,6 +102,70 @@ export class EngineeringApplication {
   private current(workspaceId: string, issueId: string): Record | undefined {
     const row = this.db.prepare("SELECT payload FROM engineering_contract WHERE workspace_id = ? AND issue_id = ? ORDER BY revision DESC LIMIT 1").get(workspaceId, issueId);
     return row ? recordSchema.parse(JSON.parse(String(row.payload))) : undefined;
+  }
+
+  private activeRole(record: Record) {
+    if(record.analysis && !record.analysis.handoff)return {chain:"analysis",agentId:record.analysis.agentId,draftId:record.analysis.draftId,definitionSource:record.analysis.definitionSource};
+    if(record.development && !record.development.handoff)return {chain:"development",agentId:record.development.agentId,draftId:record.development.draftId,definitionSource:record.development.definitionSource};
+    return {chain:"verification",agentId:record.agentId,draftId:record.draftId,definitionSource:record.definitionSource};
+  }
+
+  private async dependencyBinding(workspaceId:string,issueId:string) {
+    const result=await this.invoke({actor:{kind:"host",workspaceId,issueId},action:"verified-binding"});
+    if(!("allowed" in result) || !result.allowed || !result.configured || !("binding" in result))throw new Error("Analysis dependencies require registered current passed verification");
+    if(!("repository_path" in result))throw new Error("Verified dependency repository is unavailable");
+    return {binding:verificationContractSchema.shape.binding.parse(result.binding),repositoryPath:text.parse(result.repository_path)};
+  }
+
+  private async validateDependencies(record:Record) {
+    for(const dependency of record.analysis?.contract.dependencies ?? []){
+      const binding=await this.dependencyBinding(record.workspaceId,dependency.issueId);
+      if(JSON.stringify(binding.binding) !== JSON.stringify(dependency.binding))throw new DraftConflictError(`Dependency ${dependency.key} changed after analysis was frozen`);
+      if(repositoryCommonDirectory(record.repositoryPath) === repositoryCommonDirectory(dependency.repositoryPath)){
+        try {git(record.repositoryPath,["merge-base","--is-ancestor",dependency.binding.codeVersion,record.analysis!.contract.binding.codeVersion]);}catch{throw new DraftConflictError(`Dependency ${dependency.key} is not incorporated into the analysis base`);}
+      }
+    }
+  }
+
+  private async settleAnalysis(record:Record,draft:ChainDraft) {
+    if(!record.analysis || record.analysis.handoff)return;
+    await this.validateDependencies(record);
+    const conclusion=compileAnalysisConclusion(draft,record.analysis.contract);
+    const sources=[...record.analysis.contract.sources,
+      ...conclusion.handoff.guardrails.map(item=>({key:`analysis-g-${createHash("sha256").update(`${draft.id}:${item.key}`).digest("hex").slice(0,16)}`,kind:"guardrail" as const,description:item.value.content!,oracle:item.value.content!,sourceRef:`DELIVERY-SPEC:${draft.id}:guardrail:${item.key}`})),
+      ...conclusion.handoff.verificationFocus.map(item=>({key:`analysis-f-${createHash("sha256").update(`${draft.id}:${item.key}`).digest("hex").slice(0,16)}`,kind:"focus" as const,description:item.value.expected!,oracle:item.value.oracle!,sourceRef:`DELIVERY-SPEC:${draft.id}:focus:${item.key}`}))];
+    record.contract=verificationContractSchema.parse({...record.contract,sources,binding:{...record.contract.binding,contractVersion:createHash("sha256").update(JSON.stringify(conclusion)).digest("hex")}});
+    if(record.development)record.development.implementationGuidance=conclusion.handoff.implementationGuidance;
+    record.analysis.conclusion=JSON.parse(JSON.stringify(conclusion));record.analysis.handoff=true;this.save(record);
+  }
+
+  private async invokeAnalysis(record:Record,actor:z.infer<typeof human>|z.infer<typeof task>,action:string,payload:unknown) {
+    const analysis=record.analysis!;await this.validateDependencies(record);
+    const execution=actor.kind === "task" ? this.execution(record,actor) : undefined;
+    if(execution){const code=snapshot(execution.repositoryPath,true,execution.overlays);if(code.codeVersion !== analysis.contract.binding.codeVersion)throw new DraftConflictError("Analysis repository changed from the frozen snapshot");}
+    const engine=new CommandChainEngine(this.drafts,createAnalysisHandlers(analysis.contract));let draft=await this.drafts.read(analysis.draftId);
+    if(action === "start" && actor.kind === "task"){
+      if(!draft)draft=await engine.create({id:analysis.draftId,chain:parseCommandChainDefinition(analysis.definitionSource,analysisProfile),binding:analysis.contract.binding,attemptId:actor.attemptId});
+      else if(draft.status === "abandoned")throw new Error("Analysis was abandoned; freeze a new revision");
+      else if(draft.status !== "completed" && draft.attemptId !== actor.attemptId)draft=await engine.resume(draft.id,draft.sequence,actor.attemptId);
+    }else if(action !== "read"){
+      if(!draft)throw new Error("Start the analysis draft before editing");
+      if(action === "command" && actor.kind === "task"){
+        const command=z.strictObject({expected_sequence:sequence,command:chainCommandSchema}).parse(payload);draft=await engine.execute(draft.id,{attemptId:actor.attemptId,expectedSequence:command.expected_sequence},command.command);
+      }else if(action === "answer" && actor.kind === "human"){
+        const answer=z.strictObject({expected_sequence:sequence,request_id:text,answer:z.string().max(20000),selected_option:text.optional()}).parse(payload);
+        draft=await engine.answerRuntimeInput(draft.id,{expectedSequence:answer.expected_sequence,requestId:answer.request_id,answer:answer.answer,selectedOption:answer.selected_option,userId:actor.userId});
+      }else if(action === "abandon" && actor.kind === "human"){
+        const abandon=z.strictObject({expected_sequence:sequence,reason:text}).parse(payload);draft=await engine.abandon(draft.id,abandon.expected_sequence,abandon.reason,actor.userId);
+      }else throw new Error("This analysis operation requires its authenticated role");
+    }
+    const conclusion=draft?.status === "completed" ? compileAnalysisConclusion(draft,analysis.contract) : null;
+    if(actor.kind === "task" && draft?.status === "completed")await this.settleAnalysis(record,draft);
+    const phase=draft?.phase ? draft.definition.phases[draft.phase] : undefined;
+    return {chain:"analysis",agentId:analysis.agentId,repositoryPath:execution?.repositoryPath ?? record.repositoryPath,contract:analysis.contract,draft:draft ?? null,
+      instructions:phase?.type === "builtin" ? `${phase.builtin}: Read the frozen delivery unit and sources. Use decision.propose in proposal; decision.ask/resolve/reopen in resolution. Never impersonate a human selection. ${analysisPolicies[analysis.contract.decisionMode]}` : phase?.instructions,
+      decisionSchema:z.toJSONSchema(decisionProposalSchema),decisionCommands:[{type:"decision.propose",decision:"See decisionSchema"},{type:"decision.ask",key:"<decision key>"},{type:"decision.resolve",key:"<decision key>",option:"<option id>",authority:"user | upstream | project_evidence | agent_authority",decision:"<decision text>",rationale:"<why>",evidence:"<source>"},{type:"decision.reopen",key:"<decision key>"}],
+      conclusion,receipts:[],rework:this.reworkView(record)};
   }
 
   private revision(workspaceId: string, issueId: string, revision: number): Record | undefined {
@@ -170,7 +240,9 @@ export class EngineeringApplication {
   }
 
   private devContract(record: Record) {
-    return { ...record.contract, sources: [...record.contract.sources, ...this.recoverySources(record)], implementationGuidance: record.development!.implementationGuidance, binding: { ...record.contract.binding, codeVersion: record.development!.baseCodeVersion } };
+    const guidance=record.development!.implementationGuidance;
+    if(!guidance)throw new Error("Development has no frozen implementation guidance; complete analysis first");
+    return { ...record.contract, sources: [...record.contract.sources, ...this.recoverySources(record)], implementationGuidance: guidance, binding: { ...record.contract.binding, codeVersion: record.development!.baseCodeVersion } };
   }
 
   private execution(record: Record, actor: z.infer<typeof task> | z.infer<typeof daemon>): Execution {
@@ -220,21 +292,22 @@ export class EngineeringApplication {
 
   private async overview(record: Record | undefined) {
     if (!record) return { enabled: true, configured: false };
-    const development = Boolean(record.development && !record.development.handoff);
-    const draft = await this.drafts.read(development ? record.development!.draftId : record.draftId);
-    const definition = draft?.definition ?? parseCommandChainDefinition(development ? record.development!.definitionSource : record.definitionSource, development ? developmentProfile : profile).definition;
-    const conclusion = draft?.status === "completed" ? development ? record.development?.conclusion : compileVerificationConclusion(draft, record.contract) : undefined;
+    const role=this.activeRole(record),development=role.chain === "development",analysis=role.chain === "analysis";
+    const draft=await this.drafts.read(role.draftId);
+    const definition=draft?.definition ?? parseCommandChainDefinition(role.definitionSource,analysis ? analysisProfile : development ? developmentProfile : profile).definition;
+    const conclusion=draft?.status === "completed" ? analysis ? compileAnalysisConclusion(draft,record.analysis!.contract) : development ? record.development?.conclusion : compileVerificationConclusion(draft,record.contract) : undefined;
     return {
-      enabled: true, configured: true, auto_continue: record.autoContinue, chain: development ? "development" : "verification",
-      agent_id: development ? record.development!.agentId : record.agentId,
+      enabled: true, configured: true, auto_continue: record.autoContinue, chain: role.chain,
+      agent_id: role.agentId,
       revision: record.contract.binding.revision, code_version: record.contract.binding.codeVersion,
       repository_path: record.repositoryPath, draft_id: draft?.id ?? null, sequence: draft?.sequence ?? 0,
       status: draft?.status ?? "unstarted", current_phase: draft?.phase ?? null,
       phases: Object.entries(definition.phases).map(([id]) => ({ id, status: draft?.completedPhases.includes(id) ? "completed" : draft?.phase === id ? "current" : "upcoming" })),
       sources: record.contract.sources.map(({ sourceRef, ...source }) => ({ ...source, source_ref: sourceRef })),
-      questions: (draft?.runtimeInputs ?? []).map(input => ({ id: input.id, title: input.title, question: input.question, why: input.why, recommendation: input.recommendation, active: input.active, phase: input.phase,
-        answer: input.answer ? { text: input.answer.text, user_id: input.answer.userId, sequence: input.answer.sequence } : null })),
+      questions: (draft?.runtimeInputs ?? []).map(input => ({ id: input.id, title: input.title, question: input.question, why: input.why, recommendation: input.recommendation, active: input.active, phase: input.phase, decision_key:input.decisionKey, options:input.options ?? [], recommendation_option:input.recommendationOption,
+        answer: input.answer ? { text: input.answer.text, user_id: input.answer.userId, sequence: input.answer.sequence, selected_option:input.answer.selectedOption } : null })),
       artifacts: (draft?.artifacts ?? []).map(item => ({ ref: item.ref, key: item.key, title: artifactBlock(definition, item.ref).title, content: item.content })),
+      decisions:draft?.decisions ?? (record.analysis?.handoff ? this.storedDraft(record.analysis.draftId).decisions ?? [] : []), analysis:record.analysis ? {unit:record.analysis.contract.unit,decision_mode:record.analysis.contract.decisionMode,handoff:record.analysis.handoff,spec:record.analysis.conclusion ?? null} : null,
       result: conclusion ?? null, rework: this.reworkView(record),
     };
   }
@@ -246,6 +319,7 @@ export class EngineeringApplication {
     for (const row of rows) {
       let record = recordSchema.parse(JSON.parse(String(row.payload)));
       if (!record.autoContinue) continue;
+      if(record.analysis && !record.analysis.handoff){const draft=await this.drafts.read(record.analysis.draftId);if(draft?.status === "completed")await this.settleAnalysis(record,draft);}
       if (record.reworkLimit > 0 && (record.development?.handoff || !record.development)) {
         const completed = await this.drafts.read(record.draftId);
         if (completed?.status === "completed" && !record.failure) {
@@ -253,16 +327,16 @@ export class EngineeringApplication {
           record = this.current(record.workspaceId, record.issueId)!;
         }
       }
-      const development = Boolean(record.development && !record.development.handoff);
-      const draftId = development ? record.development!.draftId : record.draftId;
+      const role=this.activeRole(record),development=role.chain === "development";
+      const draftId=role.draftId;
       const draft = await this.drafts.read(draftId);
-      const reason = !draft && development && record.reworkRound > 0 ? "verification_rework" : !draft && record.development?.handoff ? "development_handoff" :
+      const reason = !draft && development && record.reworkRound > 0 ? "verification_rework" : !draft && role.chain !== "analysis" && record.analysis?.handoff && !record.development?.handoff ? "analysis_handoff" : !draft && record.development?.handoff ? "development_handoff" :
         draft?.status === "waiting_for_answers" && draft.runtimeInputs.some(input => input.active) && draft.runtimeInputs.every(input => !input.active || input.answer !== null) ? "human_answers" : null;
       if (!reason) continue;
       const sequence = draft?.sequence ?? 0;
       const hash = createHash("sha256").update(`multica:engineering:continuation:${draftId}:${sequence}`).digest("hex");
       const taskId = `${hash.slice(0, 8)}-${hash.slice(8, 12)}-5${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
-      pending.push({ workspace_id: record.workspaceId, issue_id: record.issueId, agent_id: development ? record.development!.agentId : record.agentId,
+      pending.push({ workspace_id: record.workspaceId, issue_id: record.issueId, agent_id: role.agentId,
         user_id: record.createdBy, task_id: taskId, expected_revision: record.contract.binding.revision, expected_sequence: sequence, reason });
     }
     return pending;
@@ -281,6 +355,7 @@ export class EngineeringApplication {
       if (actor.kind !== "human") throw new Error("A human actor is required for engineering controls");
       if (action === "overview") return this.overview(record);
       if (!record) throw new Error("Configure engineering before starting a run");
+      await this.validateDependencies(record);
       const expected = z.strictObject({ expected_revision: sequence, expected_sequence: sequence, execution_resources: z.array(z.strictObject({ path: text, mode: z.enum(["in_place", "worktree"]) })).optional() }).parse(request.payload);
       const state = await this.overview(record);
       if (!("revision" in state)) throw new Error("Engineering contract is unavailable");
@@ -295,9 +370,22 @@ export class EngineeringApplication {
       }
       return { agent_id: state.agent_id, revision: state.revision, sequence: state.sequence };
     }
+    if(action === "verified-binding"){
+      if(actor.kind !== "host")throw new Error("Only the host can read verified dependency bindings");
+      if(!record || record.analysis && !record.analysis.handoff || record.development && !record.development.handoff)throw new Error("Analysis dependencies require registered current passed verification");
+      await this.validateDependencies(record);
+      const draft=await this.drafts.read(record.draftId);
+      if(!draft || draft.status !== "completed" || !record.verificationExecution)throw new Error("Analysis dependencies require registered current passed verification");
+      const conclusion=compileVerificationConclusion(draft,record.contract);
+      if(conclusion.verdict !== "passed")throw new Error("Analysis dependencies require registered current passed verification");
+      git(record.repositoryPath,["cat-file","-e",`${conclusion.binding.codeVersion}^{commit}`]);
+      return {configured:true,allowed:true,binding:conclusion.binding,repository_path:record.repositoryPath};
+    }
     if (action === "completion") {
       if (actor.kind !== "host") throw new Error("Only the host can authorize issue completion");
       if (!record) return { configured: false, allowed: true };
+      if(record.analysis && !record.analysis.handoff)throw new DraftConflictError("Complete delivery analysis before issue completion");
+      await this.validateDependencies(record);
       if (record.development && !record.development.handoff) throw new DraftConflictError("Development has not handed off its committed result");
       const draft = await this.drafts.read(record.draftId);
       if (!draft || draft.status !== "completed") throw new DraftConflictError("Complete independent verification before marking this issue done");
@@ -317,20 +405,24 @@ export class EngineeringApplication {
       return { configured: true, allowed: true, binding: conclusion.binding };
     }
     if (actor.kind === "host") throw new Error("Host completion credentials cannot edit chain state");
-    if (action === "selection") return {
-      configured: actor.kind === "task" && (record?.development && !record.development.handoff ? record.development.agentId === actor.agentId : record?.agentId === actor.agentId),
-      chain: record?.development && !record.development.handoff ? "development" : "verification",
-      ...(record ? { repository_path: record.repositoryPath, code_version: this.selectionCommit(record) } : {}),
-    };
+    if(action === "selection"){
+      const role=record && this.activeRole(record);
+      if(record && actor.kind === "task" && role?.agentId === actor.agentId)await this.validateDependencies(record);
+      return {configured:actor.kind === "task" && role?.agentId === actor.agentId,chain:role?.chain ?? "verification",
+        ...(record ? {repository_path:record.repositoryPath,code_version:role?.chain === "analysis" ? record.analysis!.contract.binding.codeVersion : this.selectionCommit(record)} : {})};
+    }
     if (action === "configure") {
       if (actor.kind !== "human") throw new Error("Only a human can freeze verification contracts");
       const config = configuration.parse(request.payload);
+      if(config.analyst_agent_id && (!config.unit || !this.analysisSource))throw new Error("Analysis requires a frozen delivery unit and its definition");
+      if(config.analyst_agent_id && [config.agent_id,config.developer_agent_id].includes(config.analyst_agent_id))throw new Error("Analysis, development, and verification require separate agents");
+      if(!config.analyst_agent_id && (config.unit || config.dependency_issues.length))throw new Error("Analysis inputs require an analyst agent");
       if (config.max_reworks > 0 && (!config.auto_continue || !config.developer_agent_id)) throw new Error("Automatic rework requires automatic continuation and a development agent");
       if (config.developer_agent_id === config.agent_id) throw new Error("Development and independent verification require different agents");
-      if (config.developer_agent_id && !config.implementation_guidance) throw new Error("Development requires frozen implementation guidance");
+      if (config.developer_agent_id && !config.analyst_agent_id && !config.implementation_guidance) throw new Error("Development requires frozen implementation guidance");
       if (config.developer_agent_id && !this.developmentSource) throw new Error("Development definition is unavailable");
       if (config.expected_revision !== (record?.contract.binding.revision ?? 0)) throw new DraftConflictError("Contract revision changed; reload before configuring");
-      const previousDraft = record && await this.drafts.read(record.development && !record.development.handoff ? record.development.draftId : record.draftId);
+      const previousDraft = record && await this.drafts.read(this.activeRole(record).draftId);
       if (previousDraft && previousDraft.status !== "completed" && previousDraft.status !== "abandoned") throw new Error("Abandon the active draft before replacing its contract");
       const code = snapshot(config.repository_path);
       const revision = config.expected_revision + 1;
@@ -339,29 +431,42 @@ export class EngineeringApplication {
       const contract = verificationContractSchema.parse({
         binding: { workspaceId: actor.workspaceId, issueId: actor.issueId, revision, contractVersion, codeVersion: code.codeVersion }, sources,
       });
+      const dependencies=[];
+      if(config.analyst_agent_id){
+        if(new Set(config.unit!.dependsOn).size !== config.unit!.dependsOn.length || new Set(config.dependency_issues.map(item=>item.key)).size !== config.dependency_issues.length)throw new Error("Dependency keys must be unique");
+        for(const key of config.unit!.dependsOn){const dependency=config.dependency_issues.find(item=>item.key === key);if(!dependency || dependency.issue_id === actor.issueId)throw new Error("Delivery dependency mapping is missing or self-referential");const verified=await this.dependencyBinding(actor.workspaceId,dependency.issue_id);
+          if(repositoryCommonDirectory(code.repositoryPath) === repositoryCommonDirectory(verified.repositoryPath)){
+            try{git(code.repositoryPath,["merge-base","--is-ancestor",verified.binding.codeVersion,code.codeVersion]);}catch{throw new DraftConflictError(`Dependency ${key} is not incorporated into the analysis base`);}
+          }
+          dependencies.push({key,issueId:dependency.issue_id,binding:verified.binding,repositoryPath:verified.repositoryPath});}
+      }
       record = recordSchema.parse({ workspaceId: actor.workspaceId, issueId: actor.issueId, agentId: config.agent_id,
         repositoryPath: code.repositoryPath, draftId: randomUUID(), createdBy: actor.userId, autoContinue: config.auto_continue, rootRevision: revision, reworkLimit: config.max_reworks,
         definitionSource: this.definitionSource, contract,
+        ...(config.analyst_agent_id ? {analysis:{agentId:config.analyst_agent_id,draftId:randomUUID(),definitionSource:this.analysisSource,contract:{...contract,unit:config.unit,decisionMode:config.decision_mode ?? "balanced",dependencies},handoff:false}} : {}),
         ...(config.developer_agent_id ? { development: { agentId: config.developer_agent_id, draftId: randomUUID(), definitionSource: this.developmentSource, baseCodeVersion: code.codeVersion, implementationGuidance: config.implementation_guidance, handoff: false } } : {}),
       });
       const inserted = this.db.prepare("INSERT INTO engineering_contract (workspace_id, issue_id, revision, payload) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING")
         .run(actor.workspaceId, actor.issueId, revision, JSON.stringify(record));
       if (inserted.changes !== 1) throw new DraftConflictError("Contract revision changed");
-      return this.view(record, undefined, Boolean(record.development));
+      return record.analysis ? this.invokeAnalysis(record,actor,"read",undefined) : this.view(record, undefined, Boolean(record.development));
     }
     if (!record) throw new Error("No verification contract is configured for this issue");
     if (action === "bind") {
       if (actor.kind !== "daemon") throw new Error("Only the runtime can bind execution repositories");
-      const development = Boolean(record.development && !record.development.handoff && actor.agentId === record.development.agentId);
-      if (!development && actor.agentId === record.agentId && record.development && !record.development.handoff) throw new Error("Development has not handed off a verified commit yet");
-      if (!development && actor.agentId !== record.agentId) throw new Error("Run agent does not own this verification role");
+      await this.validateDependencies(record);
+      const analysis=Boolean(record.analysis && actor.agentId === record.analysis.agentId);
+      if(record.analysis && !record.analysis.handoff && !analysis)throw new Error("Analysis has not handed off its frozen delivery contract");
+      const development = !analysis && Boolean(record.development && !record.development.handoff && actor.agentId === record.development.agentId);
+      if (!analysis && !development && actor.agentId === record.agentId && record.development && !record.development.handoff) throw new Error("Development has not handed off a verified commit yet");
+      if (!analysis && !development && actor.agentId !== record.agentId) throw new Error("Run agent does not own this verification role");
       const payload = z.strictObject({ work_dir: text, mode: z.enum(["in_place", "worktree"]), overlays: z.array(z.strictObject({ path: text, hash: z.string().regex(/^[a-f0-9]{64}$/) })).max(5000) }).parse(request.payload);
       const code = snapshot(payload.work_dir, false);
       if (repositoryCommonDirectory(code.repositoryPath) !== repositoryCommonDirectory(record.repositoryPath)) throw new Error("Execution repository is not a worktree of the registered repository");
       if (payload.mode === "in_place" && code.repositoryPath !== record.repositoryPath) throw new Error("In-place execution must use the registered repository");
       const overlays = captureRepositoryOverlays(code.repositoryPath, payload.overlays, !development);
       if (development) git(code.repositoryPath, ["merge-base", "--is-ancestor", record.development!.baseCodeVersion, code.codeVersion]);
-      else if (code.codeVersion !== record.contract.binding.codeVersion) throw new Error("Verification execution is not at the frozen delivery commit");
+      else if (code.codeVersion !== (analysis ? record.analysis!.contract.binding.codeVersion : record.contract.binding.codeVersion)) throw new Error("Verification execution is not at the frozen delivery commit or analysis snapshot");
       const branchRef = git(code.repositoryPath, ["rev-parse", "--abbrev-ref", "HEAD"]) === "HEAD" ? "" : repositoryBranch(code.repositoryPath);
       if (development && payload.mode === "worktree" && !branchRef) throw new Error("Worktree development requires a durable branch");
       const execution = executionSchema.parse({ repositoryPath: code.repositoryPath, mode: payload.mode, branchRef, agentId: actor.agentId, attemptId: actor.attemptId, overlays });
@@ -393,6 +498,13 @@ export class EngineeringApplication {
       return { captured: receipt.id };
     }
     if (actor.kind === "daemon") throw new Error("Runtime credentials cannot edit chain state");
+    if(record.analysis && (actor.kind === "task" ? actor.agentId === record.analysis.agentId : !record.analysis.handoff)){
+      if(actor.kind === "human" && !["read","answer","abandon"].includes(action))throw new Error("This operation requires the configured run credential");
+      if(actor.kind === "task" && !["read","start","command"].includes(action))throw new Error("This operation requires a human actor");
+      return this.invokeAnalysis(record,actor,action,request.payload);
+    }
+    if(record.analysis && !record.analysis.handoff)throw new Error("Analysis has not handed off its frozen delivery contract");
+    await this.validateDependencies(record);
     const development = Boolean(record.development && (actor.kind === "task" ? actor.agentId === record.development.agentId : !record.development.handoff));
     if (actor.kind === "task" && !development && actor.agentId !== record.agentId) throw new Error("Run agent does not own this verification role");
     if (actor.kind === "task" && !development && record.development && !record.development.handoff) throw new Error("Development has not handed off a verified commit yet");

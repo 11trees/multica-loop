@@ -17,8 +17,8 @@ const initial: EngineeringOverview = {
   codeVersion: "commit-fixture", repositoryPath: "/fixture", draftId: "draft", status: "waiting_for_answers", currentPhase: "plan", hasActiveRun: false,
   phases: [{ id: "inputs", status: "completed" }, { id: "plan", status: "current" }],
   sources: [{ key: "ac1", kind: "acceptance", description: "Survives reload", oracle: "Title visible", sourceRef: "ISSUE:fixture" }],
-  questions: [{ id: "q1", title: "Fixture entry", question: "Which entry should be verified?", why: "Need isolated data", recommendation: "Use the local fixture", active: true, phase: "plan", answer: null }],
-  artifacts: [], result: null, rework: null,
+  questions: [{ id: "q1", title: "Fixture entry", question: "Which entry should be verified?", why: "Need isolated data", recommendation: "Use the local fixture", options:[],recommendationOption:"", active: true, phase: "plan", answer: null }],
+  artifacts: [], result: null, rework: null, analysis:null, decisions:[],
 };
 let state: EngineeringOverview;
 let client: QueryClient;
@@ -119,4 +119,16 @@ it("shows a stopped rework decision and retains the failed observation", async (
   await user.click(screen.getAllByText("Revision 1",{exact:true}).find(element=>element.tagName === "SUMMARY")!);
   expect(screen.getByText(/actualBehavior: Wrong heading/)).toBeVisible();
   expect(screen.getByRole("button",{name:"New revision"})).toBeInTheDocument();
+});
+
+it("requires an explicit structured choice and never submits the recommendation automatically",async()=>{
+  state.chain="analysis";state.currentPhase="decision_resolution";
+  state.analysis={unit:{key:"unit",title:"Heading",actor:"Reader",trigger:"Open page",observableOutcome:"Ready heading",acceptance:"Ready",sourceRefs:[],dependsOn:[]},decisionMode:"balanced",handoff:false,spec:null};
+  state.questions[0]!.decisionKey="placement";state.questions[0]!.options=[{id:"top",label:"Top",consequence:"Before content"},{id:"bottom",label:"Bottom",consequence:"After content"}];state.questions[0]!.recommendationOption="top";
+  const user=userEvent.setup();renderPanel();await screen.findByRole("combobox",{name:"Your choice"});
+  expect(screen.getByRole("button",{name:"Submit answer"})).toBeDisabled();
+  await user.click(screen.getByRole("button",{name:"Use recommendation"}));expect(api.answerEngineering).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("combobox",{name:"Your choice"}));await user.click(await screen.findByRole("option",{name:/Bottom/}));
+  await user.clear(screen.getByLabelText("Note (optional)"));await user.click(screen.getByRole("button",{name:"Submit answer"}));
+  expect(api.answerEngineering).toHaveBeenCalledWith("issue",{expectedSequence:7,requestId:"q1",answer:"",selectedOption:"bottom"});
 });

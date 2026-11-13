@@ -26,3 +26,6 @@ export { MulticaChainBridge, MulticaRunClient } from "./multica";
 export type { MulticaRunContext } from "./multica";
 export { createDevelopmentHandlers, compileDevelopmentConclusion, developmentContractSchema, commandReceiptSchema } from "./development";
 export type { DevelopmentContract, CommandReceipt, DevelopmentRuntime } from "./development";
+
+export { createAnalysisHandlers, compileAnalysisConclusion, analysisContractSchema, analysisProfile } from "./analysis";
+export type { AnalysisContract } from "./analysis";
