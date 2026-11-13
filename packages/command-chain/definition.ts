@@ -61,7 +61,7 @@ const phase = z.discriminatedUnion("type", [
   }),
 ]);
 
-const definition = z.strictObject({
+export const commandChainDefinitionSchema = z.strictObject({
   version: z.literal(1),
   id: identifier,
   agent: identifier,
@@ -74,7 +74,7 @@ const definition = z.strictObject({
   phases: z.record(identifier, phase),
 });
 
-export type CommandChainDefinition = z.infer<typeof definition>;
+export type CommandChainDefinition = z.infer<typeof commandChainDefinitionSchema>;
 
 export type BuiltinCapability = {
   acceptsArtifacts: boolean;
@@ -98,7 +98,7 @@ export type LoadedCommandChain = {
 
 /** Loads authoring definitions only; it does not execute builtins or authorize delivery. */
 export function parseCommandChainDefinition(source: string, profile: CommandChainProfile): LoadedCommandChain {
-  const chain = definition.parse(parse(source));
+  const chain = commandChainDefinitionSchema.parse(parse(source));
   if (chain.id !== profile.id || chain.agent !== profile.agent) {
     throw new Error(`Expected chain ${profile.id} for agent ${profile.agent}`);
   }

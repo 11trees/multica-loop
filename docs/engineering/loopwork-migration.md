@@ -79,15 +79,26 @@ must be designed together rather than assuming a per-issue workflow choice.
 
 ## Current implementation
 
-The definition loader and two original YAML fixtures are in
-`packages/command-chain`. They validate authoring structure; they do not execute
-chains, validate observed evidence, persist drafts, or authorize handoff.
+The standalone kernel and two original YAML fixtures are in
+`packages/command-chain`. The loader validates authoring structure. The engine
+supports scoped artifact and metadata edits, field validation, phase completion,
+explicit confirmations, rewind invalidation, item freezing, and run-attempt
+takeover. A local SQLite adapter persists each draft and event history atomically
+and rejects stale writes. The definition and contract/code bindings are pinned
+when the draft is created. Tests cover reopening storage and competing writers.
+
+Engineering builtin implementations are not yet migrated. The engine rejects
+completion of a builtin without its host handler. Runtime tests use explicit
+stub handlers; passing those tests is not evidence of a delivered unit. The
+local adapter is not wired into the application, and production storage,
+runtime-input/human-answer handling, evidence capture, and authoritative result
+publication remain pending.
 
 The fork also has an opt-in local single-user entry, shared Web/Desktop
 automatic login, and managed development profile support. Plugin deployment,
-trusted run binding, the synchronous handoff boundary, and actual command-chain
-execution are still pending. Completing local access alone does not complete
-milestone 2 or the migration.
+trusted run binding, the synchronous handoff boundary, and execution of the
+engineering chains inside Multica are still pending. Completing local access
+alone does not complete milestone 2 or the migration.
 
 ## Cutover and rollback
 
