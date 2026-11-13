@@ -145,7 +145,12 @@ Delivery feedback now hands off after independent per-comment verification to a
 fresh normal review with pinned feedback history and exact new report reading.
 An old report acknowledgement cannot close appended feedback deliveries.
 
-Report-correction mode, arbitration exceptions, published-plan
+[Report-expression correction](feedback.md#report-expression-correction) pins and
+clones a baseline, forbids delivery gaps/units and binds separate per-comment
+verification before new reading. Mixed delivery batches still require normal
+final Review after candidate verification.
+
+Arbitration exceptions, published-plan
 reconciliation, exhausted managed-budget recovery and cross-parent repository
 admission remain separate migration work. Packaged Desktop, native multi-unit
 worktree execution and real-provider acceptance remain unverified. Mobile keeps

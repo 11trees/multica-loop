@@ -1968,6 +1968,7 @@
     "feedback_verification": "Feedback verification",
     "feedback_triage": "Feedback triage",
     "feedback_forward": "Forward work pending",
+    "candidate_report": "Candidate report",
     "previous_report": "Previous report",
     "reproduction_agent": "Reproduction agent",
     "reproduction": "Bug reproduction",

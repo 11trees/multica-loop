@@ -1968,6 +1968,7 @@
     "feedback_verification": "Vérification des retours",
     "feedback_triage": "Triage des retours",
     "feedback_forward": "Travaux suivants en attente",
+    "candidate_report": "Rapport candidat",
     "previous_report": "Rapport précédent",
     "reproduction_agent": "Agent de reproduction",
     "reproduction": "Reproduction du problème",

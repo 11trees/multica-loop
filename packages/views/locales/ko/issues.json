@@ -1893,6 +1893,7 @@
     "feedback_verification": "피드백 검증",
     "feedback_triage": "피드백 분류",
     "feedback_forward": "후속 작업 대기",
+    "candidate_report": "후보 보고서",
     "previous_report": "이전 보고서",
     "reproduction_agent": "재현 에이전트",
     "reproduction": "버그 재현",

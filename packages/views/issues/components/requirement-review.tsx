@@ -48,6 +48,9 @@ export function RequirementReviewPanel({review,revision,sequence,pending,disable
       {!review.acknowledgement && review.report_hash && <Button size="sm" disabled={disabled || pending} aria-busy={pending} onClick={async()=>{setError("");try{await onAcknowledge({expectedRevision:revision,expectedSequence:sequence,reportHash:review.report_hash!});}catch(error){setError(error instanceof Error ? error.message : t($=>$.engineering.save_error));}}}>{pending && <Spinner />}{t($=>$.engineering.read_and_close)}</Button>}
     </>}
     {error && <p role="alert" className="text-caption text-destructive break-words">{error}</p>}
-    {review.history.length>0 && <details><summary className="cursor-pointer text-caption text-muted-foreground">{t($=>$.engineering.review_history)}</summary><div className="mt-3 space-y-4">{review.history.map(item=><details key={item.draft_id}><summary className="cursor-pointer text-caption">{t($=>$.engineering.review_generation,{generation:item.generation})}</summary><div className="mt-3"><ReviewResult result={item.result} historical /></div></details>)}</div></details>}
+    <RequirementReviewHistory review={review} />
   </div>;
+}
+
+export function RequirementReviewHistory({review}:{review:Review}){const {t}=useT("issues");return review.history.length>0 && <details><summary className="cursor-pointer text-caption text-muted-foreground">{t($=>$.engineering.review_history)}</summary><div className="mt-3 space-y-4">{review.history.map(item=><details key={item.draft_id}><summary className="cursor-pointer text-caption">{t($=>$.engineering.review_generation,{generation:item.generation})}</summary><div className="mt-3"><ReviewResult result={item.result} historical /></div></details>)}</div></details>;
 }

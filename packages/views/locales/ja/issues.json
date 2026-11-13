@@ -1893,6 +1893,7 @@
     "feedback_verification": "フィードバック検証",
     "feedback_triage": "フィードバックの振り分け",
     "feedback_forward": "後続作業待ち",
+    "candidate_report": "候補レポート",
     "previous_report": "以前のレポート",
     "reproduction_agent": "再現担当エージェント",
     "reproduction": "不具合の再現",

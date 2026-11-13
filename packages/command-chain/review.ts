@@ -6,10 +6,11 @@ import { draftSchema, PhaseValidationError, type BuiltinHandlers, type ChainDraf
 const text=z.string().trim().min(1);
 const subject=z.strictObject({key:text.max(240),kind:z.enum(["intent","target","expected","impact","acceptance","delivery_unit","feedback_acceptance"]),content:text,sourceRef:text.optional(),contractRef:text.optional(),storyIndex:text.optional(),requiredEvidenceRefs:z.array(text).min(1)});
 const evidence=z.strictObject({ref:text.max(240),kind:text,status:text,revision:text,fingerprint:z.string().regex(/^[a-f0-9]{64}$/),independentTest:z.boolean(),content:text});
-export const reviewContractSchema=z.strictObject({binding:draftSchema.shape.binding,generation:z.number().int().positive(),subjects:z.array(subject).min(1),evidence:z.array(evidence).min(1)})
+const correctionSchema=z.strictObject({batchId:text,groupId:text,baselineDraftId:text,baselineHash:text,baselineReport:text,sections:z.array(z.strictObject({key:text,kind:text,content:text})).min(5),assessment:z.strictObject({summary:text,evidenceBoundary:text,residualRisk:text.optional()})});
+export const reviewContractSchema=z.strictObject({binding:draftSchema.shape.binding,generation:z.number().int().positive(),subjects:z.array(subject).min(1),evidence:z.array(evidence).min(1),correction:correctionSchema.optional()})
   .superRefine((value,ctx)=>{
     if(new Set(value.subjects.map(item=>item.key)).size !== value.subjects.length || new Set(value.evidence.map(item=>item.ref)).size !== value.evidence.length)ctx.addIssue({code:"custom",message:"Review subject and evidence identities must be unique"});
-    for(const item of value.subjects)if(new Set(item.requiredEvidenceRefs).size !== item.requiredEvidenceRefs.length || item.requiredEvidenceRefs.some(ref=>!value.evidence.some(source=>source.ref === ref && source.independentTest && source.status === "passed")))ctx.addIssue({code:"custom",message:`Subject ${item.key} requires current independent passed verification references`});
+    for(const item of value.subjects)if(new Set(item.requiredEvidenceRefs).size !== item.requiredEvidenceRefs.length || item.requiredEvidenceRefs.some(ref=>!value.evidence.some(source=>source.ref === ref && (source.independentTest && source.status === "passed" || value.correction && item.kind === "feedback_acceptance" && item.key === `FEEDBACK_GROUP:${value.correction.groupId}:report_correction` && ref === `REPORT_BASELINE:${value.correction.baselineDraftId}` && source.kind === "report-baseline" && source.fingerprint === value.correction.baselineHash))))ctx.addIssue({code:"custom",message:`Subject ${item.key} requires current independent passed verification references`});
   });
 export type ReviewContract=z.infer<typeof reviewContractSchema>;
 export const reviewProfile:CommandChainProfile={id:"review",agent:"review-agent",requiredBuiltins:["review-inputs","review-reconciliation","review-output","review-finalize"],builtins:{"review-inputs":{acceptsArtifacts:false},"review-reconciliation":{acceptsArtifacts:true},"review-output":{acceptsArtifacts:true},"review-finalize":{acceptsArtifacts:false}},metadataKeys:[],repositoryAdapters:[]};
@@ -21,7 +22,7 @@ function state(draft:Readonly<ChainDraft>){return {reconciliations:rows(draft,"r
 function projections(contract:ReviewContract){return [
   ...contract.subjects.map(({key,requiredEvidenceRefs:_required,...value})=>({ref:"review.subjects",key,content:stringify(value).trim()})),
   ...contract.evidence.map(({content:_content,independentTest,...value})=>({ref:"review.evidence-sources",key:value.ref,content:stringify({...value,independentTest:independentTest ? "yes" : "no"}).trim()})),
-  {ref:"review.meta",key:undefined,content:stringify({mode:"closure",totalStories:String(contract.evidence.filter(item=>item.independentTest && item.kind !== "feedback-verification").length),reviewRevision:String(contract.generation)}).trim()},
+  {ref:"review.meta",key:undefined,content:stringify({mode:contract.correction ? "report_correction" : "closure",totalStories:String(contract.evidence.filter(item=>item.independentTest && item.kind !== "feedback-verification").length),reviewRevision:String(contract.generation),...(contract.correction ? {reviewDocumentId:contract.correction.baselineDraftId} : {})}).trim()},
 ];}
 function inputErrors(draft:Readonly<ChainDraft>,contract:ReviewContract){
   const errors=JSON.stringify(draft.binding) === JSON.stringify(contract.binding) ? [] : ["Frozen review binding changed"];
@@ -31,6 +32,7 @@ function inputErrors(draft:Readonly<ChainDraft>,contract:ReviewContract){
 }
 function reconciliationErrors(draft:Readonly<ChainDraft>,contract:ReviewContract){
   const value=state(draft),errors=inputErrors(draft,contract),handled=new Map<string,number>();
+  if(contract.correction && (value.gaps.length || value.units.length || draft.runtimeInputs.length))errors.push("Report expression correction cannot add closure gaps, delivery units or questions; return changed work meaning to triage");
   for(const row of [...value.reconciliations,...value.gaps]){
     if(!contract.subjects.some(item=>item.key === row.subjectRef))errors.push(`Unknown review subject ${row.subjectRef}`);
     handled.set(row.subjectRef,(handled.get(row.subjectRef) ?? 0)+1);
@@ -80,8 +82,8 @@ function allErrors(draft:Readonly<ChainDraft>,contract:ReviewContract){return [.
 export function createReviewHandlers(input:ReviewContract):BuiltinHandlers{
   const contract=reviewContractSchema.parse(input);
   return {
-    "review-inputs":draft=>({errors:draft.artifacts.some(item=>item.ref === "review.meta") ? inputErrors(draft,contract) : [],artifacts:projections(contract),freeze:["review.subjects","review.evidence-sources","review.meta"]}),
-    "review-reconciliation":Object.assign((draft:Readonly<ChainDraft>)=>({errors:reconciliationErrors(draft,contract)}),{runtimeInputs:true}),
+    "review-inputs":draft=>({errors:draft.artifacts.some(item=>item.ref === "review.meta") ? inputErrors(draft,contract) : [],artifacts:[...projections(contract),...(contract.correction ? [...contract.correction.sections.filter(section=>!draft.artifacts.some(item=>item.ref === "review.report-sections" && item.key === section.key)).map(section=>({ref:"review.report-sections",key:section.key,content:stringify({kind:section.kind,content:section.content}).trim()})),...(!draft.artifacts.some(item=>item.ref === "review.assessment") ? [{ref:"review.assessment",content:stringify(contract.correction.assessment).trim()}] : [])] : [])],freeze:["review.subjects","review.evidence-sources","review.meta"]}),
+    "review-reconciliation":Object.assign((draft:Readonly<ChainDraft>)=>({errors:reconciliationErrors(draft,contract)}),{runtimeInputs:!contract.correction}),
     "review-output":draft=>({errors:[...assessmentErrors(draft),...outputErrors(draft)]}),
     "review-finalize":Object.assign((draft:Readonly<ChainDraft>)=>({errors:allErrors(draft,contract)}),{finalize:(draft:Readonly<ChainDraft>)=>allErrors(draft,contract)}),
   };

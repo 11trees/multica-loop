@@ -23,12 +23,22 @@ type nativeFeedbackFixture struct {
 	workPayload   map[string]any
 	verify        bool
 	verifyPayload map[string]any
+	report        bool
+	reportPayload map[string]any
 }
 
 func (f *nativeFeedbackFixture) Call(ctx context.Context, input any) (json.RawMessage, error) {
 	value := input.(map[string]any)
 	var result any
 	switch value["action"] {
+	case "prepare-feedback-report":
+		actor := value["actor"].(map[string]string)
+		if actor["kind"] != "host" || actor["workspaceId"] == "" || actor["issueId"] == "" {
+			return nil, fmt.Errorf("report correction needs the native host")
+		}
+		f.report = true
+		f.reportPayload = value["payload"].(map[string]any)
+		result = map[string]bool{"configured": true}
 	case "prepare-feedback-verification":
 		actor := value["actor"].(map[string]string)
 		if actor["kind"] != "host" || actor["workspaceId"] == "" || actor["issueId"] == "" {
@@ -58,6 +68,9 @@ func (f *nativeFeedbackFixture) Call(ctx context.Context, input any) (json.RawMe
 		}
 		if f.verify {
 			result = map[string]any{"configured": true, "chain": "feedback-verify", "feedback_group_id": "group", "repository_path": "/fixture/repository", "code_version": strings.Repeat("a", 40), "review_units": f.units}
+		}
+		if f.report && !f.verify {
+			result = map[string]any{"configured": true, "chain": "review", "report_correction": true, "feedback_group_id": "report", "repository_path": "/fixture/repository", "code_version": strings.Repeat("a", 40), "review_units": f.units}
 		}
 	default:
 		return f.requirementReviewFixture.Call(ctx, input)
@@ -140,6 +153,20 @@ func TestEngineeringFeedbackCapturesNativeCommentsReopensAndRestoresOnlyAfterCom
 		t.Fatal("native feedback planning claim lost its scoped instructions")
 	}
 	dbfx.Exec(t, "UPDATE agent_task_queue SET status='completed',completed_at=now() WHERE id=$1", planningTaskID)
+	reportItem := engineeringContinuation{WorkspaceID: testWorkspaceID, IssueID: parentID, UserID: testUserID, AgentID: agentID, FeedbackBatchID: "019a0000-0000-7000-8000-000000000071", FeedbackGroupID: "report", ExpectedRevision: 1, ExpectedSequence: 2, Reason: "feedback_report_next"}
+	if err := h.dispatchEngineeringContinuation(ctx, reportItem); err != nil {
+		t.Fatal(err)
+	}
+	if worker.reportPayload["agent_id"] != agentID || worker.reportPayload["user_id"] != testUserID || worker.reportPayload["native_unit_ids"].([]string)[0] != childID {
+		t.Fatal("report correction lost native principal/scope")
+	}
+	reportTaskID := dbfx.Task(t, agentID, testutil.Cols{"runtime_id": runtimeID, "issue_id": parentID, "status": "dispatched", "dispatched_at": testutil.Raw("now()")})
+	reportTask, _ := h.Queries.GetAgentTask(ctx, parseUUID(reportTaskID))
+	reportResponse, _, _, _, _, reportFailure := h.buildClaimedTaskResponse(newRequest(http.MethodPost, "/claim", nil), &reportTask, runtime, runtimeID, testWorkspaceID)
+	if reportFailure != nil || reportResponse.EngineeringChain != "review" || !strings.Contains(reportResponse.Agent.Instructions, "report expression correction") || strings.Contains(reportResponse.Agent.Instructions, "Plan only the group's") || strings.Contains(reportResponse.Agent.Instructions, "Missing or conflicting final/composed evidence must become a closure gap") {
+		t.Fatalf("report correction claim escaped its expression boundary: %+v", reportFailure)
+	}
+	dbfx.Exec(t, "UPDATE agent_task_queue SET status='completed',completed_at=now() WHERE id=$1", reportTaskID)
 	verification := engineeringContinuation{WorkspaceID: testWorkspaceID, IssueID: parentID, UserID: testUserID, AgentID: verifierID, FeedbackBatchID: "019a0000-0000-7000-8000-000000000071", FeedbackGroupID: "group", FeedbackCommentID: commentID, ExpectedRevision: 1, ExpectedSequence: 3, Reason: "feedback_verify_next"}
 	dbfx.Exec(t, "UPDATE issue SET status='todo' WHERE id=$1", childID)
 	if err := h.dispatchEngineeringContinuation(ctx, verification); err == nil || worker.verify {

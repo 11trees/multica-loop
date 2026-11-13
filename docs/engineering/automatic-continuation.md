@@ -76,8 +76,9 @@ metadata and never execute an installed provider or call a model.
 The [bounded implementation rework](rework.md) path is connected. [Managed-unit execution and final review](requirement-review.md) are connected. [Delivery feedback](feedback.md) connects guarded forward delivery, independent
 single-comment verification and fresh final Review. Frozen principal, resources
 and native children are revalidated before each new checkpoint. Reopened comments
-retain failed evidence for a new batch. System arbitration, feedback report
-correction, remaining command chains, other provider receipts, remote repository mapping,
+retain failed evidence for a new batch. Pinned report correction waits for non-report verification and runs separate
+candidate verification before reading; mixed delivery still receives final Review.
+System arbitration, remaining command chains, other provider receipts, remote repository mapping,
 and real delivered-business acceptance remain pending. A task process completing
 is still insufficient for the synchronous issue completion gate.
 

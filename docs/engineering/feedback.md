@@ -6,15 +6,17 @@ report; forward work remains pending and blocks requirement completion. The
 worker embeds nine definitions, including Feedback Verify. Frozen feedback
 reproduction/planning appends managed deliveries. The native verifier independently
 settles each comment against authoritative accepted work; completed feedback then
-requires a new final review and exact human reading. Report correction remains
-unconnected.
+requires a new final review and exact human reading after delivery changes.
+Report-expression correction uses the same native reviewer under a pinned
+baseline, independent single-comment report verification and a new reading.
 This is a partial feedback migration.
 
 ## Native capture and human controls
 
 `Process feedback` is available against a valid final requirement report,
 including a requirement already in Done. The human selects native comments and
-two distinct invocable roles, both separate from the three delivery roles. Go
+two distinct invocable roles, both separate from the three delivery roles. The
+feedback verifier must also be separate from the report reviewer. Go
 loads actual comments from the same workspace and parent; clients submit IDs,
 not comment bodies or authors. Capture freezes full text, source revision,
 author, version hash, original context/report, delivery-unit snapshots, actual
@@ -103,8 +105,8 @@ verification and queues the separate verifier. Delivery acceptance itself does
 not count as Feedback Verify or a new closure report. A frozen append intent requires explicit reconciliation
 before cancellation; the batch cancel action cannot discard native delivery scope.
 
-Report-correction groups remain pending. Revising an original oracle when a
-behavior change contradicts it also requires explicit contract reconciliation;
+Revising an original oracle when a behavior change contradicts it requires
+explicit contract reconciliation;
 appending a new acceptance does not retire or silently weaken the original one.
 
 ## Independent verification and new closure
@@ -132,8 +134,54 @@ original evidence scope, even after later batches append work.
 The old report remains under Previous report while the new review is pending.
 The new report gets its own generation and hash without an inherited reading
 acknowledgement. Only authenticated reading of that exact current hash can close
-the native parent. Report correction and original-oracle revision still require
-separate migration work.
+the native parent. Original-oracle revision still requires separate migration
+work.
+
+## Report-expression correction
+
+A `report_correction` group queues the frozen report reviewer only after every
+non-report group has its own terminal verification results. Reopened results
+remain unresolved and visible as failure history; they cannot count as passed
+closure evidence. Report groups run serially, retaining earlier report results,
+including failed ones, before the next group freezes its baseline.
+
+The candidate contract pins the batch/group, comments, exact previous report
+hash and body, all report sections and assessment, accepted unit bindings and
+current independent evidence. The review-input gate seeds the existing sections,
+evidence boundary and residual risk. They remain editable expression under the
+frozen correction boundary; semantic preservation remains the reviewer's and
+independent verifier's judgment. The normal review's independent Test requirements
+remain in force. Only the exact correction subject may cite its report baseline
+without pretending that report is an independent Test.
+
+Correction mode cannot finalize closure gaps, forward delivery units or questions.
+Changed delivery meaning requires explicit triage/contract reconciliation. The
+native role instructions and readonly attempt binding keep report authoring
+separate from the frozen feedback verifier. A completed candidate preserves the
+old generation and receives a new hash without inheriting reading confirmation.
+Saved terminal candidates settle through the coordinator. Attempt-to-checkpoint
+and retained worktree-ref checks also apply to candidate authoring.
+
+The report-work resolver recompiles the actual saved candidate and checks its
+baseline and content hash. Each comment then binds that exact candidate in a
+separate Feedback Verify draft. The shared panel labels an unfinished candidate,
+keeps prior report history accessible and withholds reading/closure. A generated
+candidate cannot be cancelled as if it introduced no scope; cancellation and
+abandoned-candidate recovery need explicit reconciliation.
+
+Report-only batches leave the accepted code and native unit count unchanged.
+After all report comments resolve, their current candidate requires its own
+exact human reading. Closure recompiles each saved independent verification and
+compares its work snapshot against the actual candidate. Mixed batches that
+appended deliveries still require a fresh normal final Review after all feedback
+settles; the candidate cannot bypass that review. Reopened report comments can
+enter another batch with the failed candidate version, reasons and observations
+retained. Old report hashes never acknowledge the current candidate.
+
+Historical evidence is reused only within a single fact-validation call to avoid
+repeating identical compiled delivery/report checks. No result persists across
+requests; later drift remains observable and subject to the existing version,
+source and completion guards.
 
 ## Protocol gates
 
@@ -268,15 +316,30 @@ is checked on desktop and a 390px viewport. Classifications
 and protocol commands are fixture-supplied, not model-generated. The fixture
 removes only its owned native records and SQLite batches after acceptance.
 
+The native scenario then captures a report-only wording correction, freezes the
+previous report, retains its sections and packaged-deployment limitation, writes
+the local-environment clarification and displays a candidate on desktop/390px.
+A separate verifier reads the exact candidate hash/body. The native unit count
+stays four, the old report hash is rejected, and only reading the independently
+verified current candidate closes Done.
+
+Shared views pass Web and Desktop main/renderer typechecks; this does not establish
+packaged Desktop runtime acceptance.
+
+Host regressions additionally exercise mixed delivery/report batches in both
+repository modes, separate report siblings, multiple report groups, report
+reopening/recapture, subsequent delivery generations, saved terminal verification
+settlement and changed saved proof rejection. These use actual SQLite/Git with
+fixture-supplied protocol judgments. They do not prove model judgment quality.
+
 A separate browser layout regression uses a fixed pending-defect overview and a
 mocked authorization response. Real role selectors and pointer submission check
 long names, distinct roles, popup bounds and reachable controls at desktop/390px
 widths. This UI test does not establish native work authorization by itself.
 
-The delivery resolver and native single-comment path are connected. An
-authoritative corrected-report resolver and report-correction workflow remain
-required. Those gaps, original-oracle reconciliation, real-provider acceptance
-and packaged Desktop acceptance remain required
+Both delivery and report resolvers and native single-comment paths are connected.
+Original-oracle and published-scope reconciliation, abandoned-work recovery,
+real-provider acceptance and packaged Desktop acceptance remain required
 before post-delivery feedback can be described as fully migrated.
 
 ![Select native comments and separate feedback roles](assets/feedback-configure-1.png)
@@ -298,3 +361,11 @@ before post-delivery feedback can be described as fully migrated.
 ![New report and its own reading acknowledgement after independent Feedback Verify](assets/feedback-new-report-1280.png)
 
 ![Current feedback report reading on a narrow viewport](assets/feedback-new-report-390.png)
+
+![Pinned report candidate retaining the previous sections and corrected local-environment wording](assets/feedback-report-candidate-1280.png)
+
+![Report correction candidate on a narrow viewport](assets/feedback-report-candidate-390.png)
+
+![Independently verified corrected report awaiting its own exact reading](assets/feedback-corrected-report-1280.png)
+
+![Corrected report reading control on a narrow viewport](assets/feedback-corrected-report-390.png)

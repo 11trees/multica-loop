@@ -3069,13 +3069,14 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 			"action": "selection",
 		})
 		var role struct {
-			FeedbackGroupID string                  `json:"feedback_group_id"`
-			ParentID        string                  `json:"parent_issue_id"`
-			ReviewUnits     []engineeringReviewUnit `json:"review_units"`
-			Configured      *bool                   `json:"configured"`
-			Chain           string                  `json:"chain"`
-			Repository      string                  `json:"repository_path"`
-			Commit          string                  `json:"code_version"`
+			ReportCorrection bool                    `json:"report_correction"`
+			FeedbackGroupID  string                  `json:"feedback_group_id"`
+			ParentID         string                  `json:"parent_issue_id"`
+			ReviewUnits      []engineeringReviewUnit `json:"review_units"`
+			Configured       *bool                   `json:"configured"`
+			Chain            string                  `json:"chain"`
+			Repository       string                  `json:"repository_path"`
+			Commit           string                  `json:"code_version"`
 		}
 		invalid := selectErr != nil || json.Unmarshal(selection, &role) != nil || role.Configured == nil
 		if !invalid && *role.Configured {
@@ -3114,13 +3115,16 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 			if role.Chain == "feedback-verify" {
 				resp.Agent.Instructions += "\nIndependently verify exactly the frozen comment against the actual accepted forward work and its composed commit. Do not change persistent repository files, answer questions, or substitute another comment's result. Record locatable observations and resolved or reopened with reasons. Task exit does not resolve feedback; a new closure report and human reading remain separate."
 			}
-			if role.FeedbackGroupID != "" && role.Chain != "feedback-verify" {
+			if role.FeedbackGroupID != "" && role.Chain != "feedback-verify" && !role.ReportCorrection {
 				resp.Agent.Instructions += "\nThis readonly feedback group preserves frozen comments and original delivery history. Plan only the group's forward obligations; do not rewrite accepted units. A defect must finish reproduced observations before planning. Native publication and subsequent delivery acceptance belong to the host. Completing this checkpoint does not resolve the feedback comments."
 			}
 			if role.Chain == "reproduction" {
 				resp.Agent.Instructions += "\nYour role is read-only bug reproduction. Preserve the frozen Existing Expected. Record actual conditions, steps and locatable evidence, without changing persistent repository files. Only reproduced may proceed to planning; not_reproduced must preserve observations and request missing facts. Human answers are not reproduction evidence: rewind investigation to obtain fresh observations. Hypotheses are not implementation obligations."
 			}
-			if role.Chain == "review" {
+			if role.ReportCorrection {
+				resp.Agent.Instructions += "\nYour role is report expression correction. Retain the cloned baseline sections, accepted facts and limitations. Correct only the frozen group boundary; no code, new delivery units, closure gaps or self-resolved comments. A separate frozen verifier will check each comment against the candidate report, then human reading remains required."
+			}
+			if role.Chain == "review" && !role.ReportCorrection {
 				resp.Agent.Instructions += "\nYour role is requirement fact reconciliation and closure reporting. Use the original frozen obligations and independent Test evidence. Do not run tests or invent delivery facts. Missing or conflicting final/composed evidence must become a closure gap and complete forward delivery units, never residual risk or a fabricated report. Human reading acknowledgement is separate."
 			}
 			if role.Chain == "development" {
