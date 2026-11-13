@@ -105,7 +105,7 @@ passing evidence. Human authentication and answer/abandon APIs are connected;
 continuation. An authorized [coordinator](automatic-continuation.md) also queues
 development handoff and fully answered question batches. Explicitly budgeted
 [implementation rework](rework.md) preserves failed generations and rechecks the
-frozen scenarios; specification/stagnation/budget stops require human review.
+frozen scenarios; specification failures return to an authorized analyst; stagnation/budget stops require human review.
 
 Development gates now cover frozen scope, implementation claims, recovery
 resolutions, code review, current captured command checks, and clean commits.
@@ -151,7 +151,7 @@ The first synchronous [issue completion boundary](issue-completion.md) now check
 ordinary/description/batch updates, PR automation, and workflow remaps against
 the latest passed verification and current clean commit. It preserves the
 existing non-atomic batch semantics and does not supply a cross-database handoff
-transaction. Final review, specification-failure reanalysis/arbitration, remote repository mapping,
+transaction. Final review, system arbitration, remote repository mapping,
 remaining chains, and real delivery acceptance are still pending. These local
 integration steps do not complete milestone 2 or the migration.
 

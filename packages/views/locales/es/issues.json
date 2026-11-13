@@ -2015,7 +2015,7 @@
     "auto_continue": "Continuar automáticamente",
     "auto_continue_notice": "Inicia el siguiente rol tras una entrega fijada y reanuda al recibir todas las respuestas, cuando termine la ejecución anterior.",
     "max_reworks": "Límite de correcciones automáticas",
-    "rework_notice": "0 desactiva las correcciones. Los fallos de implementación exigen nuevo desarrollo, revisión y comprobaciones. Los fallos repetidos sin cambios y los problemas de especificación requieren revisión humana.",
+    "rework_notice": "0 desactiva el retrabajo automático. Los fallos de verificación vuelven al rol configurado de análisis o desarrollo dentro de este límite. Los fallos repetidos sin cambios requieren revisión.",
     "rework_round": "Corrección {{round}} de {{limit}}",
     "rework_analysis": "La especificación requiere revisión. Fija un contrato corregido.",
     "rework_stagnant": "La misma verificación volvió a fallar sin cambios de código. Se requiere revisión humana.",

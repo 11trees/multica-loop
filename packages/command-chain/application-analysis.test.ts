@@ -83,6 +83,8 @@ it("requires a fresh human selection after reopening an answered decision",async
   const next=await start(actor(analyst,"2"));await next.command({type:"decision.reopen",key:"placement"});
   await expect(next.command({type:"decision.resolve",key:"placement",option:"bottom",authority:"project_evidence",decision:"Bottom",rationale:"Override",evidence:"Later note"})).rejects.toThrow(/authenticated matching/);
   expect(next.state.draft!.runtimeInputs[0]!.active).toBe(false);
+  await next.command({type:"phase.rewind",to:"decision_proposal",reason:"Reconsider proposal"});
+  await expect(next.command({type:"decision.remove",key:"placement"})).rejects.toThrow(/Answered human decisions/);
 });
 it("rejects cycles, dangling dependencies, duplicate options, and missing recommendations",()=>{
   expect(()=>decisionProposalSchema.parse({...proposal,options:[proposal.options[0],proposal.options[0]]})).toThrow(/unique/);

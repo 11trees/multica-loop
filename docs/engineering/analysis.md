@@ -132,10 +132,36 @@ claims are owned fixtures; no installed agent/provider CLI or model is launched.
 
 ![Frozen spec and decision retained after independent verification](assets/analysis-delivery-passed.png)
 
+## Specification-failure reanalysis
+
+When automatic continuation, a developer and a positive rework limit are frozen,
+a specification failure returns to this analyst at the failed commit. A fresh
+draft retains the original unit, source oracles, dependency versions, policy and
+authenticated human choices. It clears old impacts/contract/review and reopens
+non-human assumptions. The command response supplies the failed observations,
+scenario plan and previous spec as recovery context. Human choices cannot be
+deleted or overwritten through proposal commands; reopening requires a new
+explicit option answer before a changed choice can close.
+
+After the revised analysis hands off, development and independent verification
+start with fresh evidence. The verifier plans against the corrected derived
+sources, preserving the previous failed plan/report in history. Both analysis
+and implementation retries consume the same budget; repeated unchanged failures
+and exhausted budgets stop. See [rework](rework.md) for the exact boundaries.
+
+The reanalysis case in `e2e/engineering-analysis.spec.ts` deliberately introduces
+a derived guardrail contradicting the human's selected order. Chromium observes
+the actual page; the fixture verifier attributes that contradiction to the spec.
+The scheduler queues the analyst, who corrects that derived guardrail while
+retaining the original human choice/acceptance. A fresh developer check and newly
+planned browser verification then permit completion. Attribution remains an
+explicit verifier judgment, not an automatic semantic proof by the host.
+
+![Revised analysis and authenticated choice retained after fresh verification](assets/analysis-recovered.png)
+
 ## Remaining migration
 
-Specification-failure routing still stops for human review; automatically opening
-a new analyst generation from that failure is not connected yet. Requirement
+Specification failures without an authorized analyst/budget stop for human review. Requirement
 context/planning, multi-unit orchestration, final review/arbitration, remaining
 workflow paths, historical cutover, and real business/provider acceptance remain
 required for the full migration. A completed analysis is a frozen delivery spec,

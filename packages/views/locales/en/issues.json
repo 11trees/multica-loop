@@ -2015,7 +2015,7 @@
     "auto_continue": "Continue automatically",
     "auto_continue_notice": "Queues the next configured role after a frozen handoff and resumes after all answers. The previous run must finish first.",
     "max_reworks": "Automatic rework limit",
-    "rework_notice": "0 disables rework. Implementation failures create fresh development checks; unchanged repeated failures and specification problems require human review.",
+    "rework_notice": "0 disables automatic rework. Failed verification returns to the configured analysis or development role within this budget. Repeated unchanged failures require review.",
     "rework_round": "Rework {{round}} of {{limit}}",
     "rework_analysis": "The specification needs review. Freeze a corrected contract to continue.",
     "rework_stagnant": "The same verification failed again without a code change. Human review is required.",

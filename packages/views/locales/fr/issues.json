@@ -2015,7 +2015,7 @@
     "auto_continue": "Continuer automatiquement",
     "auto_continue_notice": "Lance le rôle suivant après une transmission figée et reprend après toutes les réponses, une fois l’exécution précédente terminée.",
     "max_reworks": "Limite de reprises automatiques",
-    "rework_notice": "0 désactive les reprises. Un échec d’implémentation impose de nouveaux développements, revues et contrôles. Les échecs répétés sans changement et les problèmes de spécification nécessitent une revue humaine.",
+    "rework_notice": "0 désactive la reprise automatique. Un échec de vérification revient au rôle configuré d’analyse ou de développement dans cette limite. Les échecs répétés sans progrès nécessitent une révision.",
     "rework_round": "Reprise {{round}} sur {{limit}}",
     "rework_analysis": "La spécification doit être revue. Figez un contrat corrigé.",
     "rework_stagnant": "La même vérification a échoué sans changement du code. Une revue humaine est requise.",

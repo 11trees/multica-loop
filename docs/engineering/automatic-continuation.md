@@ -16,7 +16,9 @@ another run. Initial execution is still started explicitly. Editing an unpublish
 question, ordinary phase progress, successful process exit, and a failed
 verification conclusion alone do not create automatic continuation work. An
 additional explicit [rework budget](rework.md) can authorize implementation
-failure to create and queue a fresh development generation.
+failure to create and queue a fresh development generation, or specification
+failure to queue a fresh configured analyst generation. Both consume the same
+budget and retain prior reports.
 
 ## Authorization and dispatch
 
@@ -70,7 +72,7 @@ continuation retain separate coverage. The fixture claims simulate runtime
 metadata and never execute an installed provider or call a model.
 
 The [bounded implementation rework](rework.md) path is connected. Requirement
-planning, specification-failure reanalysis, and final review,
+planning, system arbitration, and final review,
 remaining command chains, other provider receipts, remote repository mapping,
 and real delivered-business acceptance remain pending. A task process completing
 is still insufficient for the synchronous issue completion gate.
