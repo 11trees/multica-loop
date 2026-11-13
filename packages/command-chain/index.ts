@@ -34,3 +34,6 @@ export { createContextHandlers, compileContextConclusion, contextContractSchema,
 export { createPlanningHandlers, compilePlanningConclusion, planningContractSchema, planningProfile } from "./planning";
 export { createReviewHandlers, compileReviewConclusion, reviewContractSchema, reviewProfile } from "./review";
 export type { ReviewContract } from "./review";
+
+export { reproductionContractSchema, reproductionProfile, createReproductionHandlers, compileReproductionConclusion } from "./reproduction";
+export type { ReproductionContract } from "./reproduction";

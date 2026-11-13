@@ -102,3 +102,7 @@ need acceptance work. The binding/fingerprint checks are observations, not an
 atomic filesystem snapshot or a transaction across PostgreSQL and SQLite. This
 does not finish system arbitration, verified feedback,
 other chains, or real-provider delivery acceptance.
+
+Bug [reproduction](reproduction.md) uses the same readonly frozen-commit checks
+as requirement investigation. It must preserve persistent target files and
+revalidate the bound runtime repository before handing evidence to planning.

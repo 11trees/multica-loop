@@ -18,7 +18,7 @@ definitions and host application are the implementation evidence.
 | `requirement-context` | Implemented for the delivery path | [Context gates](../../packages/command-chain/context.ts), permanent acceptance entities, authenticated choices and native context/planner handoff |
 | `delivery-plan` | Implemented for the delivery path | [Planning gates](../../packages/command-chain/planning.ts), full source-key coverage, ordered dependencies and stable native child publication |
 | `delivery-analysis` | Implemented for managed units | [Analysis gates](../../packages/command-chain/analysis.ts), scoped dependencies, decision authority and specification rework |
-| `reproduction` | Not migrated | Bug context requires Existing Expected, but currently proceeds to planning without LoopWork's reproduction chain |
+| `reproduction` | Connected through planning | [Reproduction gates](reproduction.md), frozen Existing Expected, readonly conditions/observations, authenticated facts, renewed investigation, history and native planner handoff |
 | `development` | Implemented with provider limits | [Development gates](../../packages/command-chain/development.ts), actual commits and captured command receipts; trusted provider capture is currently the Codex adapter |
 | `verification` | Implemented with evidence limits | [Verification gates](../../packages/command-chain/verification.ts), frozen coverage/results and failure attribution; semantic evidence truth is still declared |
 | `review` | Normal closure implemented | [Review gates](../../packages/command-chain/review.ts), scoped fact reconciliation, forward units, history and authenticated report reading; report correction and arbitration remain absent |
@@ -28,7 +28,7 @@ definitions and host application are the implementation evidence.
 “Implemented” describes connected code and controlled fixture evidence. It does
 not imply real-provider acceptance, packaged Desktop verification, or historical
 data migration. The target [worker](../../packages/command-chain/worker.ts)
-currently embeds six definitions; the other seven default chains are not
+currently embeds seven definitions; the other six default chains are not
 supplied by a generic agent prompt or by a successful native process exit.
 
 ## Complete user pipelines
@@ -39,7 +39,7 @@ supplied by a generic agent prompt or by a successful native process exit.
 | Business Analysis | Not connected | Four business-analysis chains, reviewed specification publication, return paths and reading acknowledgement |
 | End to End | Partial | Connect approved business specifications into the delivered requirement path without losing source versions and authority |
 | Develop | Controlled local path connected | Real-provider acceptance, remaining recovery and resource-ownership boundaries before cutover |
-| Bug Fix | Partial | Reproduction evidence/conditions/conclusion and its frozen handoff before planning |
+| Bug Fix | Controlled reproduction-to-planning path connected | Real-provider diagnosis and complete Bug Fix delivery acceptance; shared downstream delivery is exercised separately |
 | Post-delivery feedback | Not connected | Batch/group routing, independent verification, additions/revisions, historical correction and report correction |
 
 The legacy OpenSpec pack supplies variants of six chains. Those repository
@@ -65,13 +65,9 @@ The migration remains active until the relevant source pipelines, named gates,
 artifacts and deployment requirements are accepted against current runtime state.
 Neither this checklist nor a green subset of tests closes the objective.
 
-## Next increment: Bug Fix reproduction
+## Next increment: post-delivery feedback
 
-Connect the source `repro-agent.yaml` between bug context and delivery planning.
-Freeze the existing Expected separately from observed Actual, conditions, steps
-and locatable evidence. Investigation must leave the target repository unchanged.
-Only `reproduced` can hand off to planning; `not_reproduced` must preserve its
-evidence and request the missing human facts instead of becoming a passed result.
-Acceptance requires both branches, answer review and renewed observation, stale
-attempt/code rejection, storage reopen and a native queue/UI handoff. This is the
-next planned increment, not an implemented capability.
+Migrate source feedback batches/groups, authority-bound triage and independent
+feedback verification. Preserve source versions and the distinction between new
+scope, contract revision, unresolved defects and report correction. Comments
+alone are not a verified feedback workflow. This is planned work.

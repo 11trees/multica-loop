@@ -10,6 +10,7 @@ await build({
   define: {
     DEFAULT_VERIFICATION_SOURCE: JSON.stringify(readFileSync(new URL("../definitions/verification.yaml", import.meta.url), "utf8")),
     DEFAULT_CONTEXT_SOURCE: JSON.stringify(readFileSync(new URL("../definitions/context.yaml", import.meta.url), "utf8")),
+    DEFAULT_REPRODUCTION_SOURCE: JSON.stringify(readFileSync(new URL("../definitions/reproduction.yaml", import.meta.url), "utf8")),
     DEFAULT_REVIEW_SOURCE: JSON.stringify(readFileSync(new URL("../definitions/review.yaml", import.meta.url), "utf8")),
     DEFAULT_PLANNING_SOURCE: JSON.stringify(readFileSync(new URL("../definitions/planning.yaml", import.meta.url), "utf8")),
     DEFAULT_ANALYSIS_SOURCE: JSON.stringify(readFileSync(new URL("../definitions/analysis.yaml", import.meta.url), "utf8")),

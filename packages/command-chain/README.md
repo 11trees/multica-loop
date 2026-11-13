@@ -8,8 +8,8 @@ adapters. YAML cannot define executable commands, validators, or transitions.
 The loader validates syntax, references, writable block boundaries, and the
 mandatory builtin sequence. `CommandChainEngine` adds phase execution and
 durable drafts through an injected `DraftStore`. Requirement context, planning,
-delivery analysis, development, independent verification and normal requirement
-review have host-owned handlers. The remaining source chains and pipelines are
+bug reproduction, delivery analysis, development, independent verification and
+normal requirement review have host-owned handlers. The remaining source chains and pipelines are
 tracked in the [migration coverage audit](../../docs/engineering/migration-status.md).
 
 The identifier grammar excludes numeric keys so YAML declaration order survives
@@ -178,3 +178,14 @@ oracles and review lineage, schedules fresh review generations, and records an
 explicit authenticated reading acknowledgement. Go rechecks native children and
 unfinished runs before writing Done. See [requirement review](../../docs/engineering/requirement-review.md)
 for exact runtime evidence, recovery and remaining migration boundaries.
+
+## Bug reproduction
+
+The imported `reproduction.yaml` and `reproduction.ts` gates sit between bug
+context and planning. The host freezes reliable Existing Expected, context
+fingerprints and readonly code bindings. Missing facts pause for authenticated
+answers; renewed investigation archives earlier observations. Only reproduced
+conclusions append source-covered planning facts. The standalone profile is
+platform independent; native orchestration stays in the requirement host. See
+[reproduction](../../docs/engineering/reproduction.md) for actual acceptance and
+provider/semantic boundaries.
