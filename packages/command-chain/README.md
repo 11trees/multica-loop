@@ -9,7 +9,9 @@ The loader validates syntax, references, writable block boundaries, and the
 mandatory builtin sequence. `CommandChainEngine` adds phase execution and
 durable drafts through an injected `DraftStore`. Requirement context, planning,
 bug reproduction, delivery analysis, development, independent verification and
-normal requirement review have host-owned handlers. The remaining source chains and pipelines are
+normal requirement review have host-owned handlers. Four business-analysis chains
+also have pure profiles, gates and conclusion compilers; their native orchestration
+is not connected yet. The remaining source chains and pipelines are
 tracked in the [migration coverage audit](../../docs/engineering/migration-status.md).
 
 The identifier grammar excludes numeric keys so YAML declaration order survives
