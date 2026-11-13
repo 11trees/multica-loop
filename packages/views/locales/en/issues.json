@@ -2013,6 +2013,14 @@
     "ready_to_resume": "Ready to continue",
     "developer_runtime_notice": "Development checks currently require a Codex runtime.",
     "auto_continue": "Continue automatically",
-    "auto_continue_notice": "Queues independent verification after development and resumes after all answers. The previous run must finish first."
+    "auto_continue_notice": "Queues independent verification after development and resumes after all answers. The previous run must finish first.",
+    "max_reworks": "Automatic rework limit",
+    "rework_notice": "0 disables rework. Implementation failures create fresh development checks; unchanged repeated failures and specification problems require human review.",
+    "rework_round": "Rework {{round}} of {{limit}}",
+    "rework_analysis": "The specification needs review. Freeze a corrected contract to continue.",
+    "rework_stagnant": "The same verification failed again without a code change. Human review is required.",
+    "rework_budget": "The rework limit is reached. Review the failures before freezing a new contract.",
+    "rework_manual": "Verification failed. Freeze a new contract to continue manually.",
+    "rework_history": "Failed verification history"
   }
 }

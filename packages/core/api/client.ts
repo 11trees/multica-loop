@@ -3023,7 +3023,7 @@ export class ApiClient {
 
   async configureEngineering(issueId: string, input: EngineeringConfiguration): Promise<void> {
     await this.writeEngineering(issueId, "", { expected_revision: input.expectedRevision, agent_id: input.verifierId,
-      auto_continue: input.autoContinue ?? false, developer_agent_id: input.developerId, repository_path: input.repositoryPath, implementation_guidance: input.implementationGuidance, sources: input.sources });
+      max_reworks: input.maxReworks ?? 0, auto_continue: input.autoContinue ?? false, developer_agent_id: input.developerId, repository_path: input.repositoryPath, implementation_guidance: input.implementationGuidance, sources: input.sources });
   }
 
   async answerEngineering(issueId: string, input: { expectedSequence: number; requestId: string; answer: string }): Promise<void> {

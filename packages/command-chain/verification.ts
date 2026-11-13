@@ -181,3 +181,25 @@ export function compileVerificationConclusion(draft: Readonly<ChainDraft>, input
     review,
   };
 }
+
+/** Host-only recheck: retain the frozen scenarios, never previous observations. */
+export function createVerificationRecheck(previous: Readonly<ChainDraft>, previousContract: VerificationContract, contract: VerificationContract, id: string, attemptId: string): ChainDraft {
+  if (compileVerificationConclusion(previous, previousContract).verdict !== "failed") throw new Error("A recheck requires failed independent verification");
+  if (JSON.stringify(previousContract.sources) !== JSON.stringify(contract.sources)) throw new Error("Recheck cannot change frozen verification sources");
+  const phases = Object.entries(previous.definition.phases);
+  const execute = phases.find(([_, phase]) => phase.type === "builtin" && phase.builtin === "verification-execution")?.[0];
+  const plan = phases.find(([_, phase]) => phase.type === "builtin" && phase.builtin === "verification-plan")?.[0];
+  if (!execute || !plan) throw new Error("Recheck definition lacks verification phases");
+  const retained = new Set(["verification.sources", "verification.scenarios"]);
+  const draft = draftSchema.parse({ ...structuredClone(previous), id, binding: contract.binding, sequence: 0, attemptId,
+    status: "editing", phase: execute, completedPhases: phases.slice(0, phases.findIndex(([id]) => id === execute)).map(([id]) => id),
+    artifacts: previous.artifacts.filter(item => retained.has(item.ref)).map(item => ({ ...item, attemptId })),
+    frozen: previous.frozen.filter(item => retained.has(item.ref)),
+    writeRules: [{ ref: "verification.scenarios", mode: "append-only", phase: plan }],
+    runtimeInputs: previous.runtimeInputs.map(input => ({ ...input, active: false })),
+    events: [{ sequence: 0, attemptId, command: "verification.recheck", phase: execute, reason: `Retained scenarios from failed draft ${previous.id}` }],
+  });
+  const errors = planErrors(draft, contract);
+  if (errors.length) throw new PhaseValidationError(errors);
+  return draft;
+}

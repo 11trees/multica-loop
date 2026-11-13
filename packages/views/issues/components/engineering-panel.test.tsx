@@ -18,7 +18,7 @@ const initial: EngineeringOverview = {
   phases: [{ id: "inputs", status: "completed" }, { id: "plan", status: "current" }],
   sources: [{ key: "ac1", kind: "acceptance", description: "Survives reload", oracle: "Title visible", sourceRef: "ISSUE:fixture" }],
   questions: [{ id: "q1", title: "Fixture entry", question: "Which entry should be verified?", why: "Need isolated data", recommendation: "Use the local fixture", active: true, phase: "plan", answer: null }],
-  artifacts: [], result: null,
+  artifacts: [], result: null, rework: null,
 };
 let state: EngineeringOverview;
 let client: QueryClient;
@@ -99,7 +99,7 @@ it("configures frozen scope with separate roles and preserves the form on failur
   await user.click(within(dialog).getByRole("button", { name: "Freeze scope" }));
   await within(dialog).findByText("Repository has uncommitted changes");
   expect(within(dialog).getByLabelText("Expected result")).toHaveValue("Title remains visible");
-  expect(api.configureEngineering).toHaveBeenCalledWith("issue", expect.objectContaining({ autoContinue: true, expectedRevision: 0, developerId: "developer", verifierId: "verifier", repositoryPath: "/fixture/repo",
+  expect(api.configureEngineering).toHaveBeenCalledWith("issue", expect.objectContaining({ maxReworks: 3, autoContinue: true, expectedRevision: 0, developerId: "developer", verifierId: "verifier", repositoryPath: "/fixture/repo",
     sources: [{ key: "scope-1", kind: "acceptance", description: "Survives reload", oracle: "Title remains visible", sourceRef: "ISSUE:issue:r4:scope-1" }] }));
 });
 
@@ -107,4 +107,16 @@ it("uses the Chinese product vocabulary for human questions", async () => {
   renderPanel("zh-Hans"); await screen.findByText("工程交付");
   expect(screen.getByLabelText("你的回答")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "提交回答" })).toBeInTheDocument();
+});
+
+it("shows a stopped rework decision and retains the failed observation", async () => {
+  state.status = "completed"; state.questions = []; state.result = { verdict:"failed" };
+  state.rework = {rootRevision:1,round:1,limit:1,stopReason:"budget",history:[{revision:1,draftId:"failed-draft",codeVersion:"failed-commit",decision:"rework",artifacts:[{ref:"verification.results",key:"s1",content:"status: failed\nactualBehavior: Wrong heading"}]}]};
+  const user = userEvent.setup(); renderPanel();
+  await screen.findByText("The rework limit is reached. Review the failures before freezing a new contract.");
+  expect(screen.queryByRole("button",{name:/Start run|Continue run/})).not.toBeInTheDocument();
+  await user.click(screen.getByText("Failed verification history",{exact:true}));
+  await user.click(screen.getAllByText("Revision 1",{exact:true}).find(element=>element.tagName === "SUMMARY")!);
+  expect(screen.getByText(/actualBehavior: Wrong heading/)).toBeVisible();
+  expect(screen.getByRole("button",{name:"New revision"})).toBeInTheDocument();
 });

@@ -13,7 +13,8 @@ items with their judging criteria. At least one acceptance is required. Enable
 development to choose a different developer and supply implementation guidance.
 Development command receipts currently require a Codex runtime. **Continue
 automatically** authorizes development handoff and answered-question continuation;
-turn it off for manual control. Freezing resolves
+turn it off for manual control. **Automatic rework limit** additionally authorizes
+implementation-failure repair rounds; zero disables them. Freezing resolves
 the actual clean Git HEAD and retains the source references and contract revision.
 
 Bind the issue to a project with exactly one local-directory resource for the
@@ -75,7 +76,8 @@ Kernel tests cover repository preflight and interrupted development recovery.
 
 The shared component is wired into Web and Desktop issue detail; the packaged
 desktop app has not been exercised. Automatic development handoff and answered
-question continuation are connected. Bounded failure/rework orchestration, the remaining command chains,
+question continuation and [bounded implementation rework](rework.md) are connected.
+Analysis/arbitration integration, the remaining command chains,
 remote repository mapping, and real business/provider acceptance remain pending.
 SQLite checkpoints, PostgreSQL queue admission, and filesystem checks are separate
 operations; these controls do not establish a cross-database transaction or global

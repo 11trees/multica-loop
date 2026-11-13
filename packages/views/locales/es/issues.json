@@ -2013,6 +2013,14 @@
     "ready_to_resume": "Listo para continuar",
     "developer_runtime_notice": "Las comprobaciones de desarrollo requieren actualmente un entorno Codex.",
     "auto_continue": "Continuar automáticamente",
-    "auto_continue_notice": "Inicia la verificación independiente tras el desarrollo y reanuda al recibir todas las respuestas, cuando termine la ejecución anterior."
+    "auto_continue_notice": "Inicia la verificación independiente tras el desarrollo y reanuda al recibir todas las respuestas, cuando termine la ejecución anterior.",
+    "max_reworks": "Límite de correcciones automáticas",
+    "rework_notice": "0 desactiva las correcciones. Los fallos de implementación exigen nuevo desarrollo, revisión y comprobaciones. Los fallos repetidos sin cambios y los problemas de especificación requieren revisión humana.",
+    "rework_round": "Corrección {{round}} de {{limit}}",
+    "rework_analysis": "La especificación requiere revisión. Fija un contrato corregido.",
+    "rework_stagnant": "La misma verificación volvió a fallar sin cambios de código. Se requiere revisión humana.",
+    "rework_budget": "Se alcanzó el límite. Revisa los fallos antes de fijar un nuevo contrato.",
+    "rework_manual": "La verificación falló. Fija un nuevo contrato para continuar.",
+    "rework_history": "Historial de verificaciones fallidas"
   }
 }

@@ -32,6 +32,7 @@ export function EngineeringConfigure({ workspaceId, issue, revision, repositoryP
   const id = useId();
   const [open, setOpen] = useState(false);
   const [repository, setRepository] = useState(repositoryPath);
+  const [maxReworks, setMaxReworks] = useState(3);
   const [autoContinue, setAutoContinue] = useState(true);
   const [includeDevelopment, setIncludeDevelopment] = useState(true);
   const [developer, setDeveloper] = useState("");
@@ -44,7 +45,7 @@ export function EngineeringConfigure({ workspaceId, issue, revision, repositoryP
   const available = (agents.data ?? []).filter(agent => !agent.archived_at);
   const kindLabels = { acceptance: t($ => $.engineering.acceptance), focus: t($ => $.engineering.focus), guardrail: t($ => $.engineering.guardrail), recovery: t($ => $.engineering.recovery) };
   const sameAgent = includeDevelopment && !!developer && developer === verifier;
-  const valid = repository.trim() && verifier && (!includeDevelopment || developer && guidance.trim()) && !sameAgent && scope.some(row => row.kind === "acceptance") && scope.every(row => row.description.trim() && row.oracle.trim());
+  const valid = (!autoContinue || !includeDevelopment || Number.isInteger(maxReworks) && maxReworks >= 0 && maxReworks <= 10) && repository.trim() && verifier && (!includeDevelopment || developer && guidance.trim()) && !sameAgent && scope.some(row => row.kind === "acceptance") && scope.every(row => row.description.trim() && row.oracle.trim());
   const update = (key: number, patch: Partial<Scope>) => setScope(rows => rows.map(row => row.id === key ? { ...row, ...patch } : row));
 
   return <Dialog open={open} onOpenChange={value => { if (!pending) setOpen(value); }}>
@@ -54,7 +55,7 @@ export function EngineeringConfigure({ workspaceId, issue, revision, repositoryP
       <form onSubmit={async event => {
         event.preventDefault(); if (!valid || pending) return; setError("");
         try {
-          await onSave({ autoContinue, expectedRevision: revision, verifierId: verifier, developerId: includeDevelopment ? developer : undefined, repositoryPath: repository.trim(), implementationGuidance: includeDevelopment ? guidance.trim() : undefined,
+          await onSave({ maxReworks: autoContinue && includeDevelopment ? maxReworks : 0, autoContinue, expectedRevision: revision, verifierId: verifier, developerId: includeDevelopment ? developer : undefined, repositoryPath: repository.trim(), implementationGuidance: includeDevelopment ? guidance.trim() : undefined,
             sources: scope.map(row => ({ key: `scope-${row.id + 1}`, kind: row.kind, description: row.description.trim(), oracle: row.oracle.trim(), sourceRef: `ISSUE:${issue.id}${issue.revision ? `:r${issue.revision}` : ""}:scope-${row.id + 1}` })) });
           setOpen(false);
         } catch (error) { setError(error instanceof Error ? error.message : t($ => $.engineering.save_error)); }
@@ -63,6 +64,7 @@ export function EngineeringConfigure({ workspaceId, issue, revision, repositoryP
           <div className="space-y-1.5"><Label htmlFor={`${id}-repository`}>{t($ => $.engineering.repository)}</Label><Input id={`${id}-repository`} value={repository} onChange={event => setRepository(event.target.value)} required autoComplete="off" /></div>
           <div className="space-y-1.5"><div className="flex items-center gap-2"><Switch id={`${id}-auto`} checked={autoContinue} onCheckedChange={setAutoContinue} aria-describedby={`${id}-auto-notice`} /><Label htmlFor={`${id}-auto`}>{t($ => $.engineering.auto_continue)}</Label></div><p id={`${id}-auto-notice`} className="text-caption text-muted-foreground">{t($ => $.engineering.auto_continue_notice)}</p></div>
           <div className="flex items-center gap-2"><Switch id={`${id}-development`} checked={includeDevelopment} onCheckedChange={setIncludeDevelopment} /><Label htmlFor={`${id}-development`}>{t($ => $.engineering.include_development)}</Label></div>
+          {autoContinue && includeDevelopment && <div className="space-y-1.5"><Label htmlFor={`${id}-reworks`}>{t($ => $.engineering.max_reworks)}</Label><Input id={`${id}-reworks`} type="number" min={0} max={10} step={1} value={Number.isNaN(maxReworks) ? "" : maxReworks} onChange={event => setMaxReworks(event.target.valueAsNumber)} aria-describedby={`${id}-reworks-notice`} required /><p id={`${id}-reworks-notice`} className="text-caption text-muted-foreground">{t($ => $.engineering.rework_notice)}</p></div>}
           <div className="grid gap-4 sm:grid-cols-2">
             {includeDevelopment && <div className="space-y-1.5"><Label htmlFor={`${id}-developer`}>{t($ => $.engineering.developer)}</Label><AgentChoice id={`${id}-developer`} value={developer} onChange={setDeveloper} agents={available} placeholder={t($ => $.engineering.select_agent)} /></div>}
             <div className="space-y-1.5"><Label htmlFor={`${id}-verifier`}>{t($ => $.engineering.verifier)}</Label><AgentChoice id={`${id}-verifier`} value={verifier} onChange={setVerifier} agents={available} placeholder={t($ => $.engineering.select_agent)} /></div>

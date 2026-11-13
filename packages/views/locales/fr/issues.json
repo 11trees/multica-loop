@@ -2013,6 +2013,14 @@
     "ready_to_resume": "Prêt à continuer",
     "developer_runtime_notice": "Les contrôles de développement nécessitent actuellement un environnement Codex.",
     "auto_continue": "Continuer automatiquement",
-    "auto_continue_notice": "Lance la vérification indépendante après le développement et reprend après toutes les réponses, une fois l’exécution précédente terminée."
+    "auto_continue_notice": "Lance la vérification indépendante après le développement et reprend après toutes les réponses, une fois l’exécution précédente terminée.",
+    "max_reworks": "Limite de reprises automatiques",
+    "rework_notice": "0 désactive les reprises. Un échec d’implémentation impose de nouveaux développements, revues et contrôles. Les échecs répétés sans changement et les problèmes de spécification nécessitent une revue humaine.",
+    "rework_round": "Reprise {{round}} sur {{limit}}",
+    "rework_analysis": "La spécification doit être revue. Figez un contrat corrigé.",
+    "rework_stagnant": "La même vérification a échoué sans changement du code. Une revue humaine est requise.",
+    "rework_budget": "La limite de reprises est atteinte. Examinez les échecs avant de figer un nouveau contrat.",
+    "rework_manual": "La vérification a échoué. Figez un nouveau contrat pour continuer.",
+    "rework_history": "Historique des vérifications échouées"
   }
 }

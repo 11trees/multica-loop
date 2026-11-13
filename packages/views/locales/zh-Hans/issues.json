@@ -1938,6 +1938,14 @@
     "ready_to_resume": "可继续运行",
     "developer_runtime_notice": "开发检查目前需要使用 Codex 运行环境。",
     "auto_continue": "自动继续",
-    "auto_continue_notice": "开发完成后派发独立验证，问题全部答复后恢复运行；均须等待上一次运行结束。"
+    "auto_continue_notice": "开发完成后派发独立验证，问题全部答复后恢复运行；均须等待上一次运行结束。",
+    "max_reworks": "自动返工上限",
+    "rework_notice": "0 表示关闭。实现失败后须重新开发、审查和检查；代码未变的重复失败及规格问题交回人工处理。",
+    "rework_round": "返工轮次 {{round}} / {{limit}}",
+    "rework_analysis": "规格需要重新确认，请修订后冻结新版本。",
+    "rework_stagnant": "代码未变，同一验证再次失败，需要人工检查。",
+    "rework_budget": "返工次数已用完，请检查失败记录后冻结新版本。",
+    "rework_manual": "验证失败，请冻结新版本后继续处理。",
+    "rework_history": "历次失败验证"
   }
 }

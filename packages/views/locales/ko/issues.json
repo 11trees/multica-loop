@@ -1938,6 +1938,14 @@
     "ready_to_resume": "계속할 수 있음",
     "developer_runtime_notice": "개발 검사에는 현재 Codex 런타임이 필요합니다.",
     "auto_continue": "자동으로 계속",
-    "auto_continue_notice": "개발 후 독립 검증을 시작하고 모든 답변 후 재개합니다. 이전 실행이 먼저 끝나야 합니다."
+    "auto_continue_notice": "개발 후 독립 검증을 시작하고 모든 답변 후 재개합니다. 이전 실행이 먼저 끝나야 합니다.",
+    "max_reworks": "자동 재작업 한도",
+    "rework_notice": "0이면 비활성화됩니다. 구현 실패 후 개발, 검토, 검사를 새로 수행합니다. 코드 변경 없는 반복 실패와 명세 문제는 사람이 검토합니다.",
+    "rework_round": "재작업 {{round}}회 / 한도 {{limit}}회",
+    "rework_analysis": "명세 검토가 필요합니다. 수정한 계약을 고정하세요.",
+    "rework_stagnant": "코드 변경 없이 같은 검증이 다시 실패했습니다. 사람의 검토가 필요합니다.",
+    "rework_budget": "재작업 한도에 도달했습니다. 실패를 검토한 후 새 계약을 고정하세요.",
+    "rework_manual": "검증이 실패했습니다. 새 계약을 고정한 후 계속하세요.",
+    "rework_history": "검증 실패 기록"
   }
 }
