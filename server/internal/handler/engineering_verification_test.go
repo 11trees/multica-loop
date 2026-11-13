@@ -20,6 +20,9 @@ type engineeringRecorder struct {
 }
 
 func (s *engineeringRecorder) Call(_ context.Context, input any) (json.RawMessage, error) {
+	if value, ok := input.(map[string]any); ok && value["action"] == "parent-scope" {
+		return json.RawMessage(`{"managed":false}`), nil
+	}
 	data, _ := json.Marshal(input)
 	var decoded map[string]any
 	json.Unmarshal(data, &decoded)
@@ -88,11 +91,11 @@ func TestEngineeringClaimInstructions(t *testing.T) {
 				t.Fatal("configured role did not receive command-chain instructions")
 			}
 			expectedChain := "development"
-			if tc.name == "analysis" {
-				expectedChain = "analysis"
+			if tc.name == "analysis" || tc.name == "context" || tc.name == "planning" {
+				expectedChain = tc.name
 			}
 			if tc.configured && response.EngineeringChain != expectedChain {
-				t.Fatal("development capture capability missing from claim")
+				t.Fatal("frozen engineering role missing from claim")
 			}
 			if tc.configured && (response.EngineeringRepository != "/fixture/repository" || response.EngineeringCommit != "0123456789abcdef0123456789abcdef01234567") {
 				t.Fatal("claim omitted the frozen execution snapshot")

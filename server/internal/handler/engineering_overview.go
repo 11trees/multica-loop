@@ -122,6 +122,15 @@ func (h *Handler) RunEngineering(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "an issue run is still active; wait for it to finish before starting engineering")
 		return
 	}
+	idle, scopeErr := h.managedRunsIdle(r.Context(), issue)
+	if scopeErr != nil {
+		engineeringControlError(w, scopeErr)
+		return
+	}
+	if !idle {
+		writeError(w, http.StatusConflict, "another requirement run is unfinished")
+		return
+	}
 	mappings, err := h.engineeringExecutionResources(r.Context(), issue, agent)
 	if err != nil {
 		engineeringControlError(w, err)

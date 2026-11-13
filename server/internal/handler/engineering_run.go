@@ -79,6 +79,10 @@ func (h *Handler) loadEngineeringRun(w http.ResponseWriter, r *http.Request) (En
 	if !ok {
 		return EngineeringRunContextResponse{}, false
 	}
+	if _, err := h.managedRunScope(r.Context(), issue); err != nil {
+		writeError(w, http.StatusConflict, "managed requirement is unavailable or no longer executable")
+		return EngineeringRunContextResponse{}, false
+	}
 	claimID := strconv.FormatInt(task.DispatchedAt.Time.UnixMicro(), 10)
 	taskID := uuidToString(task.ID)
 	w.Header().Set("Cache-Control", "no-store")

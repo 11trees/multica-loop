@@ -12,7 +12,9 @@ const question = z.object({ id: z.string().min(1), title: z.string(), question: 
     answer: value.answer ? {text:value.answer.text,userId:value.answer.user_id,sequence:value.answer.sequence,...(value.answer.selected_option ? {selectedOption:value.answer.selected_option} : {})} : null}));
 const publication=z.object({requested_by:z.string().min(1),units:z.array(z.object({issueId:z.string().min(1),published:z.boolean(),unit:z.object({key:z.string().min(1),title:z.string()})})).min(1).max(50)}).transform(value=>({requestedBy:value.requested_by,units:value.units}));
 const managedUnit=z.object({parentIssueId:z.string().min(1),parentRevision:z.number().int().positive(),planDraftId:z.string().min(1),unit,sources:z.array(z.object({key:z.string(),kind:z.string(),description:z.string(),oracle:z.string(),sourceRef:z.string()})),published:z.boolean()});
-const requirement=z.object({publication:publication.nullable().optional().default(null),kind:z.string(),input:z.string(),context:z.object({intent:z.string(),changeSummary:z.string(),acceptances:z.array(z.object({id:z.string(),key:z.string(),statement:z.string(),oracle:z.string(),sourceRef:z.string(),revision:z.number().int().positive()}))}).nullable(),plan:z.object({rationale:z.string(),coverage:z.string(),units:z.array(unit)}).nullable()});
+const deliveryPolicy=z.object({analystId:z.string().min(1),developerId:z.string().min(1),verifierId:z.string().min(1),maxReworks:z.number().int().min(0).max(10),mode:z.enum(["in_place","worktree"]),userId:z.string().min(1)});
+const acceptedBinding=z.object({workspaceId:z.string().min(1),issueId:z.string().min(1),revision:z.number().int().positive(),contractVersion:z.string().min(1),codeVersion:z.string().min(1)});
+const requirement=z.object({delivery_policy:deliveryPolicy.nullable().optional().default(null),accepted:z.record(z.string(),acceptedBinding).optional().default({}),progress:z.array(z.object({key:z.string(),chain:z.string().nullable(),status:z.string(),stop_reason:z.string().nullable()})).optional().default([]),publication:publication.nullable().optional().default(null),kind:z.string(),input:z.string(),context:z.object({intent:z.string(),changeSummary:z.string(),acceptances:z.array(z.object({id:z.string(),key:z.string(),statement:z.string(),oracle:z.string(),sourceRef:z.string(),revision:z.number().int().positive()}))}).nullable(),plan:z.object({rationale:z.string(),coverage:z.string(),units:z.array(unit)}).nullable()});
 const state = z.object({
   managed_unit:managedUnit.nullable().optional().default(null),
   requirement:requirement.nullable().optional().default(null),
@@ -57,3 +59,6 @@ export type EngineeringConfiguration = {
 export type RequirementConfiguration={expectedRevision:number;contextAgentId:string;plannerAgentId:string;repositoryPath:string;input:string;kind:"requirement"|"bug";decisionMode:"conservative"|"balanced"|"autonomous"|"fully_autonomous";autoContinue:boolean};
 
 export const EngineeringPublicationSchema=z.object({published:z.literal(true)});
+
+export type RequirementDeliveryConfiguration=EngineeringCheckpoint & {analystId:string;developerId:string;verifierId:string;maxReworks:number};
+export const EngineeringDeliveryAuthorizationSchema=z.object({authorized:z.literal(true)});

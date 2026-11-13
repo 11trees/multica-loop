@@ -20,7 +20,7 @@ type Scope = { id: number; kind: typeof kinds[number]; description: string; orac
 
 export function AgentChoice({ id, value, onChange, agents, placeholder }: { id: string; value: string; onChange: (value: string) => void; agents: Agent[]; placeholder: string }) {
   return <Select items={agents.map(agent => ({ value: agent.id, label: agent.name }))} value={value || null} onValueChange={value => onChange(value ?? "")}>
-    <SelectTrigger id={id} className="w-full"><SelectValue>{agents.find(agent => agent.id === value)?.name ?? placeholder}</SelectValue></SelectTrigger>
+    <SelectTrigger id={id} className="w-full min-w-0"><SelectValue className="min-w-0"><span className="truncate">{agents.find(agent => agent.id === value)?.name ?? placeholder}</span></SelectValue></SelectTrigger>
     <SelectContent>{agents.map(agent => <SelectItem key={agent.id} value={agent.id}>{agent.name}</SelectItem>)}</SelectContent>
   </Select>;
 }

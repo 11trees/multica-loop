@@ -76,3 +76,33 @@ func TestEngineeringPublicationUsesFrozenCheckpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestEngineeringDeliveryAuthorizationUsesHumanEndpoint(t *testing.T) {
+	t.Chdir(t.TempDir())
+	clearDaemonTaskEnv(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/issues/parent/engineering/delivery" {
+			t.Errorf("unexpected managed authorization endpoint: %s", r.URL.Path)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body["max_reworks"] != float64(3) || body["expected_sequence"] != float64(17) {
+			t.Error("authorization checkpoint changed")
+		}
+		fmt.Fprint(w, `{"authorized":true}`)
+	}))
+	defer server.Close()
+	setCLITestServerEnv(t, server.URL)
+	cmd, _, err := engineeringCmd.Find([]string{"start-deliveries"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd.SetContext(context.Background())
+	cmd.Flags().Set("payload", `{"expected_revision":1,"expected_sequence":17,"analyst_agent_id":"analyst","developer_agent_id":"developer","agent_id":"verifier","max_reworks":3}`)
+	t.Cleanup(func() { cmd.Flags().Set("payload", "") })
+	if _, err := captureStdout(t, func() error { return cmd.RunE(cmd, []string{"parent"}) }); err != nil {
+		t.Fatal(err)
+	}
+}
