@@ -21,7 +21,7 @@ function state(draft:Readonly<ChainDraft>){return {reconciliations:rows(draft,"r
 function projections(contract:ReviewContract){return [
   ...contract.subjects.map(({key,requiredEvidenceRefs:_required,...value})=>({ref:"review.subjects",key,content:stringify(value).trim()})),
   ...contract.evidence.map(({content:_content,independentTest,...value})=>({ref:"review.evidence-sources",key:value.ref,content:stringify({...value,independentTest:independentTest ? "yes" : "no"}).trim()})),
-  {ref:"review.meta",key:undefined,content:stringify({mode:"closure",totalStories:String(contract.evidence.filter(item=>item.independentTest).length),reviewRevision:String(contract.generation)}).trim()},
+  {ref:"review.meta",key:undefined,content:stringify({mode:"closure",totalStories:String(contract.evidence.filter(item=>item.independentTest && item.kind !== "feedback-verification").length),reviewRevision:String(contract.generation)}).trim()},
 ];}
 function inputErrors(draft:Readonly<ChainDraft>,contract:ReviewContract){
   const errors=JSON.stringify(draft.binding) === JSON.stringify(contract.binding) ? [] : ["Frozen review binding changed"];

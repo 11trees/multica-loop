@@ -10,7 +10,7 @@ const text=z.string().trim().min(1),seq=z.number().int().nonnegative();
 const {batchId:_batchId,previousFeedback:_previousFeedback,...captureShape}=feedbackTriageContractSchema.shape;
 const captureContractSchema=z.strictObject(captureShape);
 const definitionsSchema=z.strictObject({triage:text,verify:text});
-const policySchema=z.strictObject({agentId:z.uuid(),verifierId:z.uuid(),repositoryPath:text,mode:z.enum(["in_place","worktree"]),reviewDraftId:text,reportHash:text,restoreDone:z.boolean()});
+const policySchema=z.strictObject({agentId:z.uuid(),verifierId:z.uuid(),repositoryPath:text,mode:z.enum(["in_place","worktree"]),reviewDraftId:text,reportHash:text,restoreDone:z.boolean(),reopened:z.strictObject({sources:z.array(z.strictObject({batchId:text,groupId:text,commentId:text})).min(1),basis:feedbackWorkEvidenceSchema}).optional()});
 const triageResult=feedbackTriageConclusionSchema,verifyResult=feedbackVerifyConclusionSchema;
 const verificationSchema=z.strictObject({draftId:text,contract:feedbackVerifyContractSchema,result:verifyResult.optional()});
 const groupSchema=z.strictObject({id:text,descriptor:feedbackGroupSchema,status:z.enum(["waiting_for_repro","waiting_for_plan","waiting_for_report","verifying","completed","reopened","cancelled"]),work:feedbackWorkEvidenceSchema.optional(),verifications:z.record(z.string(),verificationSchema)});
