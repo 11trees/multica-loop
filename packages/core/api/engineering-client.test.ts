@@ -151,3 +151,9 @@ it("validates single-comment feedback proof and the stale report boundary",async
  respond({...body,chain:"feedback-verify",requirement});expect(await client.getEngineeringOverview("parent")).toMatchObject({requirement:{feedback:{capture_ready:false,batches:[{groups:[{verifications:[entry]}]}]}}});
  for(const verifications of [[],[{...entry,work_version:""}],[{...entry,result:{verdict:"resolved",reason:"Observed",evidence:[]}}]]){respond({...body,chain:"feedback-verify",requirement:{...requirement,feedback:{...feedback,batches:[{...batch,groups:[{...group,verifications}]}]}}});await expect(client.getEngineeringOverview("parent")).rejects.toThrow(/Invalid engineering overview/);}
 });
+
+it("keeps report candidates distinct and rejects malformed correction lineage",async()=>{
+ const client=new ApiClient("https://api.example.test"),review={generation:2,draft_id:"candidate",agent_id:"reviewer",current:false,report_hash:"b".repeat(64),acknowledgement:null,result:{verdict:"report_ready",report:"# Candidate report",gaps:[],units:[]},history:[],correction:{batch_id:"batch",group_id:"group",baseline_hash:"a".repeat(64),verified:false}},requirement={kind:"requirement",input:"Correct report wording",context:null,plan:null,review};
+ respond({...body,chain:"review",requirement});expect(await client.getEngineeringOverview("parent")).toMatchObject({requirement:{review:{current:false,correction:{verified:false}}}});
+ for(const correction of [{...review.correction,verified:"true"},{...review.correction,baseline_hash:"invalid"},{...review.correction,group_id:""}]){respond({...body,chain:"review",requirement:{...requirement,review:{...review,correction}}});await expect(client.getEngineeringOverview("parent")).rejects.toThrow(/Invalid engineering overview/);}
+});

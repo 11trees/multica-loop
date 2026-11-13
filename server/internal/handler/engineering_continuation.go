@@ -58,7 +58,7 @@ func (h *Handler) dispatchEngineeringContinuation(ctx context.Context, item engi
 	if item.Reason == "feedback_restore" {
 		return h.restoreEngineeringFeedback(ctx, item)
 	}
-	if item.Reason == "feedback_verify_next" || item.Reason == "feedback_review_next" || item.Reason == "feedback_forward" || item.Reason == "review_forward" || item.Reason == "review_next" {
+	if item.Reason == "feedback_report_next" || item.Reason == "feedback_verify_next" || item.Reason == "feedback_review_next" || item.Reason == "feedback_forward" || item.Reason == "review_forward" || item.Reason == "review_next" {
 		return h.dispatchRequirementReview(ctx, item)
 	}
 	if item.Reason == "unit_activation" || item.Reason == "unit_passed" {

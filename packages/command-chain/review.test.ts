@@ -15,15 +15,24 @@ const contract:ReviewContract={binding:{workspaceId:"workspace",issueId:"require
 let directory:string,store:SqliteDraftStore;
 beforeEach(async()=>{directory=await mkdtemp(join(tmpdir(),"multica-review-"));store=new SqliteDraftStore(join(directory,"drafts.sqlite"));});
 afterEach(async()=>{store.close();await rm(directory,{recursive:true,force:true});});
-async function setup(){
-  const engine=new CommandChainEngine(store,createReviewHandlers(contract));
+async function setup(input=contract){
+  const engine=new CommandChainEngine(store,createReviewHandlers(input));
   const chain=parseCommandChainDefinition(await readFile(new URL("./definitions/review.yaml",import.meta.url),"utf8"),reviewProfile);
-  let draft=await engine.create({id:"review-draft",chain,binding:contract.binding,attemptId:"review-attempt"});
+  let draft=await engine.create({id:"review-draft",chain,binding:input.binding,attemptId:"review-attempt"});
   const command=async(command:ChainCommand)=>draft=await engine.execute(draft.id,{expectedSequence:draft.sequence,attemptId:draft.attemptId},command);
   const put=(block:string,value:unknown,key?:string)=>command({type:"artifact.put",ref:`review.${block}`,key,content:stringify(value)});
   const next=()=>command({type:"phase.complete"});await next();
   return {engine,get draft(){return draft;},command,put,next};
 }
+it("clones a pinned report correction without turning its instructions into independent delivery proof",async()=>{
+ const baselineRef="REPORT_BASELINE:original",input=reviewContractSchema.parse({...contract,correction:{batchId:"batch",groupId:"wording",baselineDraftId:"original",baselineHash:"b".repeat(64),baselineReport:"Original complete report",sections:["outcome","scope","implementation","verification","risks"].map(kind=>({key:kind,kind,content:`Retain original ${kind}`})),assessment:{summary:"Original assessment",evidenceBoundary:"Local environment only",residualRisk:"No packaged deployment acceptance"}},subjects:[...contract.subjects,{key:"FEEDBACK_GROUP:wording:report_correction",kind:"feedback_acceptance",content:"Correct environment wording",requiredEvidenceRefs:[baselineRef]}],evidence:[...contract.evidence,{ref:baselineRef,kind:"report-baseline",status:"completed",revision:"1",fingerprint:"b".repeat(64),independentTest:false,content:"Original complete report"}]});
+ const session=await setup(input);expect(session.draft.artifacts.filter(item=>item.ref === "review.report-sections")).toHaveLength(5);expect(session.draft.artifacts.find(item=>item.ref === "review.meta")?.content).toContain("mode: report_correction");
+ await expect(session.command({type:"runtime-input.put",key:"change",title:"Meaning",question:"Change delivery?",why:"Scope",recommendation:"No"})).rejects.toThrow();
+ await session.put("gaps",{subjectRef:input.subjects[0]!.key,kind:"fact_conflict",reason:"Cannot change facts",boundary:"Return to triage"},"wrong");await expect(session.next()).rejects.toThrow(/expression correction/);await session.command({type:"artifact.remove",ref:"review.gaps",key:"wrong"});
+ for(const [i,subject] of input.subjects.entries())await session.put("reconciliations",{subjectRef:subject.key,result:"Retained accepted facts; scoped expression corrected",evidenceRefs:subject.requiredEvidenceRefs},`s${i}`);
+ await session.next();await session.next();await session.put("report-sections",{kind:"verification",content:"Independent tests ran locally"},"verification");await session.next();await session.next();const result=compileReviewConclusion(session.draft,input);expect(result.report).toContain("No packaged deployment acceptance");expect(result.report).toContain("Retain original scope");expect(result.report).toContain("Independent tests ran locally");expect(result.units).toEqual([]);
+ expect(()=>reviewContractSchema.parse({...input,correction:undefined})).toThrow(/independent passed/);expect(()=>reviewContractSchema.parse({...input,subjects:input.subjects.map(item=>item.key.includes("report_correction") ? {...item,kind:"intent"} : item)})).toThrow(/independent passed/);
+});
 async function assessed(gap=false,both=false){
   const session=await setup();
   if(both)await session.put("gaps",{subjectRef:"intent",kind:"missing_evidence",reason:"Overall outcome not verified",boundary:"Observe original intent"},"intent");

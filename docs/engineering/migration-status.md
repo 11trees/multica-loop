@@ -21,15 +21,15 @@ definitions and host application are the implementation evidence.
 | `reproduction` | Connected through planning | [Reproduction gates](reproduction.md), frozen Existing Expected, readonly conditions/observations, authenticated facts, renewed investigation, history and native planner handoff |
 | `development` | Implemented with provider limits | [Development gates](../../packages/command-chain/development.ts), actual commits and captured command receipts; trusted provider capture is currently the Codex adapter |
 | `verification` | Implemented with evidence limits | [Verification gates](../../packages/command-chain/verification.ts), frozen coverage/results and failure attribution; semantic evidence truth is still declared |
-| `review` | Normal closure implemented | [Review gates](../../packages/command-chain/review.ts), scoped fact reconciliation, forward units, history and authenticated report reading; report correction and arbitration remain absent |
-| `feedback-triage` | Native capture and forward delivery connected | [Feedback gates/store](feedback.md), frozen native comments, separate readonly triage/reproduction/planning roles, stable append publication and serial managed delivery; independent per-comment verification and fresh report reading are connected; report correction remains pending |
-| `feedback-verify` | Native delivery feedback connected | Authoritative accepted-work resolver, native independent single-comment tasks, separate sibling results, reopened recapture and new final Review/reading; corrected-report verification remains absent |
+| `review` | Normal closure implemented | [Review gates](../../packages/command-chain/review.ts), scoped fact reconciliation, forward units, history and authenticated report reading; report correction is connected; arbitration remains absent |
+| `feedback-triage` | Native capture and forward delivery connected | [Feedback gates/store](feedback.md), frozen native comments, separate readonly triage/reproduction/planning roles, stable append publication and serial managed delivery; independent per-comment verification and fresh report reading are connected; report-expression correction and its independent candidate verification are connected |
+| `feedback-verify` | Native delivery feedback connected | Authoritative accepted-work resolver, native independent single-comment tasks, separate sibling results, reopened recapture and new final Review/reading; corrected-report verification and new candidate reading are connected |
 
 “Implemented” describes connected code and controlled fixture evidence. It does
 not imply real-provider acceptance, packaged Desktop verification, or historical
 data migration. The target [worker](../../packages/command-chain/worker.ts)
 currently embeds nine definitions, all with native entry points for the connected
-delivery paths. Feedback report correction remains incomplete. The four business-analysis chains remain absent and are
+delivery paths, including bounded feedback report-expression correction. The four business-analysis chains remain absent and are
 not supplied by a generic prompt or a successful native process exit.
 
 ## Complete user pipelines
@@ -41,7 +41,7 @@ not supplied by a generic prompt or a successful native process exit.
 | End to End | Partial | Connect approved business specifications into the delivered requirement path without losing source versions and authority |
 | Develop | Controlled local path connected | Real-provider acceptance, remaining recovery and resource-ownership boundaries before cutover |
 | Bug Fix | Controlled reproduction-to-planning path connected | Real-provider diagnosis and complete Bug Fix delivery acceptance; shared downstream delivery is exercised separately |
-| Post-delivery feedback | Partial | Capture, triage, forward delivery, independent per-comment verification and new report reading connected; report correction and original-contract revision remain incomplete |
+| Post-delivery feedback | Partial | Capture, triage, forward delivery, independent per-comment verification and new report reading connected; report correction connected; original-contract revision and reconciliation remain incomplete |
 
 The legacy OpenSpec pack supplies variants of six chains. Those repository
 adapters, pack selection and variant-specific acceptance have not been migrated.
@@ -66,31 +66,39 @@ The migration remains active until the relevant source pipelines, named gates,
 artifacts and deployment requirements are accepted against current runtime state.
 Neither this checklist nor a green subset of tests closes the objective.
 
-## Next increment: feedback report correction
+## Next increment: business analysis and reviewed specifications
 
-Report correction remains unimplemented. Its source boundaries are
-`src/application/work-item-feedback.ts` (`attachFeedbackBatchBarriersInDb`),
-`src/application/command-chain-drafts.ts` (`reviewCorrectionSubjects`,
-`assertReviewExecutionCurrent`, report-baseline cloning and correction-mode
-validation), and `src/application/review-report-publication.ts` in the baseline
-named above.
+The four business-analysis chains remain absent: `idea-context`,
+`business-design`, `requirement-spec` and `spec-review`. The next increment must
+inspect their actual source definitions, authority/return paths and artifact
+publication before connecting them to the delivered requirement path. A generic
+prompt or successful native task does not establish this migration.
 
-The next change will freeze the correction group, comments, exact prior report
-hash and accepted delivery facts. In a mixed batch it must wait for every
-non-report group's independent Feedback Verify. The reviewer will amend a
-candidate from that retained report under the correction boundary, preserving
-limitations and accepted facts. A report-expression correction cannot add a
-closure gap, create delivery units or change an original oracle; a changed work
-meaning must return to explicit triage/reconciliation.
+Source inspection confirms these additional acceptance requirements in
+`businessAnalysisCompleteErrors` / result compilation
+(`src/application/command-chain-drafts.ts`), native return publication
+(`src/application/agent-results.ts`), and
+`src/application/business-analysis-pipeline.test.ts`:
 
-Candidate publication will retain the old report, pin source/checkpoint ownership
-and clear reading acknowledgement. The report-work resolver must expose the exact
-candidate hash/content to a separate single-comment verifier. Pending or reopened
-comments still prevent Done. The closure path must then use the current verified
-report and exact human reading, while retaining forward-delivery final review
-where the batch also changed implementation. This candidate/verification cycle
-must not publish an unverified candidate as ordinary closed-delivery evidence.
+| Stage | Required output or return gate |
+| --- | --- |
+| `idea-context` | Problem, actors, goals and success are required; decision questions use authenticated answers and retained research/source rendering |
+| `business-design` | A complete solution needs summary, actors, scenarios, flows, rules, scope and success; an intent gap excludes solution output and returns to intent |
+| `requirement-spec` | A normal result needs draft, verification and final specification; upstream gaps choose exactly one of intent or business design and exclude a final specification |
+| `spec-review` | Findings and verdict precede approval; all blocking gaps have one responsibility target and at least one gap finding; gaps exclude approval |
+| Business Analysis completion | The approved specification requires current-version reading; specification comments before reading revise Spec/Review while preserving Intent/Design and superseding old downstream revisions |
+| End to End handoff | Approved specifications automatically enter requirement context; this does not count as delivered code or close the parent |
 
-Original-contract revision, business-analysis chains, recovery, other providers
-and cutover retain their separate rows above. A passed delivery alone does not
-resolve a comment or acknowledge a new final report.
+A parser probe with source-derived capability declarations accepts all four
+unmodified source YAML definitions and their phase order. This establishes
+authoring syntax compatibility only; it does not register runtime profiles,
+execute final gates, publish artifacts or dispatch native tasks.
+
+The target has not implemented these gates or native publication/return paths.
+Their migration must retain source versions, owner/attempt checks, human decisions,
+old artifacts and reading history. Structural artifact presence and findings are
+protocol evidence; semantic specification quality still needs independent review.
+
+Feedback contract revision, published-scope reconciliation and abandoned-work
+recovery retain their separate rows above. Real-provider and packaged acceptance,
+other repository mappings, in-flight records and cutover also remain unfinished.
