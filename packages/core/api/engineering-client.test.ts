@@ -46,3 +46,18 @@ it("sends the current checkpoint and immutable request identity when answering",
 it("rejects an invalid successful mutation response", async () => {
   respond({ ok: true }); await expect(new ApiClient("https://api.example.test").abandonEngineering("issue", { expectedSequence: 7, reason: "Changed scope" })).rejects.toThrow(/Invalid engineering write/);
 });
+
+it("validates rework history and maps its revision and repository evidence", async () => {
+  const rework={root_revision:1,round:1,limit:3,stop_reason:"future_stop",history:[{revision:1,draft_id:"failed",code_version:"old-commit",decision:"rework",artifacts:[{ref:"verification.results",key:"s1",content:"status: failed"}]}]};
+  respond({...body,rework});
+  expect(await new ApiClient("https://api.example.test").getEngineeringOverview("issue")).toMatchObject({rework:{rootRevision:1,stopReason:"future_stop",history:[{draftId:"failed",codeVersion:"old-commit"}]}});
+  respond({...body,rework:{...rework,history:"invalid"}});
+  await expect(new ApiClient("https://api.example.test").getEngineeringOverview("issue")).rejects.toThrow(/Invalid engineering overview/);
+});
+
+it.each([undefined,2])("sends only the explicitly requested rework budget %s", async budget => {
+  respond({contract:{binding:{issueId:"issue",revision:1}},draft:null});
+  await new ApiClient("https://api.example.test").configureEngineering("issue",{expectedRevision:0,verifierId:"verifier",developerId:"developer",autoContinue:true,maxReworks:budget,repositoryPath:"/fixture",implementationGuidance:"Implement",sources:[]});
+  const request=vi.mocked(fetch).mock.calls[0]!;
+  expect(JSON.parse(String(request[1]?.body))).toMatchObject({max_reworks:budget ?? 0,auto_continue:true});
+});

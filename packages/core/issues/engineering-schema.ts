@@ -13,6 +13,9 @@ const state = z.object({
   phases: z.array(z.object({ id: z.string(), status: z.string() })).optional().default([]),
   sources: z.array(source).optional().default([]), questions: z.array(question).optional(),
   artifacts: z.array(z.object({ ref: z.string(), key: z.string(), title: z.string().optional().default(""), content: z.string() })).optional().default([]),
+  rework: z.object({ root_revision: z.number().int().positive(), round: z.number().int().nonnegative(), limit: z.number().int().nonnegative(), stop_reason: z.string().nullable(),
+    history: z.array(z.object({ revision: z.number().int().positive(), draft_id: z.string(), code_version: z.string(), decision: z.string(), artifacts: z.array(z.object({ ref:z.string(),key:z.string(),content:z.string() })) })),
+  }).nullable().optional().default(null),
   result: z.object({ verdict: z.string().optional(), commit: z.string().optional() }).nullable().optional().default(null),
 }).superRefine((value, ctx) => {
   if (value.configured && (!value.enabled || !value.agent_id || value.revision === null || value.sequence === null)) ctx.addIssue({ code: "custom", message: "Incomplete engineering identity" });
@@ -22,6 +25,8 @@ export const EngineeringOverviewSchema = state.transform(value => ({
   autoContinue: value.auto_continue, enabled: value.enabled, configured: value.configured, chain: value.chain, agentId: value.agent_id,
   revision: value.revision, sequence: value.sequence, codeVersion: value.code_version, repositoryPath: value.repository_path,
   draftId: value.draft_id, status: value.status, currentPhase: value.current_phase, hasActiveRun: value.has_active_run,
+  rework: value.rework ? { rootRevision: value.rework.root_revision, round: value.rework.round, limit: value.rework.limit, stopReason: value.rework.stop_reason,
+    history: value.rework.history.map(item => ({ revision:item.revision,draftId:item.draft_id,codeVersion:item.code_version,decision:item.decision,artifacts:item.artifacts })) } : null,
   phases: value.phases, sources: value.sources, questions: value.questions ?? [], artifacts: value.artifacts, result: value.result,
 }));
 export type EngineeringOverview = z.infer<typeof EngineeringOverviewSchema>;
@@ -29,6 +34,6 @@ export const EngineeringWriteSchema = z.object({ contract: z.object({ binding: z
 
 export type EngineeringCheckpoint = { expectedRevision: number; expectedSequence: number };
 export type EngineeringConfiguration = {
-  autoContinue?: boolean; expectedRevision: number; verifierId: string; developerId?: string; repositoryPath: string; implementationGuidance?: string;
+  maxReworks?: number; autoContinue?: boolean; expectedRevision: number; verifierId: string; developerId?: string; repositoryPath: string; implementationGuidance?: string;
   sources: { key: string; kind: "acceptance" | "focus" | "guardrail" | "recovery"; description: string; oracle: string; sourceRef: string }[];
 };

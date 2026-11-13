@@ -88,11 +88,16 @@ export function EngineeringPanel({ issue, closed = false }: { issue: Issue; clos
       <Button variant="ghost" size="icon-sm" aria-label={t($ => $.engineering.refresh)} onClick={() => void query.refetch()} disabled={query.isFetching}><RefreshCw className="size-3.5" /></Button>
     </div></div>
     {query.isError && <p role="alert" className="text-caption text-destructive">{t($ => $.engineering.load_error)}</p>}
-    {state?.enabled && (!state.configured || knownChain && ["completed", "abandoned"].includes(state.status)) && !closed &&
+    {state?.enabled && (!state.configured || knownChain && (["completed", "abandoned"].includes(state.status) || state.status === "unstarted" && state.hasActiveRun === false)) && !closed &&
       <EngineeringConfigure key={state.revision ?? 0} workspaceId={workspaceId} issue={issue} revision={state.revision ?? 0} repositoryPath={state.repositoryPath} pending={actions.configure.isPending || query.isError} onSave={input => actions.configure.mutateAsync(input)} />}
     {state?.configured && <>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-caption"><span>{state.chain === "development" ? t($ => $.engineering.development) : state.chain === "verification" ? t($ => $.engineering.verification) : state.chain}</span><span className="text-muted-foreground">{t($ => $.engineering.revision, { revision: state.revision })}</span><span>{agents.data?.find(agent => agent.id === state.agentId)?.name}</span></div>
       {state.autoContinue && <p className="text-caption text-muted-foreground">{t($ => $.engineering.auto_continue_notice)}</p>}
+      {state.rework && (state.rework.limit > 0 || state.rework.history.length > 0) && <div className="space-y-2">
+        <p className="text-caption text-muted-foreground">{t($ => $.engineering.rework_round, { round: state.rework.round, limit: state.rework.limit })}</p>
+        {state.rework.stopReason && <p role="status" className="text-caption">{state.rework.stopReason === "analysis" ? t($ => $.engineering.rework_analysis) : state.rework.stopReason === "stagnant" ? t($ => $.engineering.rework_stagnant) : state.rework.stopReason === "budget" ? t($ => $.engineering.rework_budget) : t($ => $.engineering.rework_manual)}</p>}
+        {state.rework.history.length > 0 && <details><summary className="cursor-pointer text-caption text-muted-foreground">{t($ => $.engineering.rework_history)}</summary><div className="mt-2 space-y-3">{state.rework.history.map(item => <details key={item.draftId} className="rounded-md border p-3"><summary className="cursor-pointer text-caption">{t($ => $.engineering.revision, { revision: item.revision })}</summary><p className="mt-2 break-all font-mono text-micro text-muted-foreground">{item.codeVersion}</p>{item.artifacts.map(artifact => <pre key={`${artifact.ref}:${artifact.key}`} className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted p-3 text-caption">{artifact.content}</pre>)}</details>)}</div></details>}
+      </div>}
       <ol className="flex flex-wrap gap-x-4 gap-y-2" aria-label={t($ => $.engineering.progress)}>{state.phases.map(phase => <li key={phase.id} aria-current={phase.status === "current" ? "step" : undefined} className={`flex items-center gap-1.5 text-caption ${phase.status === "current" ? "font-medium text-foreground" : "text-muted-foreground"}`}>
         {phase.status === "completed" && <Check className="size-3.5" aria-hidden="true" />}{phaseLabels[phase.id] ?? phase.id}
       </li>)}</ol>

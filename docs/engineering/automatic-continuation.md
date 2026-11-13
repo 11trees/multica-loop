@@ -1,6 +1,7 @@
 # Automatic engineering continuation
 
-The contract's `auto_continue` policy authorizes two transitions:
+The contract's `auto_continue` policy authorizes handoff and answered-question
+transitions:
 
 - A completed development chain hands its actual clean commit and unchanged
   scope to the independent verifier, then the coordinator queues that verifier.
@@ -10,7 +11,9 @@ The contract's `auto_continue` policy authorizes two transitions:
 All previous native issue runs, including deferred tasks, must be terminal before either transition queues
 another run. Initial execution is still started explicitly. Editing an unpublished
 question, ordinary phase progress, successful process exit, and a failed
-verification conclusion do not create automatic continuation work.
+verification conclusion alone do not create automatic continuation work. An
+additional explicit [rework budget](rework.md) can authorize implementation
+failure to create and queue a fresh development generation.
 
 ## Authorization and dispatch
 
@@ -63,7 +66,8 @@ and proves the same draft/phase/answer survives. Worktree and explicit manual
 continuation retain separate coverage. The fixture claims simulate runtime
 metadata and never execute an installed provider or call a model.
 
-Automatic failure classification/rework, requirement planning and final review,
+The [bounded implementation rework](rework.md) path is connected. Requirement
+planning/analysis and final review,
 remaining command chains, other provider receipts, remote repository mapping,
 and real delivered-business acceptance remain pending. A task process completing
 is still insufficient for the synchronous issue completion gate.

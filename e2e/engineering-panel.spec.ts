@@ -32,6 +32,9 @@ test("the issue panel freezes scope, records a human answer, and resumes the sam
     await panel.getByRole("button", { name: "Configure delivery" }).click({ timeout: 30000 });
     const dialog = page.getByRole("dialog");
     await dialog.getByLabel("Repository path").fill(repository);
+    await expect(dialog.getByRole("spinbutton", { name: "Automatic rework limit" })).toHaveValue("3");
+    const policyScreenshot = testInfo.outputPath("configure-rework-policy.png"); await dialog.screenshot({ path: policyScreenshot });
+    await testInfo.attach("Explicit bounded rework policy", { path: policyScreenshot, contentType: "image/png" });
     await dialog.getByRole("switch", { name: "Include development" }).click();
     await dialog.getByRole("switch", { name: "Continue automatically" }).click();
     await dialog.getByRole("combobox", { name: "Independent verification agent" }).click();
