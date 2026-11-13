@@ -119,6 +119,7 @@ import { IssueAgentHeaderChip } from "./issue-agent-header-chip";
 import { IssueWakeupHeaderChip } from "./issue-wakeup-header-chip";
 import { ExecutionLogSection } from "./execution-log-section";
 import { WakeupsSection } from "./wakeups-section";
+import { EngineeringPanel } from "./engineering-panel";
 import { QuickActionsSection } from "./quick-actions-section";
 import { PluginPanelSection } from "../../plugins";
 import { PullRequestsSection } from "./pull-requests-section";
@@ -3735,6 +3736,8 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
           </div>
 
           </div>
+
+          <EngineeringPanel issue={issue} closed={["done", "closed"].includes(resolveStatusCategory(issue.status))} />
 
           {/* Sub-issues — Linear-style */}
           {childIssues.length === 0 && (

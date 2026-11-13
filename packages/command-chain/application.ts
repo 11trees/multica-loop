@@ -8,6 +8,7 @@ import { SqliteDraftStore } from "./sqlite-store";
 import { compileVerificationConclusion, createVerificationHandlers, verificationContractSchema } from "./verification";
 import { commandReceiptSchema, createDevelopmentHandlers, compileDevelopmentConclusion, type CommandReceipt } from "./development";
 import { git, repositorySnapshot as snapshot, repositoryFingerprint, repositoryCommonDirectory, repositoryBranch, captureRepositoryOverlays } from "./repository";
+import { artifactBlock } from "./artifacts";
 
 const text = z.string().trim().min(1);
 const sequence = z.number().int().nonnegative();
@@ -19,7 +20,7 @@ const host = z.strictObject({ kind: z.literal("host"), ...scope });
 const actor = z.discriminatedUnion("kind", [human, task, daemon, host]);
 export const applicationRequestSchema = z.strictObject({
   actor,
-  action: z.enum(["configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind"]),
+  action: z.enum(["configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run"]),
   payload: z.unknown().optional(),
 });
 export type ApplicationRequest = z.infer<typeof applicationRequestSchema>;
@@ -139,10 +140,49 @@ export class EngineeringApplication {
     };
   }
 
+  private async overview(record: Record | undefined) {
+    if (!record) return { enabled: true, configured: false };
+    const development = Boolean(record.development && !record.development.handoff);
+    const draft = await this.drafts.read(development ? record.development!.draftId : record.draftId);
+    const definition = draft?.definition ?? parseCommandChainDefinition(development ? record.development!.definitionSource : record.definitionSource, development ? developmentProfile : profile).definition;
+    const conclusion = draft?.status === "completed" ? development ? record.development?.conclusion : compileVerificationConclusion(draft, record.contract) : undefined;
+    return {
+      enabled: true, configured: true, chain: development ? "development" : "verification",
+      agent_id: development ? record.development!.agentId : record.agentId,
+      revision: record.contract.binding.revision, code_version: record.contract.binding.codeVersion,
+      repository_path: record.repositoryPath, draft_id: draft?.id ?? null, sequence: draft?.sequence ?? 0,
+      status: draft?.status ?? "unstarted", current_phase: draft?.phase ?? null,
+      phases: Object.entries(definition.phases).map(([id]) => ({ id, status: draft?.completedPhases.includes(id) ? "completed" : draft?.phase === id ? "current" : "upcoming" })),
+      sources: record.contract.sources.map(({ sourceRef, ...source }) => ({ ...source, source_ref: sourceRef })),
+      questions: (draft?.runtimeInputs ?? []).map(input => ({ id: input.id, title: input.title, question: input.question, why: input.why, recommendation: input.recommendation, active: input.active, phase: input.phase,
+        answer: input.answer ? { text: input.answer.text, user_id: input.answer.userId, sequence: input.answer.sequence } : null })),
+      artifacts: (draft?.artifacts ?? []).map(item => ({ ref: item.ref, key: item.key, title: artifactBlock(definition, item.ref).title, content: item.content })),
+      result: conclusion ?? null,
+    };
+  }
+
   async invoke(input: ApplicationRequest) {
     const request = applicationRequestSchema.parse(input);
     const { actor, action } = request;
     let record = this.current(actor.workspaceId, actor.issueId);
+    if (action === "overview" || action === "prepare-run") {
+      if (actor.kind !== "human") throw new Error("A human actor is required for engineering controls");
+      if (action === "overview") return this.overview(record);
+      if (!record) throw new Error("Configure engineering before starting a run");
+      const expected = z.strictObject({ expected_revision: sequence, expected_sequence: sequence, execution_resources: z.array(z.strictObject({ path: text, mode: z.enum(["in_place", "worktree"]) })).optional() }).parse(request.payload);
+      const state = await this.overview(record);
+      if (!("revision" in state)) throw new Error("Engineering contract is unavailable");
+      if (expected.expected_revision !== state.revision || expected.expected_sequence !== state.sequence) throw new DraftConflictError("Engineering state changed; reload before starting a run");
+      if (state.status === "abandoned" || state.chain === "verification" && state.status === "completed") throw new Error("Freeze a new contract before starting another run");
+      if (state.status === "waiting_for_answers" && state.questions.some(input => input.active && input.answer === null)) throw new Error("Answer every pending question before starting a run");
+      if (expected.execution_resources) {
+        if (expected.execution_resources.length !== 1) throw new Error("Bind exactly one local project directory to the selected runtime");
+        const resource = expected.execution_resources[0]!;
+        const root = snapshot(resource.path, false).repositoryPath;
+        if (repositoryCommonDirectory(root) !== repositoryCommonDirectory(record.repositoryPath) || resource.mode === "in_place" && root !== record.repositoryPath) throw new Error("The project directory does not match the registered engineering repository");
+      }
+      return { agent_id: state.agent_id, revision: state.revision, sequence: state.sequence };
+    }
     if (action === "completion") {
       if (actor.kind !== "host") throw new Error("Only the host can authorize issue completion");
       if (!record) return { configured: false, allowed: true };
@@ -206,7 +246,7 @@ export class EngineeringApplication {
       const code = snapshot(payload.work_dir, false);
       if (repositoryCommonDirectory(code.repositoryPath) !== repositoryCommonDirectory(record.repositoryPath)) throw new Error("Execution repository is not a worktree of the registered repository");
       if (payload.mode === "in_place" && code.repositoryPath !== record.repositoryPath) throw new Error("In-place execution must use the registered repository");
-      const overlays = captureRepositoryOverlays(code.repositoryPath, payload.overlays);
+      const overlays = captureRepositoryOverlays(code.repositoryPath, payload.overlays, !development);
       if (development) git(code.repositoryPath, ["merge-base", "--is-ancestor", record.development!.baseCodeVersion, code.codeVersion]);
       else if (code.codeVersion !== record.contract.binding.codeVersion) throw new Error("Verification execution is not at the frozen delivery commit");
       const branchRef = git(code.repositoryPath, ["rev-parse", "--abbrev-ref", "HEAD"]) === "HEAD" ? "" : repositoryBranch(code.repositoryPath);

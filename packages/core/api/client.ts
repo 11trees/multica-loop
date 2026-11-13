@@ -1,4 +1,6 @@
 import type { ZodType } from "zod";
+import { EngineeringOverviewSchema, EngineeringWriteSchema } from "./schemas";
+import type { EngineeringCheckpoint, EngineeringConfiguration, EngineeringOverview } from "../issues/engineering-schema";
 import { AgentRuntimeSchema, EMPTY_RUNTIME } from "../runtimes/schema";
 import type { IssueWakeup, IssueWakeupInput, IssueWakeupSummaryRow, PausedWakeup, SystemWakeup, WakeupRun, WorkspaceSystemWakeup } from "../types/issue-wakeup";
 import type { WorkspaceWakeupPage, WorkspaceWakeupFilters } from "../types/issue-wakeup";
@@ -3010,6 +3012,38 @@ export class ApiClient {
       method: "POST",
       body: JSON.stringify(taskId ? { task_id: taskId } : {}),
     });
+  }
+
+  async getEngineeringOverview(issueId: string): Promise<EngineeringOverview> {
+    const raw = await this.fetch<unknown>(`/api/issues/${issueId}/engineering`);
+    const state = parseWithFallback<EngineeringOverview | null>(raw, EngineeringOverviewSchema, null, { endpoint: "GET /api/issues/:id/engineering" });
+    if (!state) throw new Error("Invalid engineering overview response");
+    return state;
+  }
+
+  async configureEngineering(issueId: string, input: EngineeringConfiguration): Promise<void> {
+    await this.writeEngineering(issueId, "", { expected_revision: input.expectedRevision, agent_id: input.verifierId,
+      developer_agent_id: input.developerId, repository_path: input.repositoryPath, implementation_guidance: input.implementationGuidance, sources: input.sources });
+  }
+
+  async answerEngineering(issueId: string, input: { expectedSequence: number; requestId: string; answer: string }): Promise<void> {
+    await this.writeEngineering(issueId, "/answers", { expected_sequence: input.expectedSequence, request_id: input.requestId, answer: input.answer });
+  }
+
+  async abandonEngineering(issueId: string, input: { expectedSequence: number; reason: string }): Promise<void> {
+    await this.writeEngineering(issueId, "/abandon", { expected_sequence: input.expectedSequence, reason: input.reason });
+  }
+
+  private async writeEngineering(issueId: string, suffix: string, input: unknown): Promise<void> {
+    const raw = await this.fetch<unknown>(`/api/issues/${issueId}/engineering/verification${suffix}`, { method: "POST", body: JSON.stringify(input) });
+    if (!parseWithFallback<unknown>(raw, EngineeringWriteSchema, null, { endpoint: "POST /api/issues/:id/engineering/verification" })) throw new Error("Invalid engineering write response");
+  }
+
+  async runEngineering(issueId: string, input: EngineeringCheckpoint): Promise<AgentTask> {
+    const raw = await this.fetch<unknown>(`/api/issues/${issueId}/engineering/run`, { method: "POST", body: JSON.stringify({ expected_revision: input.expectedRevision, expected_sequence: input.expectedSequence }) });
+    const task = parseWithFallback<AgentTask | null>(raw, AgentTaskSchema, null, { endpoint: "POST /api/issues/:id/engineering/run" });
+    if (!task) throw new Error("Invalid engineering run response");
+    return task;
   }
 
   async retrySourceContextQuickCreate(taskId: string): Promise<AgentTask> {

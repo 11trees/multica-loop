@@ -33,6 +33,45 @@ function configure() { return invoke(human, "configure", { expected_revision: 0,
 const host = { kind: "host" as const, workspaceId: human.workspaceId, issueId: human.issueId };
 function completion() { return app.invoke({ actor: host, action: "completion" }); }
 
+it("projects human progress and authorizes the frozen role only after every answer at the current checkpoint", async () => {
+  expect(await app.invoke({ actor: human, action: "overview" })).toEqual({ enabled: true, configured: false });
+  await configure();
+  expect(await app.invoke({ actor: human, action: "overview" })).toMatchObject({ configured: true, agent_id: task.agentId, status: "unstarted", sequence: 0, revision: 1 });
+  await expect(app.invoke({ actor: task, action: "overview" })).rejects.toThrow(/human actor/);
+  await expect(app.invoke({ actor: human, action: "prepare-run", payload: { expected_revision: 2, expected_sequence: 0 } })).rejects.toThrow(/state changed/);
+  expect(await app.invoke({ actor: human, action: "prepare-run", payload: { expected_revision: 1, expected_sequence: 0 } })).toMatchObject({ agent_id: task.agentId });
+  let state = await invoke(task, "start");
+  const command = async (value: unknown) => { state = await invoke(task, "command", { expected_sequence: state.draft!.sequence, command: value }); };
+  await command({ type: "phase.complete" });
+  await command({ type: "runtime-input.put", key: "fixture", title: "Fixture", question: "Which entry?", why: "Need real data", recommendation: "Use local fixture" });
+  expect(await app.invoke({ actor: human, action: "prepare-run", payload: { expected_revision: 1, expected_sequence: state.draft!.sequence } })).toMatchObject({ agent_id: task.agentId });
+  await command({ type: "phase.complete" });
+  const checkpoint = () => ({ expected_revision: 1, expected_sequence: state.draft!.sequence });
+  await expect(app.invoke({ actor: human, action: "prepare-run", payload: checkpoint() })).rejects.toThrow(/every pending question/);
+  const request = state.draft!.runtimeInputs[0]!;
+  expect(await app.invoke({ actor: human, action: "overview" })).toMatchObject({ status: "waiting_for_answers", current_phase: "plan", questions: [{ id: request.id, answer: null }] });
+  state = await invoke(human, "answer", { expected_sequence: state.draft!.sequence, request_id: request.id, answer: "Use the isolated fixture" });
+  expect(await app.invoke({ actor: human, action: "overview" })).toMatchObject({ questions: [{ answer: { text: "Use the isolated fixture", user_id: human.userId } }] });
+  expect(await app.invoke({ actor: human, action: "prepare-run", payload: checkpoint() })).toMatchObject({ agent_id: task.agentId });
+  state = await invoke(human, "abandon", { expected_sequence: state.draft!.sequence, reason: "Scope changed" });
+  await expect(app.invoke({ actor: human, action: "prepare-run", payload: checkpoint() })).rejects.toThrow(/new contract/);
+});
+
+it("checks the selected project repository before queueing and resumes interrupted development with partial edits", async () => {
+  await invoke(human, "configure", { expected_revision: 0, agent_id: human.userId, developer_agent_id: task.agentId, implementation_guidance: "Implement fixture", repository_path: repo, sources });
+  const unrelated = join(dir, "unrelated"); execFileSync("git", ["clone", "-q", repo, unrelated]);
+  const prepare = (path: string) => app.invoke({ actor: human, action: "prepare-run", payload: { expected_revision: 1, expected_sequence: 0, execution_resources: [{ path, mode: "in_place" }] } });
+  await expect(prepare(unrelated)).rejects.toThrow(/does not match/);
+  expect(await prepare(repo)).toMatchObject({ agent_id: task.agentId });
+  let state = await invoke(task, "start");
+  state = await invoke(task, "command", { expected_sequence: state.draft!.sequence, command: { type: "phase.complete" } });
+  expect(state.draft!.phase).toBe("implement");
+  await writeFile(join(repo, "partial.js"), "export const partial = true;\n");
+  const reclaimed = { ...task, attemptId: "task:claim2" };
+  const resumed = await invoke(reclaimed, "start");
+  expect(resumed.draft).toMatchObject({ id: state.draft!.id, phase: "implement", binding: state.draft!.binding });
+});
+
 it("requires a runtime-owned repository binding and rejects an unrelated checkout or agent binding", async () => {
   await configure();
   await expect(app.invoke({ actor: task, action: "start" })).rejects.toThrow(/runtime must bind/);

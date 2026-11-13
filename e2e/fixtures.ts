@@ -264,10 +264,10 @@ export class TestApiClient {
       const owner = await client.query<{ id: string }>(`SELECT id FROM "user" WHERE email = $1`, [this.email]);
       const userId = owner.rows[0]?.id;
       if (!userId) throw new Error("Engineering fixture owner is missing");
-      await client.query(`INSERT INTO agent_runtime (id, workspace_id, name, runtime_mode, provider, status, owner_id, last_seen_at)
-        VALUES ($1, $2, 'Engineering fixture', 'cloud', 'missing-engineering-test-executor', 'online', $3, now())`, [runtimeId, this.workspaceId, userId]);
+      await client.query(`INSERT INTO agent_runtime (id, workspace_id, name, runtime_mode, provider, status, owner_id, last_seen_at, daemon_id)
+        VALUES ($1, $2, 'Engineering fixture', 'local', 'missing-engineering-test-executor', 'online', $3, now(), $4)`, [runtimeId, this.workspaceId, userId, `engineering-fixture-${runtimeId}`]);
       await client.query(`INSERT INTO agent (id, workspace_id, name, description, runtime_mode, runtime_id, owner_id)
-        VALUES ($1, $2, $5, '', 'cloud', $3, $4)`, [agentId, this.workspaceId, runtimeId, userId, `Engineering fixture ${agentId}`]);
+        VALUES ($1, $2, $5, '', 'local', $3, $4)`, [agentId, this.workspaceId, runtimeId, userId, `Engineering fixture ${agentId}`]);
       await client.query(`INSERT INTO agent_task_queue (id, agent_id, issue_id, runtime_id, status, attempt, dispatched_at, started_at)
         VALUES ($1, $2, $3, $4, 'running', 1, now() - interval '1 second', now())`, [taskId, agentId, issue.id, runtimeId]);
       await client.query(`INSERT INTO task_token (token_hash, task_id, agent_id, workspace_id, user_id, expires_at)
@@ -303,6 +303,46 @@ export class TestApiClient {
     } finally {
       await client.end();
     }
+  }
+
+  async finishEngineeringRun(taskId: string) {
+    if (!this.engineeringRuns.some(run => run.taskId === taskId)) throw new Error("Not an owned engineering fixture");
+    const client = new pg.Client(DATABASE_URL); await client.connect();
+    try { await client.query("UPDATE agent_task_queue SET status = 'completed', completed_at = now() WHERE id = $1", [taskId]); }
+    finally { await client.end(); }
+  }
+
+  async attachEngineeringProject(taskId: string, projectId: string, repository: string) {
+    const run = this.engineeringRuns.find(value => value.taskId === taskId);
+    if (!run || !this.createdProjectIds.includes(projectId)) throw new Error("Not an owned engineering fixture project");
+    const client = new pg.Client(DATABASE_URL); await client.connect();
+    let issueId: string;
+    try {
+      const result = await client.query<{ issue_id:string; daemon_id:string }>(`SELECT q.issue_id,r.daemon_id FROM agent_task_queue q JOIN agent_runtime r ON r.id=q.runtime_id WHERE q.id=$1`, [taskId]);
+      const row = result.rows[0]; if (!row || !this.createdIssueIds.includes(row.issue_id)) throw new Error("Fixture issue missing");
+      issueId = row.issue_id;
+      await client.query(`INSERT INTO project_resource (project_id,workspace_id,resource_type,resource_ref,position) VALUES ($1,$2,'local_directory',$3,0)`, [projectId,this.workspaceId,JSON.stringify({ local_path:repository,daemon_id:row.daemon_id,execution_mode:"in_place" })]);
+    } finally { await client.end(); }
+    await this.updateIssue(issueId!, { project_id: projectId, suppress_run: true });
+  }
+
+  /** Claims only a queued run of an agent created by this fixture; never launches a provider. */
+  async claimEngineeringRun(taskId: string) {
+    if (!this.engineeringRuns.length || !this.workspaceId || !this.email) throw new Error("No owned engineering fixture");
+    const client = new pg.Client(DATABASE_URL); await client.connect();
+    try {
+      await client.query("BEGIN");
+      const result = await client.query<{ id: string; agent_id: string; runtime_id: string; issue_id: string }>(`UPDATE agent_task_queue SET status='running', attempt=1, dispatched_at=now(), started_at=now() WHERE id=$1 AND agent_id=ANY($2::uuid[]) AND status='queued' RETURNING id,agent_id,runtime_id,issue_id`, [taskId, this.engineeringRuns.map(run => run.agentId)]);
+      const run = result.rows[0]; if (!run || !this.createdIssueIds.includes(run.issue_id)) throw new Error("Not an owned queued engineering fixture");
+      const owner = await client.query<{id:string}>(`SELECT id FROM "user" WHERE email=$1`, [this.email]);
+      const userId = owner.rows[0]?.id; if (!userId) throw new Error("Fixture owner missing");
+      const taskToken = `mat_e2e_${randomUUID()}`;
+      await client.query(`INSERT INTO task_token (token_hash,task_id,agent_id,workspace_id,user_id,expires_at) VALUES ($1,$2,$3,$4,$5,now()+interval '1 hour')`, [createHash("sha256").update(taskToken).digest("hex"), taskId, run.agent_id, this.workspaceId, userId]);
+      await client.query("COMMIT");
+      this.engineeringRuns.push({ taskId, agentId: run.agent_id, runtimeId: run.runtime_id });
+      return { taskId, agentId: run.agent_id, runtimeId: run.runtime_id, issueId: run.issue_id, userId, workspaceId: this.workspaceId, taskToken, apiBase: API_BASE };
+    } catch (error) { await client.query("ROLLBACK"); throw error; }
+    finally { await client.end(); }
   }
 
   async engineeringVerification(issueId: string, action: "configure" | "inspect" | "answer" | "abandon", payload?: unknown) {
@@ -554,8 +594,8 @@ export class TestApiClient {
       try {
         await client.query("BEGIN");
         for (const run of this.engineeringRuns) {
-          await client.query("DELETE FROM task_token WHERE task_id = $1", [run.taskId]);
-          await client.query("DELETE FROM agent_task_queue WHERE id = $1", [run.taskId]);
+          await client.query("DELETE FROM task_token WHERE agent_id = $1", [run.agentId]);
+          await client.query("DELETE FROM agent_task_queue WHERE agent_id = $1", [run.agentId]);
           await client.query("DELETE FROM agent WHERE id = $1", [run.agentId]);
           await client.query("DELETE FROM agent_runtime WHERE id = $1", [run.runtimeId]);
         }
