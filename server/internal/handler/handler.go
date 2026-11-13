@@ -24,6 +24,7 @@ import (
 	"github.com/multica-ai/multica/server/internal/connectedapps"
 	"github.com/multica-ai/multica/server/internal/daemonws"
 	"github.com/multica-ai/multica/server/internal/dbreader"
+	"github.com/multica-ai/multica/server/internal/engineering"
 	"github.com/multica-ai/multica/server/internal/entitlement"
 	"github.com/multica-ai/multica/server/internal/events"
 	"github.com/multica-ai/multica/server/internal/integrations/channel/engine"
@@ -68,10 +69,12 @@ type dbExecutor interface {
 
 type Config struct {
 	// LocalAuthEnabled enables the fork's loopback-only, single-user session bootstrap.
-	LocalAuthEnabled    bool
-	AllowSignup         bool
-	AllowedEmails       []string
-	AllowedEmailDomains []string
+	LocalAuthEnabled        bool
+	EngineeringWorkerPath   string
+	EngineeringDatabasePath string
+	AllowSignup             bool
+	AllowedEmails           []string
+	AllowedEmailDomains     []string
 	// DisableWorkspaceCreation, when true, makes POST /api/workspaces return
 	// 403 for every caller. There is no role/owner exception because the repo
 	// has no platform-admin concept; operators bootstrap the workspace with
@@ -219,6 +222,9 @@ type RuntimeRecoveryNotifier interface {
 }
 
 type Handler struct {
+	EngineeringWorker interface {
+		Call(context.Context, any) (json.RawMessage, error)
+	}
 	Queries                *db.Queries
 	ReadSelector           *dbreader.Selector
 	DB                     dbExecutor
@@ -551,6 +557,9 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 		cfg: cfg,
 	}
 	h.WebhookDeliveryWorker = NewWebhookDeliveryWorker(h)
+	if cfg.EngineeringWorkerPath != "" && cfg.EngineeringDatabasePath != "" {
+		h.EngineeringWorker = &engineering.Client{Worker: cfg.EngineeringWorkerPath, Database: cfg.EngineeringDatabasePath}
+	}
 	// The default passthrough scheduler reports sweeper-race recoveries so the
 	// daemon:register refresh fires even without the production batched wiring.
 	if passthrough, ok := h.HeartbeatScheduler.(*PassthroughHeartbeatScheduler); ok {

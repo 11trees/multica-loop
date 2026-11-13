@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { parseCommandChainDefinition, type CommandChainProfile } from "./index";
 
 const development = readFileSync(new URL("./fixtures/development.yaml", import.meta.url), "utf8");
-const verification = readFileSync(new URL("./fixtures/verification.yaml", import.meta.url), "utf8");
+const verification = readFileSync(new URL("./definitions/verification.yaml", import.meta.url), "utf8");
 const developmentProfile: CommandChainProfile = {
   id: "development",
   agent: "dev-agent",

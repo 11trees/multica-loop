@@ -304,6 +304,13 @@ export class TestApiClient {
     }
   }
 
+  async engineeringVerification(issueId: string, action: "configure" | "inspect" | "answer" | "abandon", payload?: unknown) {
+    const suffix = action === "answer" ? "answers" : action === "abandon" ? "abandon" : "";
+    const response = await this.authedFetch(`/api/issues/${issueId}/engineering/verification/${suffix}`, action === "inspect" ? undefined : { method: "POST", body: JSON.stringify(payload) });
+    if (!response.ok) throw new Error(`engineering ${action} failed: ${response.status} ${await response.text()}`);
+    return response.json();
+  }
+
   /**
    * Insert a large, deterministic issue fixture in one transaction.
    *
@@ -501,6 +508,17 @@ export class TestApiClient {
 
   /** Clean up all issues created during this test. */
   async cleanup() {
+    if (process.env.MULTICA_ENGINEERING_DATABASE && this.createdIssueIds.length && this.workspaceId) {
+      const { DatabaseSync } = await import("node:sqlite");
+      const database = new DatabaseSync(process.env.MULTICA_ENGINEERING_DATABASE);
+      try {
+        if (database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'engineering_contract'").get()) for (const issueId of this.createdIssueIds) {
+          const rows = database.prepare("SELECT payload FROM engineering_contract WHERE workspace_id = ? AND issue_id = ?").all(this.workspaceId, issueId);
+          for (const row of rows) database.prepare("DELETE FROM chain_drafts WHERE id = ?").run(JSON.parse(String(row.payload)).draftId);
+          database.prepare("DELETE FROM engineering_contract WHERE workspace_id = ? AND issue_id = ?").run(this.workspaceId, issueId);
+        }
+      } finally { database.close(); }
+    }
     if (this.engineeringRuns.length) {
       const client = new pg.Client(DATABASE_URL);
       await client.connect();

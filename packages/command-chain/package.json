@@ -5,15 +5,17 @@
   "type": "module",
   "exports": { ".": "./index.ts", "./sqlite-store": "./sqlite-store.ts" },
   "scripts": {
+    "build": "node scripts/build.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test": "vitest run"
+    "test": "node scripts/build.mjs && vitest run"
   },
   "dependencies": {
     "yaml": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
+    "esbuild": "catalog:",
     "@multica/eslint-config": "workspace:*",
     "@multica/tsconfig": "workspace:*",
     "@types/node": "catalog:",

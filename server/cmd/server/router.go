@@ -431,6 +431,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 
 	signupConfig := handler.Config{
 		LocalAuthEnabled:               os.Getenv("MULTICA_LOCAL_AUTH") == "true",
+		EngineeringWorkerPath:          os.Getenv("MULTICA_ENGINEERING_WORKER"),
+		EngineeringDatabasePath:        os.Getenv("MULTICA_ENGINEERING_DATABASE"),
 		AllowSignup:                    os.Getenv("ALLOW_SIGNUP") != "false",
 		AllowedEmails:                  splitAndTrim(os.Getenv("ALLOWED_EMAILS")),
 		AllowedEmailDomains:            splitAndTrim(os.Getenv("ALLOWED_EMAIL_DOMAINS")),
@@ -2097,6 +2099,16 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			// Assignee frequency
 			r.Get("/api/assignee-frequency", h.GetAssigneeFrequency)
 			r.Get("/api/engineering/run", h.GetEngineeringRunContext)
+			r.Post("/api/engineering/verification/start", h.StartEngineeringVerification)
+			r.Get("/api/engineering/verification", h.GetEngineeringVerification)
+			r.Post("/api/engineering/verification/commands", h.CommandEngineeringVerification)
+			r.Route("/api/issues/{id}/engineering/verification", func(r chi.Router) {
+				r.Use(handler.RequireHumanActor)
+				r.Get("/", h.GetHumanEngineeringVerification)
+				r.Post("/", h.ConfigureEngineeringVerification)
+				r.Post("/answers", h.AnswerEngineeringVerification)
+				r.Post("/abandon", h.AbandonEngineeringVerification)
+			})
 
 			// Local search index sync for Web/Desktop (MUL-7754). Human clients
 			// only: agents search through /api/issues/search.

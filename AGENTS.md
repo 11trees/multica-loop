@@ -13,6 +13,7 @@ Multica is a task management platform where people and agents collaborate on iss
 | Location | Responsibility and constraints |
 | --- | --- |
 | `server/` | Go backend; Chi, sqlc, WebSocket |
+| `packages/command-chain/` | Engineering protocol kernel. The main entry is platform independent; `application.ts`, `sqlite-store.ts`, and `worker.ts` are Node-only host code. Do not import those files into UI packages. |
 | `packages/core/` | Headless logic, API client, Query hooks, shared Zustand stores. No UI libraries, `react-dom`, `next/*`, or `process.env`. Client persistence goes through `StorageAdapter`; only the default adapter (`platform/storage.ts`) and tab-scoped exception dedupe (`analytics/exception-dedupe.ts`) touch Web Storage. Cookies are only for values the server or Next.js proxy reads. Lint enforces the import, `process.env`, and Web Storage rules outside tests (`packages/core/eslint.config.mjs`). |
 | `packages/ui/` | UI primitives and shared styles. No business logic or `@multica/core` imports. |
 | `packages/views/` | Shared web/desktop pages and business components. No store definitions, `next/*`, or `react-router-dom`; use `NavigationAdapter`, `useNavigation()`, and `<AppLink>`. Lint enforces the store rule outside tests (`packages/views/eslint.config.mjs`). |
@@ -32,6 +33,7 @@ Multica is a task management platform where people and agents collaborate on iss
 Use `Makefile`, workspace `package.json` files, and `pnpm-workspace.yaml` for current commands and versions. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and worktree operations.
 
 - Use the checkout's managed environment: `make up`, `make status`, `make down`. `make down` preserves data; `make destroy` removes the environment and its data.
+- Local engineering mode is opt-in via `MULTICA_ENGINEERING_ENABLED`; managed API startup builds its private Node worker and assigns environment-owned SQLite storage. Keep authentication in Go and never send session/task tokens into the worker. See [engineering service](docs/engineering/engineering-service.md).
 - Worktrees share PostgreSQL but have isolated databases/ports. Use the environment scripts and `.env.worktree`; do not copy the main checkout's `.env` or manually create a database through an assumed PostgreSQL instance.
 - Regenerate sqlc with `make sqlc` after SQL changes.
 - Run the narrowest useful checks while iterating, then broaden when risk warrants it. Report what actually ran and any skipped checks.

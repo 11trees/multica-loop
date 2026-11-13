@@ -53,7 +53,7 @@ function put(engine: CommandChainEngine, draft: ChainDraft, block: string, value
 }
 async function setup(contract = structuredClone(baseContract)) {
   const engine = new CommandChainEngine(openStore(), createVerificationHandlers(contract));
-  const chain = parseCommandChainDefinition(await readFile(new URL("./fixtures/verification.yaml", import.meta.url), "utf8"), profile);
+  const chain = parseCommandChainDefinition(await readFile(new URL("./definitions/verification.yaml", import.meta.url), "utf8"), profile);
   const draft = await engine.create({ id: "test-unit", chain, binding: contract.binding, attemptId: "test-run-1" });
   return { engine, draft, contract };
 }
@@ -169,7 +169,7 @@ describe("independent verification builtins", () => {
   });
 
   it("accepts declared extension fields without weakening builtin semantic fields", async () => {
-    const raw = parse(await readFile(new URL("./fixtures/verification.yaml", import.meta.url), "utf8"));
+    const raw = parse(await readFile(new URL("./definitions/verification.yaml", import.meta.url), "utf8"));
     raw.artifacts.verification.blocks.scenarios.fields.observer = { type: "string", required: true };
     raw.artifacts.verification.blocks.scenarios.fields.expected.required = false;
     const chain = parseCommandChainDefinition(stringify(raw), profile);
@@ -184,7 +184,7 @@ describe("independent verification builtins", () => {
   });
 
   it("does not let an added authoring phase record observations before plan freezing", async () => {
-    const raw = parse(await readFile(new URL("./fixtures/verification.yaml", import.meta.url), "utf8"));
+    const raw = parse(await readFile(new URL("./definitions/verification.yaml", import.meta.url), "utf8"));
     raw.phases = {
       preobserve: { type: "artifact", artifacts: ["verification.results"], instructions: "Record observations early" },
       ...raw.phases,
@@ -225,7 +225,7 @@ describe("independent verification builtins", () => {
   });
 
   it("seals observed results against additional authoring phases after execution", async () => {
-    const raw = parse(await readFile(new URL("./fixtures/verification.yaml", import.meta.url), "utf8"));
+    const raw = parse(await readFile(new URL("./definitions/verification.yaml", import.meta.url), "utf8"));
     const { inputs, plan, execute: execution, ...remaining } = raw.phases;
     raw.phases = {
       inputs, plan, execute: execution,

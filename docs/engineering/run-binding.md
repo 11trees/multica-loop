@@ -36,8 +36,9 @@ pinned phase snapshot. Establish a new delivery revision when its binding change
 Human answers remain a host-only engine operation. The task-token bridge does
 not expose it. A human-facing integration must authenticate a real member and
 derive their user ID before answering; local single-user login supplies that
-identity through the normal session. New-run scheduling and the question UI
-are not connected yet.
+identity through the normal session. The [engineering service](engineering-service.md)
+now exposes authenticated human answer APIs and uses an actual Git-backed binding.
+New-run scheduling and the question UI remain pending.
 
 ## Verification and remaining boundary
 
@@ -66,6 +67,6 @@ human UI authentication, real observation capture, or a tested repository commit
 This is a current-run lookup and kernel bridge, not a synchronous delivery gate.
 An HTTP context read and kernel write are separate operations. Other Multica
 endpoints retain their existing task-token policy; this endpoint does not
-globally revoke old credentials. Agent tool injection, application draft/contract
-storage, role configuration UI, human question/continuation handling, and an
-authoritative handoff transaction remain required before production cutover.
+globally revoke old credentials. The local application adds native CLI execution,
+durable contracts, and claim instructions, but role/question UI, automatic
+continuation, and an authoritative handoff transaction remain required before cutover.

@@ -3063,6 +3063,21 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 	if agent.SystemKey.String == service.MikaSystemKey {
 		resp.Agent.Instructions = service.ComposeMikaInstructions(agent.Name, agent.Instructions)
 	}
+	if h.EngineeringWorker != nil && task.IssueID.Valid {
+		selection, selectErr := h.EngineeringWorker.Call(r.Context(), map[string]any{
+			"actor":  map[string]string{"kind": "task", "workspaceId": runtimeWorkspaceID, "issueId": uuidToString(task.IssueID), "agentId": uuidToString(agent.ID), "attemptId": "preparing"},
+			"action": "selection",
+		})
+		var role struct {
+			Configured bool `json:"configured"`
+		}
+		if selectErr != nil || json.Unmarshal(selection, &role) != nil {
+			return resp, nil, nil, 0, 0, h.failClaimedTaskBeforeLaunch(r.Context(), task, "Engineering role lookup is unavailable.", taskfailure.ReasonEnvironmentPrepareFailed, "engineering_unavailable", http.StatusServiceUnavailable, "engineering unavailable")
+		}
+		if role.Configured {
+			resp.Agent.Instructions += "\n\nThis issue uses the engineering verification chain. First run `multica engineering start`, then read the returned draft phase, sequence, inputs, and instructions. Submit edits with `multica engineering command --payload '<JSON>'` where JSON contains expected_sequence and command. Use phase.complete only after the phase gates pass. If waiting_for_answers, stop and return control to the host; do not answer your own questions or mark delivery complete through issue status. Your task token and claim determine identity."
+		}
+	}
 	if useSkillRefs {
 		_, skillRefs, err := h.TaskService.LoadAgentSkillBundles(r.Context(), task.AgentID, agent.SystemKey.String, legacySkillRedirects)
 		if err != nil {

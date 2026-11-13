@@ -151,7 +151,7 @@ describe("independent verification draft boundaries", () => {
       builtins: Object.fromEntries(["verification-inputs", "verification-plan", "verification-execution", "verification-finalize"].map(id => [id, { acceptsArtifacts: true }])),
       metadataKeys: [], repositoryAdapters: [],
     };
-    const chain = parseCommandChainDefinition(await readFile(new URL("./fixtures/verification.yaml", import.meta.url), "utf8"), profile);
+    const chain = parseCommandChainDefinition(await readFile(new URL("./definitions/verification.yaml", import.meta.url), "utf8"), profile);
     const handlers: BuiltinHandlers = {
       "verification-inputs": () => ({ errors: [] }),
       "verification-plan": () => ({ errors: [], freeze: ["verification.scenarios"] }),
