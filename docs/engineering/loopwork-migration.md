@@ -107,15 +107,23 @@ Development and other engineering builtin implementations are pending. The
 engine rejects completion of a builtin without its host handler. Generic
 runtime tests use explicit stubs; verification tests use its migrated gates.
 Neither is evidence of a delivered real unit. The local adapter is not wired
-into the application, and production storage, evidence capture, trusted version
+into application storage, and production storage, evidence capture, trusted version
 lookup, and authoritative result publication remain pending. Version comparison
 against a supplied contract is not proof of the current worktree commit.
 
 The fork also has an opt-in local single-user entry, shared Web/Desktop
-automatic login, and managed development profile support. Plugin deployment,
-trusted run binding, the synchronous handoff boundary, and execution of the
-engineering chains inside Multica are still pending. Completing local access
-alone does not complete milestone 2 or the migration.
+automatic login, and managed development profile support. A task-token-only
+run-context endpoint and kernel bridge now check the current issue/workspace,
+agent role, host-resolved version binding, and claim identity. The bridge can
+create, read, edit, and resume drafts using that identity. A live cross-service
+fixture test covers pause, storage reopen, host-provided human answer, reclaimed
+credentials, and continuation. See [run binding](run-binding.md) for its exact
+trust and verification boundary.
+
+Plugin deployment/tool injection, authoritative contract/code lookup, the
+synchronous handoff boundary, human-facing continuation, and automatic execution
+of engineering chains inside Multica are still pending. Completing local access
+and the bridge alone does not complete milestone 2 or the migration.
 
 ## Cutover and rollback
 

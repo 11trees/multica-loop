@@ -22,3 +22,5 @@ export type {
 } from "./runtime";
 export { createVerificationHandlers, compileVerificationConclusion } from "./verification";
 export type { VerificationContract } from "./verification";
+export { MulticaChainBridge, MulticaRunClient } from "./multica";
+export type { MulticaRunContext } from "./multica";

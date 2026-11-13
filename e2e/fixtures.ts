@@ -5,6 +5,7 @@
  */
 
 import "./env";
+import { createHash, randomUUID } from "node:crypto";
 import pg from "pg";
 
 // `||` (not `??`) so an empty `NEXT_PUBLIC_API_URL=` in .env still falls
@@ -54,6 +55,7 @@ export class TestApiClient {
   private createdProjectIds: string[] = [];
   private seededIssueIds: string[] = [];
   private createdPropertyIds: string[] = [];
+  private engineeringRuns: { taskId: string; agentId: string; runtimeId: string }[] = [];
 
   async loginLocally() {
     const response = await fetch(`${API_BASE}/auth/local`, { method: "POST" });
@@ -246,6 +248,60 @@ export class TestApiClient {
     const issue = await res.json();
     this.createdIssueIds.push(issue.id);
     return issue;
+  }
+
+  /** Seeds a running task credential; never starts a daemon, model, or agent CLI. */
+  async seedEngineeringRun() {
+    if (!this.workspaceId || !this.email || !process.env.DATABASE_URL) throw new Error("Engineering fixtures require the managed workspace/database");
+    const issue = await this.createIssue(`Engineering integration ${randomUUID()}`);
+    const runtimeId = randomUUID(), agentId = randomUUID(), taskId = randomUUID();
+    const taskToken = `mat_e2e_${randomUUID()}`;
+    const client = new pg.Client(DATABASE_URL);
+    await client.connect();
+    try {
+      await client.query("BEGIN");
+      const owner = await client.query<{ id: string }>(`SELECT id FROM "user" WHERE email = $1`, [this.email]);
+      const userId = owner.rows[0]?.id;
+      if (!userId) throw new Error("Engineering fixture owner is missing");
+      await client.query(`INSERT INTO agent_runtime (id, workspace_id, name, runtime_mode, provider, status, owner_id, last_seen_at)
+        VALUES ($1, $2, 'Engineering fixture', 'cloud', 'missing-engineering-test-executor', 'online', $3, now())`, [runtimeId, this.workspaceId, userId]);
+      await client.query(`INSERT INTO agent (id, workspace_id, name, description, runtime_mode, runtime_id, owner_id)
+        VALUES ($1, $2, 'Engineering fixture verifier', '', 'cloud', $3, $4)`, [agentId, this.workspaceId, runtimeId, userId]);
+      await client.query(`INSERT INTO agent_task_queue (id, agent_id, issue_id, runtime_id, status, attempt, dispatched_at, started_at)
+        VALUES ($1, $2, $3, $4, 'running', 1, now() - interval '1 second', now())`, [taskId, agentId, issue.id, runtimeId]);
+      await client.query(`INSERT INTO task_token (token_hash, task_id, agent_id, workspace_id, user_id, expires_at)
+        VALUES ($1, $2, $3, $4, $5, now() + interval '1 hour')`, [createHash("sha256").update(taskToken).digest("hex"), taskId, agentId, this.workspaceId, userId]);
+      await client.query("COMMIT");
+      this.engineeringRuns.push({ taskId, agentId, runtimeId });
+      return { taskId, agentId, runtimeId, issueId: issue.id as string, userId, workspaceId: this.workspaceId, taskToken, apiBase: API_BASE };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      await client.end();
+    }
+  }
+
+  /** Simulates a new claim for a fixture task so old-credential fencing is exercised. */
+  async reclaimEngineeringRun(taskId: string) {
+    if (!this.engineeringRuns.some(run => run.taskId === taskId)) throw new Error("Not an owned engineering fixture");
+    const taskToken = `mat_e2e_${randomUUID()}`;
+    const client = new pg.Client(DATABASE_URL);
+    await client.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(`UPDATE agent_task_queue SET dispatched_at = now(), started_at = now(), attempt = attempt + 1 WHERE id = $1`, [taskId]);
+      await client.query(`INSERT INTO task_token (token_hash, task_id, agent_id, workspace_id, user_id, expires_at)
+        SELECT $1, task_id, agent_id, workspace_id, user_id, now() + interval '1 hour'
+        FROM task_token WHERE task_id = $2 ORDER BY created_at DESC LIMIT 1`, [createHash("sha256").update(taskToken).digest("hex"), taskId]);
+      await client.query("COMMIT");
+      return taskToken;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      await client.end();
+    }
   }
 
   /**
@@ -445,6 +501,26 @@ export class TestApiClient {
 
   /** Clean up all issues created during this test. */
   async cleanup() {
+    if (this.engineeringRuns.length) {
+      const client = new pg.Client(DATABASE_URL);
+      await client.connect();
+      try {
+        await client.query("BEGIN");
+        for (const run of this.engineeringRuns) {
+          await client.query("DELETE FROM task_token WHERE task_id = $1", [run.taskId]);
+          await client.query("DELETE FROM agent_task_queue WHERE id = $1", [run.taskId]);
+          await client.query("DELETE FROM agent WHERE id = $1", [run.agentId]);
+          await client.query("DELETE FROM agent_runtime WHERE id = $1", [run.runtimeId]);
+        }
+        await client.query("COMMIT");
+        this.engineeringRuns = [];
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      } finally {
+        await client.end();
+      }
+    }
     if (this.seededIssueIds.length > 0 && this.workspaceId) {
       const client = new pg.Client(DATABASE_URL);
       await client.connect();
