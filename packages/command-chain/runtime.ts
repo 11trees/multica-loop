@@ -18,6 +18,7 @@ const event = z.strictObject({
   phase: text.nullable(),
   reason: text.optional(),
 });
+const writeRule = z.strictObject({ ref: text, mode: z.enum(["append-only", "sealed"]), phase: text });
 
 export const draftSchema = z.strictObject({
   schemaVersion: z.literal(1),
@@ -37,6 +38,7 @@ export const draftSchema = z.strictObject({
   inputs: z.record(text, text),
   artifacts: z.array(artifactItem),
   frozen: z.array(z.strictObject({ ref: text, key: z.string(), phase: text })),
+  writeRules: z.array(writeRule),
   completedPhases: z.array(text),
   events: z.array(event),
 });
@@ -65,6 +67,7 @@ export type BuiltinResult = {
   errors: readonly string[];
   artifacts?: readonly ArtifactWrite[];
   freeze?: readonly string[];
+  writeRules?: readonly { ref: string; mode: "append-only" | "sealed" }[];
 };
 // Host-owned validators are read-only and must not perform delivery side effects.
 // Their output and phase completion become durable together in one store write.
@@ -92,11 +95,14 @@ function itemKey(draft: ChainDraft, ref: string, key?: string): string {
 
 function putArtifact(draft: ChainDraft, write: ArtifactWrite, phase: string | null): void {
   const key = itemKey(draft, write.ref, write.key);
+  const index = draft.artifacts.findIndex(item => item.ref === write.ref && item.key === key);
   if (draft.frozen.some(item => item.ref === write.ref && item.key === key)) {
     throw new Error(`Artifact ${write.ref}/${key} is frozen; rewind before changing it`);
   }
+  if (draft.writeRules.some(rule => rule.ref === write.ref && (rule.mode === "sealed" || index >= 0))) {
+    throw new Error(`Artifact ${write.ref} is sealed or append-only; rewind before changing it`);
+  }
   const content = validateArtifactContent(artifactBlock(draft.definition, write.ref), write.content);
-  const index = draft.artifacts.findIndex(item => item.ref === write.ref && item.key === key);
   const item: ArtifactItem = { ref: write.ref, key, content, phase, attemptId: draft.attemptId };
   if (index < 0) draft.artifacts.push(item);
   else draft.artifacts[index] = item;
@@ -142,7 +148,7 @@ export class CommandChainEngine {
     const draft = draftSchema.parse({
       schemaVersion: 1, id: input.id, binding: input.binding, definition: input.chain.definition,
       sequence: 0, attemptId: input.attemptId, status: "editing", phase: order[0],
-      inputs, artifacts: [], frozen: [], completedPhases: [], events: [],
+      inputs, artifacts: [], frozen: [], writeRules: [], completedPhases: [], events: [],
     });
     for (const write of input.readonlyArtifacts ?? []) {
       if (artifactBlock(draft.definition, write.ref).writable) throw new Error(`Initial artifact ${write.ref} must be readonly`);
@@ -187,6 +193,7 @@ export class CommandChainEngine {
       else {
         const key = itemKey(draft, command.ref, command.key);
         if (draft.frozen.some(item => item.ref === command.ref && item.key === key)) throw new Error(`Artifact ${command.ref}/${key} is frozen`);
+        if (draft.writeRules.some(rule => rule.ref === command.ref)) throw new Error(`Artifact ${command.ref} is sealed or append-only`);
         const index = draft.artifacts.findIndex(item => item.ref === command.ref && item.key === key);
         if (index < 0) throw new Error(`Artifact ${command.ref}/${key} does not exist`);
         draft.artifacts.splice(index, 1);
@@ -217,6 +224,7 @@ export class CommandChainEngine {
     }
     draft.artifacts = draft.artifacts.filter(item => (firstOwner.get(item.ref) ?? -1) <= target);
     draft.frozen = draft.frozen.filter(item => order.indexOf(item.phase) < target);
+    draft.writeRules = draft.writeRules.filter(rule => order.indexOf(rule.phase) < target);
     draft.completedPhases = draft.completedPhases.slice(0, target);
     draft.phase = to;
   }
@@ -240,6 +248,10 @@ export class CommandChainEngine {
             draft.frozen.push({ ref, key: item.key, phase: draft.phase! });
           }
         }
+      }
+      for (const rule of result.writeRules ?? []) {
+        artifactBlock(draft.definition, rule.ref);
+        draft.writeRules.push({ ...rule, phase: draft.phase! });
       }
     }
     if (phase.type === "artifact" || phase.type === "builtin") {

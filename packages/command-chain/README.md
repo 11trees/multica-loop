@@ -7,8 +7,8 @@ adapters. YAML cannot define executable commands, validators, or transitions.
 
 The loader validates syntax, references, writable block boundaries, and the
 mandatory builtin sequence. `CommandChainEngine` adds phase execution and
-durable drafts through an injected `DraftStore`. Business builtin implementations
-and trusted Multica integration remain separate work.
+durable drafts through an injected `DraftStore`. Development/other business
+builtins and trusted Multica integration remain separate work.
 
 The identifier grammar excludes numeric keys so YAML declaration order survives
 JavaScript object enumeration. Only authoring format version 1 is accepted.
@@ -28,11 +28,13 @@ JavaScript object enumeration. Only authoring format version 1 is accepted.
   not human approval or proof of a Git commit.
 - Builtins require host-supplied handlers. Missing handlers and failed validators
   stop completion without changing stored state. A handler can produce validated
-  artifacts and freeze existing items. Handlers must be side-effect free:
+  artifacts, freeze existing items, require append-only writes, or seal an
+  entire block. Handlers must be side-effect free:
   the store atomically commits their output and phase progression, but cannot
   roll back an external operation.
-- Frozen items cannot be replaced or removed. New keys may be appended.
-  Rewinding clears completion and freezes at/after the target, and removes
+- Frozen items cannot be replaced or removed. Append-only blocks allow new
+  keys but preserve all existing items; sealed blocks reject all edits.
+  Rewinding clears completion, freezes, and write rules at/after the target, and removes
   artifact blocks whose first owning phase follows the target. Rewinding
   development to implementation therefore invalidates downstream review;
   rewinding verification to plan clears results and unfreezes scenarios.
@@ -48,11 +50,52 @@ local adapter, not the final evidence archive. No application imports it yet.
 The main package entry has no Node or database imports. Other adapters must
 honor the same atomic create/compare-and-swap contract.
 
-The engine does **not** authenticate Multica runs, execute engineering builtins,
-capture shell receipts, judge evidence truth, wait for human answers, or change
-issue status. Callers must derive identity and version bindings from trusted
-host state. A draft marked `completed` only means its configured handlers and
-phase checks accepted it; no production delivery result or handoff is issued.
+The engine does **not** authenticate Multica runs, capture shell receipts, judge
+evidence truth, wait for human answers, or change issue status. Callers must
+derive identity and version bindings from trusted host state. A draft marked
+`completed` only means its configured handlers and phase checks accepted it;
+no production delivery result or handoff is issued.
+
+## Independent verification builtins
+
+`createVerificationHandlers` implements the four verification gates against a
+host-supplied `VerificationContract`. Inputs are generated from its frozen
+sources, not development notes or agent-provided replacements. Every gate
+checks workspace, issue, revision, contract version, code version, and the
+frozen source contents against that contract. The caller must resolve the
+contract from current trusted host state; comparing supplied versions alone
+does not establish that the worktree actually matches them.
+
+Planning requires coverage of every frozen source, unique known coverage
+references, and at least one frontend acceptance scenario. This preserves
+the current LoopWork policy; it does not require frontend coverage for every
+acceptance. Observed results cannot precede the plan. Completing the plan
+freezes its existing scenarios.
+New scenarios added during execution are append-only too. Execution completion
+seals both scenarios and results; finalization seals the evidence review.
+Changing observations after review requires rewinding execution, while changing
+an existing expected result requires rewinding the plan.
+
+Execution requires one observed result per scenario and no orphan result keys.
+Passed results cannot have a failure kind. Failed results require implementation
+or specification attribution; blocked results require environment or
+inconclusive attribution and prevent completion. After evidence review, final
+validation rechecks the same contract, plan, observations, and review summary.
+Declared extension fields remain in artifacts while builtins validate their
+mandatory semantic fields independently of YAML's `required` settings.
+
+`compileVerificationConclusion` derives a passed/failed conclusion only from
+a completed draft that still passes these checks. A failed verification can
+have a completed chain: completion means the report is ready, not that the
+implementation passed. The conclusion includes draft sequence, run attempt,
+and version bindings. Failure routing preserves specification precedence:
+specification findings point to analysis; implementation-only failures point
+to development. These are routing hints, not actual host transitions.
+The conclusion is not a signed host receipt or proof that supplied
+evidence describes an independently observed event. Captured evidence,
+runtime-input suspension, human answers, and host handoff enforcement are
+still pending. Until suspension is connected, blocked observations stay at
+the execution checkpoint and cannot produce a final conclusion.
 
 ## Verification
 
@@ -69,7 +112,9 @@ copies of LoopWork's `command-chains/default/dev-agent.yaml` and
 and rejection of changes that would remove verification stages or inject
 host-owned execution rules. Runtime tests exercise actual SQLite files in
 temporary directories, reopen the store, supersede run attempts, race two
-connections, and invalidate downstream output. Test builtin handlers are
-deliberate stubs; they are not implementations of LoopWork engineering gates.
+connections, and invalidate downstream output. Generic runtime tests use
+deliberate stub handlers. `verification.test.ts` exercises the actual migrated
+verification handlers, including coverage, attribution, stale contract/code
+bindings, blocked observations, and passed/failed conclusion compilation.
 These fixtures are migration evidence, not live configuration. No agent
 accounts or user databases are accessed by these tests.

@@ -87,12 +87,23 @@ takeover. A local SQLite adapter persists each draft and event history atomicall
 and rejects stale writes. The definition and contract/code bindings are pinned
 when the draft is created. Tests cover reopening storage and competing writers.
 
-Engineering builtin implementations are not yet migrated. The engine rejects
-completion of a builtin without its host handler. Runtime tests use explicit
-stub handlers; passing those tests is not evidence of a delivered unit. The
-local adapter is not wired into the application, and production storage,
-runtime-input/human-answer handling, evidence capture, and authoritative result
-publication remain pending.
+The four independent verification gates are migrated: they freeze host-supplied
+sources, require source coverage and a frontend acceptance scenario, freeze
+the plan, validate result correspondence and failure attribution, seal observed
+results, and recheck evidence review before compiling a passed/failed conclusion.
+New scenarios in execution are append-only. They reject stale
+workspace/issue/revision/contract/code bindings. This preserves the current
+LoopWork minimum of one frontend acceptance scenario, not frontend coverage of
+every acceptance. Blocked observations remain at the execution checkpoint;
+runtime-input suspension and human answers are not implemented yet.
+
+Development and other engineering builtin implementations are pending. The
+engine rejects completion of a builtin without its host handler. Generic
+runtime tests use explicit stubs; verification tests use its migrated gates.
+Neither is evidence of a delivered real unit. The local adapter is not wired
+into the application, and production storage, evidence capture, trusted version
+lookup, and authoritative result publication remain pending. Version comparison
+against a supplied contract is not proof of the current worktree commit.
 
 The fork also has an opt-in local single-user entry, shared Web/Desktop
 automatic login, and managed development profile support. Plugin deployment,
