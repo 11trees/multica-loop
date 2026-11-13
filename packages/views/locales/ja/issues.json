@@ -1890,6 +1890,7 @@
     "feedback_report": "レポートの訂正",
     "feedback_cancelled": "キャンセル済み",
     "feedback_reopened": "新しいバッチとして再開",
+    "feedback_verification": "フィードバック検証",
     "feedback_triage": "フィードバックの振り分け",
     "feedback_forward": "後続作業待ち",
     "previous_report": "以前のレポート",

@@ -1890,6 +1890,7 @@
     "feedback_report": "보고서 수정",
     "feedback_cancelled": "취소됨",
     "feedback_reopened": "새 배치로 다시 열림",
+    "feedback_verification": "피드백 검증",
     "feedback_triage": "피드백 분류",
     "feedback_forward": "후속 작업 대기",
     "previous_report": "이전 보고서",

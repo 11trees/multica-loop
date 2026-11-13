@@ -25,7 +25,7 @@ const coordinator = z.strictObject({ kind: z.literal("coordinator") });
 const actor = z.discriminatedUnion("kind", [human, task, daemon, host, coordinator]);
 export const applicationRequestSchema = z.strictObject({
   actor,
-  action: z.enum(["configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations", "verified-binding", "publication", "publication-ack", "delivery-policy", "activate-unit", "accept-unit", "parent-scope", "review-inputs", "configure-review", "review-ack", "begin-feedback", "cancel-feedback", "feedback-restored", "authorize-feedback-work"]),
+  action: z.enum(["configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations", "verified-binding", "publication", "publication-ack", "delivery-policy", "activate-unit", "accept-unit", "parent-scope", "review-inputs", "configure-review", "review-ack", "begin-feedback", "cancel-feedback", "feedback-restored", "authorize-feedback-work", "prepare-feedback-verification"]),
   payload: z.unknown().optional(),
 });
 export type ApplicationRequest = z.infer<typeof applicationRequestSchema>;
@@ -467,7 +467,7 @@ export class EngineeringApplication {
     if(action === "parent-scope"){
       if(actor.kind !== "host")throw new Error("Only the host can inspect managed execution scope");
       const requirement=this.requirements.current(actor.workspaceId,actor.issueId);
-      if(requirement?.reviews.length)return {managed:false,review_units:requirement.reviews.at(-1)!.units};
+      if(requirement?.reviews.length)return {managed:false,review_units:this.requirements.nativeRunUnits(requirement)};
       return managedUnit ? {managed:true,parent_issue_id:managedUnit.parentIssueId,contract_hash:managedUnit.contractHash,plan_draft_id:managedUnit.planDraftId,unit_issue_ids:this.requirements.executionContext(actor.workspaceId,actor.issueId)!.units.map(unit=>unit.issueId)} : {managed:false};
     }
     if(action === "delivery-policy")return this.requirements.deliveryPolicy(request);

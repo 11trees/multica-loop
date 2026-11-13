@@ -264,7 +264,15 @@ func (h *Handler) dispatchRequirementReview(ctx context.Context, item engineerin
 	for i, unit := range units {
 		ids[i] = unit.IssueID
 	}
-	data, err := h.EngineeringWorker.Call(ctx, map[string]any{"actor": map[string]string{"kind": "human", "userId": item.UserID, "workspaceId": item.WorkspaceID, "issueId": item.IssueID}, "action": "configure-review", "payload": map[string]any{"expected_revision": item.ExpectedRevision, "expected_sequence": item.ExpectedSequence, "agent_id": item.AgentID, "execution_resources": mappings, "native_unit_ids": ids}})
+	actor := map[string]string{"kind": "human", "userId": item.UserID, "workspaceId": item.WorkspaceID, "issueId": item.IssueID}
+	action := "configure-review"
+	payload := map[string]any{"expected_revision": item.ExpectedRevision, "expected_sequence": item.ExpectedSequence, "agent_id": item.AgentID, "execution_resources": mappings, "native_unit_ids": ids}
+	if item.Reason == "feedback_verify_next" {
+		actor = map[string]string{"kind": "host", "workspaceId": item.WorkspaceID, "issueId": item.IssueID}
+		action = "prepare-feedback-verification"
+		payload = map[string]any{"batch_id": item.FeedbackBatchID, "group_id": item.FeedbackGroupID, "comment_id": item.FeedbackCommentID, "expected_version": item.ExpectedSequence, "agent_id": item.AgentID, "user_id": item.UserID, "execution_resources": mappings, "native_unit_ids": ids}
+	}
+	data, err := h.EngineeringWorker.Call(ctx, map[string]any{"actor": actor, "action": action, "payload": payload})
 	if err != nil {
 		return err
 	}

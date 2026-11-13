@@ -3080,7 +3080,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		invalid := selectErr != nil || json.Unmarshal(selection, &role) != nil || role.Configured == nil
 		if !invalid && *role.Configured {
 			commit, err := hex.DecodeString(role.Commit)
-			invalid = err != nil || (len(commit) != 20 && len(commit) != 32) || role.Repository == "" || (role.Chain != "feedback-triage" && role.Chain != "reproduction" && role.Chain != "review" && role.Chain != "context" && role.Chain != "planning" && role.Chain != "analysis" && role.Chain != "development" && role.Chain != "verification")
+			invalid = err != nil || (len(commit) != 20 && len(commit) != 32) || role.Repository == "" || (role.Chain != "feedback-verify" && role.Chain != "feedback-triage" && role.Chain != "reproduction" && role.Chain != "review" && role.Chain != "context" && role.Chain != "planning" && role.Chain != "analysis" && role.Chain != "development" && role.Chain != "verification")
 		}
 		if invalid {
 			return resp, nil, nil, 0, 0, h.failClaimedTaskBeforeLaunch(r.Context(), task, "Engineering role lookup is unavailable.", taskfailure.ReasonEnvironmentPrepareFailed, "engineering_unavailable", http.StatusServiceUnavailable, "engineering unavailable")
@@ -3111,7 +3111,10 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 			if role.Chain == "feedback-triage" {
 				resp.Agent.Instructions += "\nYour role is feedback triage. Read the frozen native comments and original report. Every comment belongs to exactly one stable group. Preserve original oracles and affected-unit scope. Reply/historical correction/learning are distinct from forward delivery/report work; do not declare pending work completed or modify historical artifacts. Clarifications require authenticated answers."
 			}
-			if role.FeedbackGroupID != "" {
+			if role.Chain == "feedback-verify" {
+				resp.Agent.Instructions += "\nIndependently verify exactly the frozen comment against the actual accepted forward work and its composed commit. Do not change persistent repository files, answer questions, or substitute another comment's result. Record locatable observations and resolved or reopened with reasons. Task exit does not resolve feedback; a new closure report and human reading remain separate."
+			}
+			if role.FeedbackGroupID != "" && role.Chain != "feedback-verify" {
 				resp.Agent.Instructions += "\nThis readonly feedback group preserves frozen comments and original delivery history. Plan only the group's forward obligations; do not rewrite accepted units. A defect must finish reproduced observations before planning. Native publication and subsequent delivery acceptance belong to the host. Completing this checkpoint does not resolve the feedback comments."
 			}
 			if role.Chain == "reproduction" {

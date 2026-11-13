@@ -22,15 +22,14 @@ definitions and host application are the implementation evidence.
 | `development` | Implemented with provider limits | [Development gates](../../packages/command-chain/development.ts), actual commits and captured command receipts; trusted provider capture is currently the Codex adapter |
 | `verification` | Implemented with evidence limits | [Verification gates](../../packages/command-chain/verification.ts), frozen coverage/results and failure attribution; semantic evidence truth is still declared |
 | `review` | Normal closure implemented | [Review gates](../../packages/command-chain/review.ts), scoped fact reconciliation, forward units, history and authenticated report reading; report correction and arbitration remain absent |
-| `feedback-triage` | Native capture and forward delivery connected | [Feedback gates/store](feedback.md), frozen native comments, separate readonly triage/reproduction/planning roles, stable append publication and serial managed delivery; comments still require independent Feedback Verify |
-| `feedback-verify` | Protocol and storage only | Frozen single-comment/work versions, independent-evidence fields and reopened history exist; a production work resolver, native verifier runs and closure integration remain absent |
+| `feedback-triage` | Native capture and forward delivery connected | [Feedback gates/store](feedback.md), frozen native comments, separate readonly triage/reproduction/planning roles, stable append publication and serial managed delivery; independent per-comment verification and fresh report reading are connected; report correction remains pending |
+| `feedback-verify` | Native delivery feedback connected | Authoritative accepted-work resolver, native independent single-comment tasks, separate sibling results, reopened recapture and new final Review/reading; corrected-report verification remains absent |
 
 “Implemented” describes connected code and controlled fixture evidence. It does
 not imply real-provider acceptance, packaged Desktop verification, or historical
 data migration. The target [worker](../../packages/command-chain/worker.ts)
-currently embeds nine definitions. Eight have native entry points, with feedback
-triage only partially connected downstream; embedding Feedback Verify is not
-native verification. The four business-analysis chains remain absent and are
+currently embeds nine definitions, all with native entry points for the connected
+delivery paths. Feedback report correction remains incomplete. The four business-analysis chains remain absent and are
 not supplied by a generic prompt or a successful native process exit.
 
 ## Complete user pipelines
@@ -42,7 +41,7 @@ not supplied by a generic prompt or a successful native process exit.
 | End to End | Partial | Connect approved business specifications into the delivered requirement path without losing source versions and authority |
 | Develop | Controlled local path connected | Real-provider acceptance, remaining recovery and resource-ownership boundaries before cutover |
 | Bug Fix | Controlled reproduction-to-planning path connected | Real-provider diagnosis and complete Bug Fix delivery acceptance; shared downstream delivery is exercised separately |
-| Post-delivery feedback | Partial | Capture, triage and forward delivery connected; independent per-comment verification, report correction, original-contract revision and new report reading remain incomplete |
+| Post-delivery feedback | Partial | Capture, triage, forward delivery, independent per-comment verification and new report reading connected; report correction and original-contract revision remain incomplete |
 
 The legacy OpenSpec pack supplies variants of six chains. Those repository
 adapters, pack selection and variant-specific acceptance have not been migrated.
@@ -67,11 +66,31 @@ The migration remains active until the relevant source pipelines, named gates,
 artifacts and deployment requirements are accepted against current runtime state.
 Neither this checklist nor a green subset of tests closes the objective.
 
-## Next increment: post-delivery feedback
+## Next increment: feedback report correction
 
-Bind accepted forward delivery to single-comment verification, connect report
-correction, and regenerate/read the current final report. Preserve source
-versions and the distinction between new
-scope, contract revision, unresolved defects and report correction. Comments
-alone are not a verified feedback workflow. A passed delivery is not a resolved
-comment or acknowledged new final report.
+Report correction remains unimplemented. Its source boundaries are
+`src/application/work-item-feedback.ts` (`attachFeedbackBatchBarriersInDb`),
+`src/application/command-chain-drafts.ts` (`reviewCorrectionSubjects`,
+`assertReviewExecutionCurrent`, report-baseline cloning and correction-mode
+validation), and `src/application/review-report-publication.ts` in the baseline
+named above.
+
+The next change will freeze the correction group, comments, exact prior report
+hash and accepted delivery facts. In a mixed batch it must wait for every
+non-report group's independent Feedback Verify. The reviewer will amend a
+candidate from that retained report under the correction boundary, preserving
+limitations and accepted facts. A report-expression correction cannot add a
+closure gap, create delivery units or change an original oracle; a changed work
+meaning must return to explicit triage/reconciliation.
+
+Candidate publication will retain the old report, pin source/checkpoint ownership
+and clear reading acknowledgement. The report-work resolver must expose the exact
+candidate hash/content to a separate single-comment verifier. Pending or reopened
+comments still prevent Done. The closure path must then use the current verified
+report and exact human reading, while retaining forward-delivery final review
+where the batch also changed implementation. This candidate/verification cycle
+must not publish an unverified candidate as ordinary closed-delivery evidence.
+
+Original-contract revision, business-analysis chains, recovery, other providers
+and cutover retain their separate rows above. A passed delivery alone does not
+resolve a comment or acknowledge a new final report.

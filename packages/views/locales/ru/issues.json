@@ -2121,6 +2121,7 @@
     "feedback_report": "Исправление отчёта",
     "feedback_cancelled": "Отменено",
     "feedback_reopened": "Открыто заново для нового пакета",
+    "feedback_verification": "Проверка отзывов",
     "feedback_triage": "Разбор отзывов",
     "feedback_forward": "Ожидается последующая работа",
     "previous_report": "Предыдущий отчёт",

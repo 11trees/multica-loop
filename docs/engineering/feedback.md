@@ -4,8 +4,10 @@ The native requirement page and management CLI capture comments and queue a
 frozen Feedback Triage role. Immediate dispositions can retain the original
 report; forward work remains pending and blocks requirement completion. The
 worker embeds nine definitions, including Feedback Verify. Frozen feedback
-reproduction/planning can append managed deliveries; report correction and
-per-comment verification are not connected yet.
+reproduction/planning appends managed deliveries. The native verifier independently
+settles each comment against authoritative accepted work; completed feedback then
+requires a new final review and exact human reading. Report correction remains
+unconnected.
 This is a partial feedback migration.
 
 ## Native capture and human controls
@@ -96,13 +98,42 @@ The native coordinator publishes the intents with the existing stable-ID child
 service. New units then use serial analysis → development → independent Test
 from acknowledged predecessor commits, including guarded native Done and host
 acceptance. Group delivery acceptance still leaves comments unresolved and the
-parent open in `waiting_for_verify`; it does not count as Feedback Verify or a
-new closure report. A frozen append intent requires explicit reconciliation
+parent open in `waiting_for_verify`; the native coordinator then freezes each single-comment
+verification and queues the separate verifier. Delivery acceptance itself does
+not count as Feedback Verify or a new closure report. A frozen append intent requires explicit reconciliation
 before cancellation; the batch cancel action cannot discard native delivery scope.
 
 Report-correction groups remain pending. Revising an original oracle when a
 behavior change contradicts it also requires explicit contract reconciliation;
 appending a new acceptance does not retire or silently weaken the original one.
+
+## Independent verification and new closure
+
+After all batch-generated units reach guarded native acceptance, the coordinator
+uses the already frozen verifier and human principal. It validates current native
+scope and permissions, freezes exactly one pending comment, then queues a stable
+native checkpoint task. Verification is readonly and binds the accepted composed
+commit. Its native attempt cannot move to a sibling comment. A saved completed
+draft settles after reopening storage; editable interrupted runs use the existing
+human continuation control rather than automatic recreation of a terminal task.
+
+The shared panel retains each comment's separate conclusion, reason and evidence.
+Reopened comments block closure and can be captured in a new batch with retained
+failure context; an unverified sibling stays pending. Previously resolved siblings
+keep their own results.
+
+When all comments are resolved, forward delivery requires a fresh normal final
+Review under the frozen reviewer. The review pins completed feedback batch IDs,
+retains historical failed results and reconciles each latest resolved comment
+against its own Feedback Verify and independently tested delivery units. Feedback
+proofs do not inflate the delivery-unit count. Historical reviews retain their
+original evidence scope, even after later batches append work.
+
+The old report remains under Previous report while the new review is pending.
+The new report gets its own generation and hash without an inherited reading
+acknowledgement. Only authenticated reading of that exact current hash can close
+the native parent. Report correction and original-oracle revision still require
+separate migration work.
 
 ## Protocol gates
 
@@ -160,20 +191,30 @@ state. An immediate disposition resolves only its own comments. No pending
 delivery/report group becomes complete because an agent process exited or a
 triage draft completed.
 
-Before freezing or settling Verify, an injected authoritative work resolver must
+Before freezing or settling Verify, the injected authoritative work resolver must
 obtain actual completed delivery or report evidence. Without that resolver the
 store refuses verification. Report correction requires report evidence; other
 forward groups require delivery evidence. All comments in one group bind the
-same work snapshot. Changed work is rejected before results are applied. This
-interface is not a production resolver and does not establish native ownership,
-independence or readiness by itself.
+same work snapshot. Changed work is rejected before results are applied. The
+production delivery resolver reads the actual compiled planning, analysis
+and independent Test results, matching each accepted binding and group origin.
+It freezes all original and batch-generated units at the last accepted composed
+commit and checks commit ancestry. A group sees only its own delivered content
+plus the composition bindings. Later batches and review-gap units do not rewrite
+that historical work version. Go separately requires current native child origin,
+Done status, idle runs, human project visibility, invocable frozen verifier and
+registered repository resources before freezing and claiming the task.
 
 Each comment has its own frozen verification draft and result. A reopened
 comment does not resolve an unverified sibling; all comments in a group must
 reach their own results before that group becomes terminal. Historical batch
 and result records remain immutable. A reopened comment may then enter a new
 batch with a new ID and draft, retaining its source version and the previous
-failure's reason, observations and work binding as frozen context. A resolved
+failure's reason, observations and work binding as frozen context. Native
+recapture may use the actual accepted
+forward commit while retaining the older report as history; its frozen basis
+includes the failed result and accepted delivery snapshot. It cannot inherit
+the older report's Done restoration. A resolved
 source version cannot be captured again; an edited source version is new input.
 
 Result receipt, comment state, group state and batch version settle in one
@@ -204,7 +245,10 @@ selection, stable retry input, malformed responses and pending feedback.
 Forward host tests cover reproduced-only defect handoff, group-scoped sources,
 multiple groups sharing a planner/local key, all-plan publication barriers,
 terminal-plan recovery, stable origin/acceptance IDs, immutable work policy,
-attempt-to-draft fencing, reclaimed worktrees and retained-ref drift. They run
+attempt-to-draft fencing, reclaimed worktrees and retained-ref drift. Additional
+checks cover separate sibling results, authoritative composed work, saved Verify
+settlement, reopened recapture from accepted forward work, a second delivery
+generation and a fresh review without inherited reading. They run
 actual SQLite/Git and controlled delivery protocol commands in both directory
 modes; they do not prove native provider execution or semantic evidence truth.
 
@@ -216,7 +260,10 @@ guarded Done; a second scope-addition batch remains open and rejects direct Done
 That batch then authorizes a planner, freezes scoped planning, publishes a fourth
 native child and serially delivers an actual Bookmark action. Chromium observes
 Saved while Ready and Continue still work. After guarded native child acceptance,
-the parent still rejects Done and displays pending Feedback Verify. The ledger
+the parent still rejects Done and displays pending Feedback Verify. The verifier
+then independently observes the same Bookmark behavior through Chromium, records
+a single-comment result, and hands off to a fresh normal final Review. The old
+report hash is rejected; reading the new report closes native Done. The ledger
 is checked on desktop and a 390px viewport. Classifications
 and protocol commands are fixture-supplied, not model-generated. The fixture
 removes only its owned native records and SQLite batches after acceptance.
@@ -226,11 +273,10 @@ mocked authorization response. Real role selectors and pointer submission check
 long names, distinct roles, popup bounds and reachable controls at desktop/390px
 widths. This UI test does not establish native work authorization by itself.
 
-An authoritative resolver must bind the actual accepted forward deliveries or
-corrected report before permitting per-comment verification. Parent completion
-must account for pending/reopened
-comments, current report generation and authenticated reading. These forward
-gates, real-provider acceptance and packaged Desktop acceptance remain required
+The delivery resolver and native single-comment path are connected. An
+authoritative corrected-report resolver and report-correction workflow remain
+required. Those gaps, original-oracle reconciliation, real-provider acceptance
+and packaged Desktop acceptance remain required
 before post-delivery feedback can be described as fully migrated.
 
 ![Select native comments and separate feedback roles](assets/feedback-configure-1.png)
@@ -248,3 +294,7 @@ before post-delivery feedback can be described as fully migrated.
 ![Native forward delivery accepted while feedback remains unresolved](assets/feedback-delivery-awaiting-verification.png)
 
 ![Accepted forward unit and pending feedback verification on a narrow viewport](assets/feedback-delivery-awaiting-verification-narrow.png)
+
+![New report and its own reading acknowledgement after independent Feedback Verify](assets/feedback-new-report-1280.png)
+
+![Current feedback report reading on a narrow viewport](assets/feedback-new-report-390.png)

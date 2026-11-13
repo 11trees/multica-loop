@@ -141,7 +141,11 @@ wheel scrolling and a mocked reading endpoint to check that a long report's
 reading control remains reachable after switching to a narrow viewport. Its
 acknowledgement check is UI coverage, separate from the native completion proof.
 
-Verified feedback, report-correction mode, arbitration exceptions, published-plan
+Delivery feedback now hands off after independent per-comment verification to a
+fresh normal review with pinned feedback history and exact new report reading.
+An old report acknowledgement cannot close appended feedback deliveries.
+
+Report-correction mode, arbitration exceptions, published-plan
 reconciliation, exhausted managed-budget recovery and cross-parent repository
 admission remain separate migration work. Packaged Desktop, native multi-unit
 worktree execution and real-provider acceptance remain unverified. Mobile keeps

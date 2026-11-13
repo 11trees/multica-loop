@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -14,18 +15,28 @@ import (
 
 type nativeFeedbackFixture struct {
 	requirementReviewFixture
-	payload     map[string]any
-	reopen      bool
-	allow       bool
-	restored    bool
-	work        bool
-	workPayload map[string]any
+	payload       map[string]any
+	reopen        bool
+	allow         bool
+	restored      bool
+	work          bool
+	workPayload   map[string]any
+	verify        bool
+	verifyPayload map[string]any
 }
 
 func (f *nativeFeedbackFixture) Call(ctx context.Context, input any) (json.RawMessage, error) {
 	value := input.(map[string]any)
 	var result any
 	switch value["action"] {
+	case "prepare-feedback-verification":
+		actor := value["actor"].(map[string]string)
+		if actor["kind"] != "host" || actor["workspaceId"] == "" || actor["issueId"] == "" {
+			return nil, fmt.Errorf("verification needs the native host")
+		}
+		f.verify = true
+		f.verifyPayload = value["payload"].(map[string]any)
+		result = map[string]bool{"configured": true}
 	case "begin-feedback":
 		f.payload = value["payload"].(map[string]any)
 		result = map[string]any{"configured": true, "batch_id": "019a0000-0000-7000-8000-000000000071", "reopen_required": f.reopen}
@@ -44,6 +55,9 @@ func (f *nativeFeedbackFixture) Call(ctx context.Context, input any) (json.RawMe
 		result = map[string]any{"configured": true, "chain": "feedback-triage", "repository_path": "/fixture/repository", "code_version": strings.Repeat("a", 40), "review_units": f.units}
 		if f.work {
 			result = map[string]any{"configured": true, "chain": "planning", "feedback_group_id": "group", "repository_path": "/fixture/repository", "code_version": strings.Repeat("a", 40), "review_units": f.units}
+		}
+		if f.verify {
+			result = map[string]any{"configured": true, "chain": "feedback-verify", "feedback_group_id": "group", "repository_path": "/fixture/repository", "code_version": strings.Repeat("a", 40), "review_units": f.units}
 		}
 	default:
 		return f.requirementReviewFixture.Call(ctx, input)
@@ -126,6 +140,25 @@ func TestEngineeringFeedbackCapturesNativeCommentsReopensAndRestoresOnlyAfterCom
 		t.Fatal("native feedback planning claim lost its scoped instructions")
 	}
 	dbfx.Exec(t, "UPDATE agent_task_queue SET status='completed',completed_at=now() WHERE id=$1", planningTaskID)
+	verification := engineeringContinuation{WorkspaceID: testWorkspaceID, IssueID: parentID, UserID: testUserID, AgentID: verifierID, FeedbackBatchID: "019a0000-0000-7000-8000-000000000071", FeedbackGroupID: "group", FeedbackCommentID: commentID, ExpectedRevision: 1, ExpectedSequence: 3, Reason: "feedback_verify_next"}
+	dbfx.Exec(t, "UPDATE issue SET status='todo' WHERE id=$1", childID)
+	if err := h.dispatchEngineeringContinuation(ctx, verification); err == nil || worker.verify {
+		t.Fatal("unaccepted native child admitted feedback verification")
+	}
+	dbfx.Exec(t, "UPDATE issue SET status='done' WHERE id=$1", childID)
+	if err := h.dispatchEngineeringContinuation(ctx, verification); err != nil {
+		t.Fatal(err)
+	}
+	if worker.verifyPayload["agent_id"] != verifierID || worker.verifyPayload["user_id"] != testUserID || worker.verifyPayload["comment_id"] != commentID || worker.verifyPayload["native_unit_ids"].([]string)[0] != childID {
+		t.Fatal("feedback verification lost its frozen principal or native scope")
+	}
+	verifyTaskID := dbfx.Task(t, verifierID, testutil.Cols{"runtime_id": runtimeID, "issue_id": parentID, "status": "dispatched", "dispatched_at": testutil.Raw("now()")})
+	verifyTask, _ := h.Queries.GetAgentTask(ctx, parseUUID(verifyTaskID))
+	verifyResponse, _, _, _, _, verifyFailure := h.buildClaimedTaskResponse(newRequest(http.MethodPost, "/claim", nil), &verifyTask, runtime, runtimeID, testWorkspaceID)
+	if verifyFailure != nil || verifyResponse.EngineeringChain != "feedback-verify" || !strings.Contains(verifyResponse.Agent.Instructions, "exactly the frozen comment") || strings.Contains(verifyResponse.Agent.Instructions, "Plan only the group's") {
+		t.Fatalf("native feedback verifier claim lost its scope: %+v", verifyFailure)
+	}
+	dbfx.Exec(t, "UPDATE agent_task_queue SET status='completed',completed_at=now() WHERE id=$1", verifyTaskID)
 	item := engineeringContinuation{WorkspaceID: testWorkspaceID, IssueID: parentID, UserID: testUserID, AgentID: agentID, FeedbackBatchID: "019a0000-0000-7000-8000-000000000071", ExpectedSequence: 1}
 	if err := h.restoreEngineeringFeedback(ctx, item); err == nil {
 		t.Fatal("unresolved feedback allowed native Done")

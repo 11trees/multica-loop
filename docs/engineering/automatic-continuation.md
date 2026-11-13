@@ -73,8 +73,11 @@ and proves the same draft/phase/answer survives. Worktree and explicit manual
 continuation retain separate coverage. The fixture claims simulate runtime
 metadata and never execute an installed provider or call a model.
 
-The [bounded implementation rework](rework.md) path is connected. [Managed-unit execution and final review](requirement-review.md) are connected. System arbitration, verified feedback,
-remaining command chains, other provider receipts, remote repository mapping,
+The [bounded implementation rework](rework.md) path is connected. [Managed-unit execution and final review](requirement-review.md) are connected. [Delivery feedback](feedback.md) connects guarded forward delivery, independent
+single-comment verification and fresh final Review. Frozen principal, resources
+and native children are revalidated before each new checkpoint. Reopened comments
+retain failed evidence for a new batch. System arbitration, feedback report
+correction, remaining command chains, other provider receipts, remote repository mapping,
 and real delivered-business acceptance remain pending. A task process completing
 is still insufficient for the synchronous issue completion gate.
 

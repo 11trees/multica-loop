@@ -591,6 +591,10 @@ export class TestApiClient {
     return response.json();
   }
 
+  async acknowledgeEngineeringReview(issueId:string,payload:unknown){
+    if(!this.createdIssueIds.includes(issueId))throw new Error("Not an owned requirement fixture");const response=await this.authedFetch(`/api/issues/${issueId}/engineering/review/acknowledge`,{method:"POST",body:JSON.stringify(payload)});if(!response.ok)throw new Error(`Reading failed: ${response.status} ${await response.text()}`);return response.json();
+  }
+
   async publishedEngineeringIssues(parentId:string){
     if(!this.createdIssueIds.includes(parentId) || !process.env.MULTICA_ENGINEERING_DATABASE)throw new Error("Not an owned requirement fixture");
     const {DatabaseSync}=await import("node:sqlite"),database=new DatabaseSync(process.env.MULTICA_ENGINEERING_DATABASE);let ids:string[];
