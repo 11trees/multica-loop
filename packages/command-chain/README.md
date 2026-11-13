@@ -56,6 +56,12 @@ derive identity and version bindings from trusted host state. A draft marked
 `completed` only means its configured handlers and phase checks accepted it;
 no production delivery result or handoff is issued.
 
+`MulticaRunClient` and `MulticaChainBridge` add authenticated host run lookup
+and scoped access to the engine. They check fresh server identity, the configured
+agent/chain role, and the host-resolved version binding before every operation.
+See [run binding](../../docs/engineering/run-binding.md) for the endpoint,
+required host ports, integration evidence, and remaining handoff boundary.
+
 ## Runtime input and human answers
 
 Builtin handlers explicitly opt into runtime inputs; YAML cannot grant this
