@@ -5,6 +5,8 @@ import { mkdtemp,readFile,rm,writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { stringify } from "yaml";
+import { z } from "zod";
+import { reviewContractSchema } from "./review";
 import { beforeEach,afterEach,it,expect } from "vitest";
 import { EngineeringApplication,type ApplicationRequest } from "./application";
 
@@ -12,10 +14,10 @@ const human={kind:"human" as const,userId:"019a0000-0000-7000-8000-000000000001"
 const backlog="019a0000-0000-7000-8000-000000000004",planner="019a0000-0000-7000-8000-000000000005";
 const task=(agentId=backlog,round=0)=>({kind:"task" as const,workspaceId:human.workspaceId,issueId:human.issueId,agentId,attemptId:`${agentId}:${round}`});
 let app:EngineeringApplication,directory:string,repository:string,database:string,definitions:string[];
-function reopen(){app=new EngineeringApplication(database,definitions[0]!,definitions[1],definitions[2],{context:definitions[3]!,planning:definitions[4]!});}
+function reopen(){app=new EngineeringApplication(database,definitions[0]!,definitions[1],definitions[2],{context:definitions[3]!,planning:definitions[4]!,review:definitions[5]!});}
 beforeEach(async()=>{directory=await mkdtemp(join(tmpdir(),"requirement-app-"));repository=join(directory,"repository");database=join(directory,"engineering.sqlite");execFileSync("git",["init","-q",repository]);
   const git=(...args:string[])=>execFileSync("git",["-C",repository,...args],{stdio:"ignore"});git("config","user.name","Requirement fixture");git("config","user.email","fixture@example.invalid");await writeFile(join(repository,"README.md"),"Frozen input\n");git("add",".");git("commit","-qm","Initialize fixture");
-  definitions=await Promise.all(["verification","development","analysis","context","planning"].map(name=>readFile(new URL(`./definitions/${name}.yaml`,import.meta.url),"utf8")));reopen();});
+  definitions=await Promise.all(["verification","development","analysis","context","planning","review"].map(name=>readFile(new URL(`./definitions/${name}.yaml`,import.meta.url),"utf8")));reopen();});
 afterEach(async()=>{app.close();await rm(directory,{recursive:true,force:true});});
 async function invoke(actor:ApplicationRequest["actor"],action:ApplicationRequest["action"],payload?:unknown){const result=await app.invoke({actor,action,payload});if(!("draft" in result) || "rework" in result)throw new Error("Expected requirement checkpoint");return result;}
 const configure=(extra={})=>invoke(human,"configure",{kind:"requirement",expected_revision:0,agent_id:backlog,planner_agent_id:planner,repository_path:repository,input:"A reader sees Ready and can activate Continue",auto_continue:true,...extra});
@@ -131,7 +133,42 @@ it.each(["in_place","worktree"] as const)("runs two managed units serially from 
  await app.invoke({actor:host(units[0]!.issueId),action:"accept-unit",payload:{binding:delivered.binding}});app.close();reopen();await activate(units[1]!.issueId);expect(await app.invoke({actor:{...task(deliveryRoles.analyst),issueId:units[1]!.issueId},action:"selection"})).toMatchObject({code_version:delivered.commit});
  if(mode === "worktree"){expect(execFileSync("git",["-C",registered,"rev-parse","HEAD"],{encoding:"utf8"}).trim()).toBe(original);root=join(directory,"second-delivery");execFileSync("git",["-C",registered,"worktree","add","-qb","second-unit",root,delivered.commit],{stdio:"ignore"});}
  const second=await deliverManaged(units[1]!.issueId,root,mode,1);await app.invoke({actor:host(units[1]!.issueId),action:"accept-unit",payload:{binding:second.binding}});expect(await app.invoke({actor:{kind:"coordinator"},action:"continuations"})).toEqual([]);await expect(app.invoke({actor:host(human.issueId),action:"completion"})).rejects.toThrow(/final review/);
-},30000);
+ const deliveredRoot=root;
+ const checkpoint=async()=>z.object({revision:z.number(),sequence:z.number()}).parse(await app.invoke({actor:human,action:"overview"}));
+ const freezeReview=async()=>{const current=await checkpoint();return app.invoke({actor:human,action:"configure-review",payload:{expected_revision:current.revision,expected_sequence:current.sequence,agent_id:planner,execution_resources:[{path:registered,mode}],native_unit_ids:z.object({review_units:z.array(z.object({issue_id:z.string()}))}).parse(await app.invoke({actor:host(human.issueId),action:"review-inputs"})).review_units.map(item=>item.issue_id)}});};
+ await freezeReview();expect(await app.invoke({actor:{kind:"coordinator"},action:"continuations"})).toEqual([expect.objectContaining({reason:"review_ready",agent_id:planner})]);
+ async function reviewRun(round:number,gap=false){
+  const actor=task(planner,round);await app.invoke({actor:{...actor,kind:"daemon"},action:"bind",payload:{work_dir:deliveredRoot,mode,overlays:[]}});let state=await invoke(actor,"start");const contract=reviewContractSchema.parse(state.contract);
+  const command=async(command:unknown)=>state=await invoke(actor,"command",{expected_sequence:state.draft!.sequence,command});
+  const put=(block:string,value:unknown,key?:string)=>command({type:"artifact.put",ref:`review.${block}`,content:stringify(value),...(key ? {key} : {})});
+  await command({type:"phase.complete"});
+  for(const [index,subject] of contract.subjects.entries()){
+   if(gap && subject.kind === "acceptance" && subject.content.includes("Continue"))await put("gaps",{subjectRef:subject.key,kind:"missing_evidence",reason:"Original Continue behavior needs combined final evidence",boundary:"Browser activates the original Continue action on the final combined page"},"combined");
+   else await put("reconciliations",{subjectRef:subject.key,result:"Frozen independent evidence supports the final fact",evidenceRefs:subject.requiredEvidenceRefs},`s${index}`);
+  }
+  await command({type:"phase.complete"});await put("assessment",{summary:gap ? "Combined behavior needs an explicit final evidence unit" : "All original and forwarded obligations are closed",evidenceBoundary:"Exact frozen independent verification references and final commit; semantic reconciliation is declared",residualRisk:"No external deployment coverage"});await command({type:"phase.complete"});
+  if(gap)await put("forward-units",{title:"Verify combined Continue",actor:"Reader",trigger:"Activate Continue",observableOutcome:"Original Continue behavior on the final page",acceptance:"Original Continue oracle is observed on the combined commit",gapKeys:["combined"],dependsOn:[]},"combined");
+  else for(const kind of ["outcome","scope","implementation","verification","risks"])await put("report-sections",{kind,content:`Current ${kind} and frozen provenance`},kind);
+  await command({type:"phase.complete"});await command({type:"phase.complete"});return {state,actor,contract};
+ }
+ if(mode === "in_place"){
+  const review=await reviewRun(20,true);expect(review.state.conclusion).toMatchObject({verdict:"closure_gap",report:null});
+  const publication=await app.invoke({actor:human,action:"publication",payload:{expected_revision:1,expected_sequence:review.state.draft!.sequence}});if(!("units" in publication))throw new Error("Expected forward publication");const followup=publication.units.at(-1)!;expect(publication.units).toHaveLength(3);expect(followup.sources).toEqual(expect.arrayContaining([expect.objectContaining({oracle:"Browser activates Continue"}),expect.objectContaining({sourceRef:expect.stringMatching(/^ACCEPTANCE:/),oracle:"Browser activates the original Continue action on the final combined page"})]));
+  app.close();reopen();expect(await app.invoke({actor:{kind:"coordinator"},action:"continuations"})).toEqual([expect.objectContaining({reason:"review_forward"})]);
+  await app.invoke({actor:host(human.issueId),action:"publication-ack",payload:{issue_id:followup.issueId,contract_hash:followup.contractHash}});await activate(followup.issueId);const third=await deliverManaged(followup.issueId,root,mode,2);await app.invoke({actor:host(followup.issueId),action:"accept-unit",payload:{binding:third.binding}});
+  expect(await app.invoke({actor:{kind:"coordinator"},action:"continuations"})).toEqual([expect.objectContaining({reason:"review_next"})]);await freezeReview();
+ }
+ const reviewed=await reviewRun(30);expect(reviewed.state.conclusion).toMatchObject({verdict:"report_ready"});
+ if(mode === "in_place")expect(reviewed.contract.evidence.some(item=>item.kind === "review-history")).toBe(true);
+ await expect(app.invoke({actor:host(human.issueId),action:"completion"})).rejects.toThrow(/Read and acknowledge/);
+ const overview=z.object({revision:z.number(),sequence:z.number(),requirement:z.object({review:z.object({report_hash:z.string()})})}).parse(await app.invoke({actor:human,action:"overview"}));
+ app.close();const recoveryDb=new DatabaseSync(database),saved=recoveryDb.prepare("SELECT payload FROM requirement_contract WHERE workspace_id=? AND issue_id=? AND revision=1").get(human.workspaceId,human.issueId)!;const savedRecord=JSON.parse(String(saved.payload));savedRecord.reviews.at(-1).settled=false;delete savedRecord.reviews.at(-1).reportHash;recoveryDb.prepare("UPDATE requirement_contract SET payload=? WHERE workspace_id=? AND issue_id=? AND revision=1").run(JSON.stringify(savedRecord),human.workspaceId,human.issueId);recoveryDb.close();reopen();expect(await app.invoke({actor:{kind:"coordinator"},action:"continuations"})).toEqual([]);expect(await app.invoke({actor:human,action:"overview"})).toMatchObject({requirement:{review:{report_hash:overview.requirement.review.report_hash}}});
+ const acknowledgement={expected_revision:overview.revision,expected_sequence:overview.sequence,report_hash:overview.requirement.review.report_hash};
+ await expect(app.invoke({actor:reviewed.actor,action:"review-ack",payload:acknowledgement})).rejects.toThrow(/authenticated human/);await expect(app.invoke({actor:human,action:"review-ack",payload:{...acknowledgement,report_hash:"stale"}})).rejects.toThrow(/current closure report/);
+ await app.invoke({actor:human,action:"review-ack",payload:acknowledgement});app.close();reopen();expect(await app.invoke({actor:host(human.issueId),action:"completion"})).toMatchObject({allowed:true,binding:{codeVersion:reviewed.contract.binding.codeVersion}});
+ await writeFile(join(deliveredRoot,"unexpected.txt"),"Changes after human reading");await expect(app.invoke({actor:host(human.issueId),action:"completion"})).rejects.toThrow(/uncommitted/);
+
+},90000);
 
 it("freezes managed delivery authority and refuses mode, base and acknowledgement changes",async()=>{
  const {units,policy}=await authorizedUnits("in_place");

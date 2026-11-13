@@ -106,3 +106,40 @@ func TestEngineeringDeliveryAuthorizationUsesHumanEndpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestEngineeringRequirementReviewCommandsUseHumanEndpoints(t *testing.T) {
+	for _, operation := range []struct{ name, path, payload string }{
+		{"start-review", "/api/issues/parent/engineering/review", `{"expected_revision":1,"expected_sequence":17,"agent_id":"reviewer"}`},
+		{"acknowledge-report", "/api/issues/parent/engineering/review/acknowledge", `{"expected_revision":1,"expected_sequence":25,"report_hash":"frozen-report"}`},
+	} {
+		t.Run(operation.name, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			clearDaemonTaskEnv(t)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodPost || r.URL.Path != operation.path {
+					t.Errorf("unexpected review endpoint: %s", r.URL.Path)
+				}
+				var body map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Error(err)
+				}
+				if body["expected_revision"] != float64(1) {
+					t.Error("review checkpoint changed")
+				}
+				fmt.Fprint(w, `{"ok":true}`)
+			}))
+			defer server.Close()
+			setCLITestServerEnv(t, server.URL)
+			cmd, _, err := engineeringCmd.Find([]string{operation.name})
+			if err != nil {
+				t.Fatal(err)
+			}
+			cmd.SetContext(context.Background())
+			cmd.Flags().Set("payload", operation.payload)
+			t.Cleanup(func() { cmd.Flags().Set("payload", "") })
+			if _, err := captureStdout(t, func() error { return cmd.RunE(cmd, []string{"parent"}) }); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}

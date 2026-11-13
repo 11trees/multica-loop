@@ -41,12 +41,23 @@ func (h *Handler) managedRunScope(ctx context.Context, issue db.Issue) ([]string
 		return nil, err
 	}
 	var scope struct {
-		Managed  *bool    `json:"managed"`
-		ParentID string   `json:"parent_issue_id"`
-		UnitIDs  []string `json:"unit_issue_ids"`
+		Managed     *bool                    `json:"managed"`
+		ReviewUnits *[]engineeringReviewUnit `json:"review_units"`
+		ParentID    string                   `json:"parent_issue_id"`
+		UnitIDs     []string                 `json:"unit_issue_ids"`
 	}
 	if json.Unmarshal(data, &scope) != nil || scope.Managed == nil {
 		return nil, fmt.Errorf("invalid managed execution scope")
+	}
+	if scope.ReviewUnits != nil {
+		if err := h.reviewNativeUnits(ctx, issue, *scope.ReviewUnits, true); err != nil {
+			return nil, err
+		}
+		ids := make([]string, len(*scope.ReviewUnits))
+		for i, unit := range *scope.ReviewUnits {
+			ids[i] = unit.IssueID
+		}
+		return ids, nil
 	}
 	if !*scope.Managed {
 		return nil, nil

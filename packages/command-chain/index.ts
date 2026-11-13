@@ -32,3 +32,5 @@ export type { AnalysisContract } from "./analysis";
 
 export { createContextHandlers, compileContextConclusion, contextContractSchema, contextProfile } from "./context";
 export { createPlanningHandlers, compilePlanningConclusion, planningContractSchema, planningProfile } from "./planning";
+export { createReviewHandlers, compileReviewConclusion, reviewContractSchema, reviewProfile } from "./review";
+export type { ReviewContract } from "./review";

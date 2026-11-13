@@ -9,6 +9,9 @@ an email or OAuth login, through the direct-loopback bootstrap described in
 Local identity must remain explicit so issues, runs, decisions, permissions,
 and audit records retain their ownership.
 
+The [coverage audit](migration-status.md) maps every source command chain and
+user pipeline to current target evidence and remaining work.
+
 The fork starts from Multica `v0.8.2`, commit
 `b7f8efcaae6c5f3273c0038252b5d10c81b41068`. `origin` is
 `11trees/multica-loop`; `upstream` is `multica-ai/multica`. Work begins on
@@ -24,7 +27,7 @@ The legacy LoopWork source baseline is commit
 | Runtime processes, run queue, concurrency, transcripts | Multica |
 | Frozen contracts, chain phases, drafts, artifact rules, verification validity | Engineering protocol kernel |
 | Run identity, snapshots, evidence capture, authorized handoff | Integration adapter |
-| Phase progress, artifacts, decisions, actionable errors | Plugin surface |
+| Phase progress, artifacts, decisions, actionable errors | Shared native Web/Desktop engineering controls |
 
 A run ending normally is not proof of delivery. An authoritative chain result
 must name the issue, chain instance and revision, run attempt, contract version,
@@ -62,7 +65,7 @@ must be designed together rather than assuming a per-issue workflow choice.
    malformed definitions, missing required builtins, and invalid references
    are rejected without loading LoopWork's database or runner.
 2. **Local access and platform integration.** Specify and implement local
-   single-user bootstrap, plugin deployment, tool invocation, trusted run
+   single-user bootstrap, shared native controls and CLI operations, trusted run
    binding, and the synchronous handoff boundary. Exit: the intended local
    installation opens its workspace without external account verification,
    and the integration capabilities are demonstrated against the host.
@@ -126,9 +129,11 @@ the native issue service with retryable acknowledgements. A separate human polic
 and execution mode. The native coordinator runs children serially from acknowledged
 predecessor commits, completes them through the synchronous Done gate, and records
 exact verification bindings on the parent. In-place and worktree kernel coverage
-and the native in-place requirement scenario validate the connected path. Final
-requirement review, managed recovery/reconciliation and cross-parent repository
-ownership remain pending; see [requirements](requirements.md#authorized-serial-execution).
+and the native in-place requirement scenario validate the connected path. Requirement final review now freezes scoped independent evidence, appends closure
+gap units without replanning, retains review generations, and gates native
+completion on authenticated reading of the exact report hash. See
+[requirement review](requirement-review.md). Managed recovery/reconciliation and
+cross-parent repository ownership remain pending; see [requirements](requirements.md#authorized-serial-execution).
 Other engineering builtin implementations are pending. The
 engine rejects completion of a builtin without its host handler. Generic
 runtime tests use explicit stubs; verification tests use its migrated gates.
@@ -162,9 +167,10 @@ The first synchronous [issue completion boundary](issue-completion.md) now check
 ordinary/description/batch updates, PR automation, and workflow remaps against
 the latest passed verification and current clean commit. It preserves the
 existing non-atomic batch semantics and does not supply a cross-database handoff
-transaction. Final review, system arbitration, remote repository mapping,
+transaction. System arbitration, verified feedback, remote repository mapping,
 remaining chains, and real delivery acceptance are still pending. These local
-integration steps do not complete milestone 2 or the migration.
+fixture-based checks do not establish real-provider delivery acceptance or
+finish the migration.
 
 ## Cutover and rollback
 

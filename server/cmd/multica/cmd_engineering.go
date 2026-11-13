@@ -21,6 +21,8 @@ func init() {
 		{"configure <issue-id>", "configure", "Freeze a delivery contract and clean repository commit (human only)"},
 		{"publish-units <issue-id>", "publish-units", "Publish a frozen requirement plan as native child issues (human only)"},
 		{"start-deliveries <issue-id>", "start-deliveries", "Authorize frozen roles and bounded serial delivery for a published plan (human only)"},
+		{"start-review <issue-id>", "start-review", "Authorize requirement reconciliation and automatic gap follow-up (human only)"},
+		{"acknowledge-report <issue-id>", "acknowledge-report", "Confirm reading the exact current closure report and close the requirement (human only)"},
 		{"inspect <issue-id>", "inspect", "Read the issue's contract and questions (human only)"},
 		{"answer <issue-id>", "answer", "Answer a pending runtime input (human only)"},
 		{"abandon <issue-id>", "abandon", "Abandon an active verification draft (human only)"},
@@ -47,6 +49,12 @@ func init() {
 				}
 				if op.path == "start-deliveries" {
 					path = "/api/issues/" + url.PathEscape(args[0]) + "/engineering/delivery"
+				}
+				if op.path == "start-review" {
+					path = "/api/issues/" + url.PathEscape(args[0]) + "/engineering/review"
+				}
+				if op.path == "acknowledge-report" {
+					path = "/api/issues/" + url.PathEscape(args[0]) + "/engineering/review/acknowledge"
 				}
 				if op.path == "answer" {
 					path += "answers"

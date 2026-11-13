@@ -47,14 +47,27 @@ func (h *Handler) requireEngineeringCompletionWithCatalog(ctx context.Context, c
 		return &engineeringCompletionError{message: "engineering completion validation is unavailable", unavailable: true}
 	}
 	var permission struct {
-		Configured *bool `json:"configured"`
-		Allowed    *bool `json:"allowed"`
+		Configured  *bool                    `json:"configured"`
+		Allowed     *bool                    `json:"allowed"`
+		ReviewUnits *[]engineeringReviewUnit `json:"review_units"`
 	}
 	if json.Unmarshal(result, &permission) != nil || permission.Configured == nil || permission.Allowed == nil {
 		return &engineeringCompletionError{message: "engineering completion validation returned an invalid result", unavailable: true}
 	}
 	if !*permission.Allowed {
 		return &engineeringCompletionError{message: "independent verification has not authorized issue completion"}
+	}
+	if permission.ReviewUnits != nil {
+		parent, err := h.Queries.GetIssueInWorkspace(ctx, db.GetIssueInWorkspaceParams{ID: params.ID, WorkspaceID: workspaceID})
+		if err != nil {
+			return &engineeringCompletionError{message: "native requirement review lookup is unavailable", unavailable: true}
+		}
+		if params.ProjectID != parent.ProjectID {
+			return &engineeringCompletionError{message: "requirement project must remain the reviewed native project"}
+		}
+		if err := h.reviewNativeIdle(ctx, parent, *permission.ReviewUnits, false); err != nil {
+			return &engineeringCompletionError{message: err.Error()}
+		}
 	}
 	return nil
 }

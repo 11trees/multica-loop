@@ -9,6 +9,19 @@ const body = { enabled: true, configured: true, chain: "verification", agent_id:
 const respond = (value: unknown) => vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(value), { headers: { "Content-Type": "application/json" } })));
 afterEach(() => vi.unstubAllGlobals());
 
+it("keeps requirement reviewer selection and exact report reading identity at the human API boundary",async()=>{
+  const client=new ApiClient("https://api.example.test");
+  respond({configured:true});await client.configureRequirementReview("parent",{expectedRevision:1,expectedSequence:17,reviewerId:"reviewer"});expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]![1]?.body))).toEqual({expected_revision:1,expected_sequence:17,agent_id:"reviewer"});
+  respond({acknowledged:true});await client.acknowledgeRequirementReview("parent",{expectedRevision:1,expectedSequence:25,reportHash:"a".repeat(64)});expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]![1]?.body))).toEqual({expected_revision:1,expected_sequence:25,report_hash:"a".repeat(64)});
+  respond({acknowledged:"true"});await expect(client.acknowledgeRequirementReview("parent",{expectedRevision:1,expectedSequence:25,reportHash:"a".repeat(64)})).rejects.toThrow(/Invalid report reading/);
+});
+
+it("rejects incomplete reports and reading acknowledgements for another report generation",async()=>{
+  const review={generation:1,draft_id:"review",agent_id:"reviewer",report_hash:"a".repeat(64),acknowledgement:null,result:{verdict:"report_ready",report:"# Closure report",gaps:[],units:[]},history:[]};
+  const requirement={kind:"requirement",input:"Original",context:null,plan:null,review_enabled:true,review};respond({...body,chain:"review",requirement});expect(await new ApiClient("https://api.example.test").getEngineeringOverview("parent")).toMatchObject({requirement:{review:{result:{verdict:"report_ready"},acknowledgement:null}}});
+  for(const invalid of [{...review,report_hash:null},{...review,result:{...review.result,report:null}},{...review,acknowledgement:{userId:"human",reportHash:"b".repeat(64),sequence:25,acknowledgedAt:"2026-11-14T00:00:00.000Z"}}]){respond({...body,chain:"review",requirement:{...requirement,review:invalid}});await expect(new ApiClient("https://api.example.test").getEngineeringOverview("parent")).rejects.toThrow(/Invalid engineering overview/);}
+});
+
 it("authorizes the exact managed delivery checkpoint and rejects a malformed acknowledgement",async()=>{
   const input={expectedRevision:2,expectedSequence:17,analystId:"analyst",developerId:"developer",verifierId:"verifier",maxReworks:3};
   respond({authorized:true});await new ApiClient("https://api.example.test").authorizeEngineeringDelivery("issue",input);

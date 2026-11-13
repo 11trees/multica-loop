@@ -104,6 +104,6 @@ It passed with a recorded screenshot. Its runtime report is supplied by the
 fixture control plane; actual provider/model execution remains unverified.
 
 Development plus verification is not the full migration: managed-unit execution/orchestration,
-final review, other workflow paths, system arbitration,
-remote repository mapping, final-review integration, and cross-database
+other workflow paths, system arbitration,
+remote repository mapping and cross-database
 handoff acceptance remain.
