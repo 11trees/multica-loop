@@ -70,7 +70,7 @@ func (h *Handler) dispatchEngineeringContinuation(ctx context.Context, item engi
 	if err != nil {
 		return err
 	}
-	if item.ExpectedRevision < 1 || item.ExpectedSequence < 0 || (item.Reason != "human_answers" && item.Reason != "development_handoff" && item.Reason != "verification_rework") {
+	if item.ExpectedRevision < 1 || item.ExpectedSequence < 0 || (item.Reason != "human_answers" && item.Reason != "development_handoff" && item.Reason != "verification_rework" && item.Reason != "analysis_handoff") {
 		return fmt.Errorf("invalid engineering continuation checkpoint")
 	}
 	if existing, err := h.Queries.GetAgentTask(ctx, taskID); err == nil {

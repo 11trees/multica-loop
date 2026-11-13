@@ -61,3 +61,12 @@ it.each([undefined,2])("sends only the explicitly requested rework budget %s", a
   const request=vi.mocked(fetch).mock.calls[0]!;
   expect(JSON.parse(String(request[1]?.body))).toMatchObject({max_reworks:budget ?? 0,auto_continue:true});
 });
+
+it("validates structured decision snapshots and sends the selected option without inventing an answer",async()=>{
+  respond({...body,questions:[{...body.questions[0],decision_key:"placement",answer:null,options:[{id:"top",label:"Top",consequence:"Before"},{id:"bottom",label:"Bottom",consequence:"After"}],recommendation_option:"top"}]});
+  expect((await new ApiClient("https://api.example.test").getEngineeringOverview("issue")).questions[0]).toMatchObject({decisionKey:"placement",recommendationOption:"top",options:[{id:"top"},{id:"bottom"}]});
+  respond({...body,questions:[{...body.questions[0],decision_key:"placement"}]});await expect(new ApiClient("https://api.example.test").getEngineeringOverview("issue")).rejects.toThrow(/Invalid engineering overview/);
+  respond({contract:{binding:{issueId:"issue",revision:2}},draft:{sequence:8,status:"waiting_for_answers"}});
+  await new ApiClient("https://api.example.test").answerEngineering("issue",{expectedSequence:7,requestId:"q1",answer:"",selectedOption:"bottom"});
+  expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]![1]?.body))).toEqual({expected_sequence:7,request_id:"q1",answer:"",selected_option:"bottom"});
+});

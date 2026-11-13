@@ -7,7 +7,10 @@ Mobile has its own client and does not yet include these controls.
 
 ## Configure and run
 
-On an accepted, open issue, choose **Configure delivery**. Set the repository
+On an accepted, open issue, choose **Configure delivery**. Enable optional
+[delivery analysis](analysis.md) to freeze the user/trigger/outcome, choose a
+separate analyst and decision mode, and derive development guidance from its
+completed spec. Set the repository
 path on the API host, choose an independent verifier, and add observable scope
 items with their judging criteria. At least one acceptance is required. Enable
 development to choose a different developer and supply implementation guidance.
@@ -77,7 +80,7 @@ Kernel tests cover repository preflight and interrupted development recovery.
 The shared component is wired into Web and Desktop issue detail; the packaged
 desktop app has not been exercised. Automatic development handoff and answered
 question continuation and [bounded implementation rework](rework.md) are connected.
-Analysis/arbitration integration, the remaining command chains,
+Specification-failure reanalysis/arbitration, the remaining command chains,
 remote repository mapping, and real business/provider acceptance remain pending.
 SQLite checkpoints, PostgreSQL queue admission, and filesystem checks are separate
 operations; these controls do not establish a cross-database transaction or global

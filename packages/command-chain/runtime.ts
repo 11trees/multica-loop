@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { decisionOptionSchema, decisionProposalSchema, decisionAuthoritySchema, decisionStateSchema } from "./decisions";
 import { artifactBlock, validateArtifactContent } from "./artifacts";
 import { commandChainDefinitionSchema, type LoadedCommandChain } from "./definition";
 
@@ -26,11 +27,12 @@ const runtimeInputFields = {
 };
 const runtimeInputSchema = z.strictObject({
   ...runtimeInputFields,
+  title: text.max(500), why: text.max(4000), recommendation: text.max(4000),
   id: text,
   phase: text,
   attemptId: text,
-  active: z.boolean(),
-  answer: z.strictObject({ text: text.max(20000), userId: text, sequence }).nullable(),
+  active: z.boolean(), decisionKey: text.optional(), options: z.array(decisionOptionSchema).optional(), recommendationOption: text.optional(),
+  answer: z.strictObject({ text: text.max(20000), userId: text, sequence, selectedOption: text.optional() }).nullable(),
 });
 
 export const draftSchema = z.strictObject({
@@ -55,6 +57,7 @@ export const draftSchema = z.strictObject({
   runtimeInputs: z.array(runtimeInputSchema),
   completedPhases: z.array(text),
   events: z.array(event),
+  decisions: z.array(decisionStateSchema).max(200).optional(),
   development: z.strictObject({
     reviewFingerprint: text.optional(),
     claims: z.array(z.strictObject({ key: text, evidence: text, attemptId: text })),
@@ -116,6 +119,11 @@ export const chainCommandSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("acceptance.assess"), key: text, evidence: text }),
   z.strictObject({ type: z.literal("check.record"), key: text, receipt_id: text, summary: text }),
   z.strictObject({ type: z.literal("check.remove"), key: text }),
+  z.strictObject({ type: z.literal("decision.propose"), decision: decisionProposalSchema }),
+  z.strictObject({ type: z.literal("decision.remove"), key: text }),
+  z.strictObject({ type: z.literal("decision.ask"), key: text }),
+  z.strictObject({ type: z.literal("decision.reopen"), key: text }),
+  z.strictObject({ type: z.literal("decision.resolve"), key: text, option:text, authority:decisionAuthoritySchema, decision:text.max(4000), rationale:text.max(4000), evidence:text.max(4000) }),
 ]);
 export type ChainCommand = z.infer<typeof chainCommandSchema>;
 
@@ -219,14 +227,17 @@ export class CommandChainEngine {
 
   /** Host-only: the caller must authenticate a human and derive their user ID. */
   async answerRuntimeInput(id: string, input: {
-    expectedSequence: number; requestId: string; answer: string; userId: string;
+    expectedSequence: number; requestId: string; answer: string; userId: string; selectedOption?: string;
   }): Promise<ChainDraft> {
     const draft = await this.read(id);
     if (draft.sequence !== input.expectedSequence) throw new DraftConflictError("Draft changed; reload before answering");
     if (draft.status !== "waiting_for_answers") throw new Error("Draft is not waiting for human answers");
     const request = draft.runtimeInputs.find(request => request.id === input.requestId && request.active);
     if (!request || request.answer !== null) throw new Error("Runtime input is missing, superseded, or already answered");
-    const answer = runtimeInputSchema.shape.answer.unwrap().parse({ text: input.answer, userId: input.userId, sequence: draft.sequence + 1 });
+    const option = request.options?.find(option=>option.id === input.selectedOption);
+    if(request.decisionKey && !option) throw new Error("Choose one of the published decision options");
+    if(!request.decisionKey && input.selectedOption) throw new Error("This question does not accept an option selection");
+    const answer = runtimeInputSchema.shape.answer.unwrap().parse({ text: input.answer.trim() || option?.label, selectedOption: option?.id, userId: input.userId, sequence: draft.sequence + 1 });
     request.answer = answer;
     recordEvent(draft, "runtime-input.answer", request.id, answer.userId);
     await this.store.save(draft, input.expectedSequence);
@@ -271,6 +282,7 @@ export class CommandChainEngine {
       const handler = phase.type === "builtin" && Object.hasOwn(this.builtins, phase.builtin) ? this.builtins[phase.builtin] : undefined;
       if (!handler?.runtimeInputs) throw new Error("Runtime inputs are not enabled for the current phase");
       const existing = draft.runtimeInputs.find(request => request.key === command.key && request.active);
+      if(existing?.decisionKey)throw new Error("Structured decision questions are owned by decision commands");
       if (existing && (existing.phase !== draft.phase || existing.answer !== null)) throw new Error("Runtime input already has a human answer or belongs to another phase; use a new key");
       if (command.type === "runtime-input.remove") {
         if (!existing) throw new Error(`Runtime input ${command.key} does not exist`);

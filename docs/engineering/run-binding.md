@@ -70,5 +70,4 @@ An HTTP context read and kernel write are separate operations. Other Multica
 endpoints retain their existing task-token policy; this endpoint does not
 globally revoke old credentials. The local application adds native CLI execution,
 durable contracts, claim instructions, and a separate synchronous
-[issue completion check](issue-completion.md). Analysis/arbitration
-integration, and cross-database handoff acceptance remain required before cutover.
+[issue completion check](issue-completion.md). Specification-failure reanalysis/arbitration and cross-database handoff acceptance remain required before cutover.

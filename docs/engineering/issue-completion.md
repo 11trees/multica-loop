@@ -50,7 +50,7 @@ item after previous items have committed. No global concurrent-edit or
 cross-database atomicity guarantee is claimed.
 
 This first boundary enforces the migrated development/verification protocol.
-Requirement planning, analysis, final review, analysis/arbitration integration, remote clone
+Requirement planning, final review, specification-failure reanalysis/arbitration, remote clone
 mapping, and real-provider acceptance still need migration. A process exit or a
 merged PR alone cannot replace the current independent verification verdict.
 
