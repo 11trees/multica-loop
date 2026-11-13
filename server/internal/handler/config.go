@@ -12,7 +12,8 @@ import (
 )
 
 type AppConfig struct {
-	CdnDomain string `json:"cdn_domain"`
+	LocalAuthEnabled bool   `json:"local_auth_enabled,omitempty"`
+	CdnDomain        string `json:"cdn_domain"`
 	// The origin used for durable private-attachment Markdown links. Clients
 	// use it only to recognize links belonging to this deployment.
 	AttachmentPublicURL string `json:"attachment_public_url,omitempty"`
@@ -129,6 +130,7 @@ func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request) {
 		config.CdnDomain = h.Storage.CdnDomain()
 	}
 	config.AttachmentPublicURL = h.cfg.PublicURL
+	config.LocalAuthEnabled = h.cfg.LocalAuthEnabled
 	config.CdnSigned = h.CFSigner != nil
 	if _, local := h.Storage.(*storage.LocalStorage); local {
 		config.CdnSigned = true

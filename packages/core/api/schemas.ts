@@ -941,6 +941,7 @@ export const EMPTY_ISSUE_PROPERTIES_RESPONSE: IssuePropertiesResponse = {
 };
 
 export interface AppConfigResponse {
+  local_auth_enabled?: boolean;
   cdn_domain: string;
   attachment_public_url?: string;
   // True when the CDN domain serves private content via time-bounded signed
@@ -1232,6 +1233,7 @@ export const EMPTY_REFRESH_SESSION_RESPONSE: RefreshSessionResponse = {
 };
 
 export const AppConfigSchema = z.object({
+  local_auth_enabled: BooleanWithDefaultSchema(false),
   cdn_domain: z.string().default(""),
   attachment_public_url: OptionalStringSchema,
   cdn_signed: BooleanWithDefaultSchema(false),
@@ -1254,6 +1256,7 @@ export const AppConfigSchema = z.object({
 }).loose();
 
 export const EMPTY_APP_CONFIG: AppConfigResponse = {
+  local_auth_enabled: false,
   cdn_domain: "",
   attachment_public_url: "",
   cdn_signed: false,
@@ -2841,6 +2844,11 @@ export const EMPTY_USER: User = {
   created_at: "",
   updated_at: "",
 };
+
+export const LocalLoginResponseSchema = z.object({
+  token: z.string().min(1),
+  user: UserSchema.extend({ id: z.string().uuid(), email: z.string().min(1) }),
+});
 
 // Cross-workspace unread inbox summary (`/api/inbox/unread-summary` GET).
 // One entry per workspace the user belongs to that has unread items; the

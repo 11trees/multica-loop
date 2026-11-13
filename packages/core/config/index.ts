@@ -3,6 +3,7 @@ import { useStore } from "zustand";
 import type { DaemonConfigStatus, DaemonSetupTarget } from "../runtimes/commands";
 
 interface ConfigState {
+  localAuthEnabled: boolean;
   cdnDomain: string;
   attachmentPublicUrl: string;
   // True when cdnDomain serves private content via time-bounded signed URLs
@@ -50,6 +51,7 @@ interface ConfigState {
   setCdnConfig: (config: { cdnDomain: string; cdnSigned?: boolean }) => void;
   setAttachmentPublicUrl: (url?: string) => void;
   setAuthConfig: (config: {
+    localAuthEnabled?: boolean;
     allowSignup: boolean;
     googleClientId?: string;
     workspaceCreationDisabled?: boolean;
@@ -70,6 +72,7 @@ interface ConfigState {
 }
 
 export const configStore = createStore<ConfigState>((set) => ({
+  localAuthEnabled: false,
   cdnDomain: "",
   attachmentPublicUrl: "",
   cdnSigned: false,
@@ -90,11 +93,12 @@ export const configStore = createStore<ConfigState>((set) => ({
   setCdnConfig: ({ cdnDomain, cdnSigned = false }) => set({ cdnDomain, cdnSigned }),
   setAttachmentPublicUrl: (url = "") => set({ attachmentPublicUrl: url }),
   setAuthConfig: ({
+    localAuthEnabled = false,
     allowSignup,
     googleClientId = "",
     workspaceCreationDisabled = false,
     vcsIntegrationAvailable = false,
-  }) => set({ allowSignup, googleClientId, workspaceCreationDisabled, vcsIntegrationAvailable }),
+  }) => set({ localAuthEnabled, allowSignup, googleClientId, workspaceCreationDisabled, vcsIntegrationAvailable }),
   setDaemonConfig: ({
     daemonServerUrl = "",
     daemonAppUrl = "",

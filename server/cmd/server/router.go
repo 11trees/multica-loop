@@ -430,6 +430,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	origins := allowedOrigins()
 
 	signupConfig := handler.Config{
+		LocalAuthEnabled:               os.Getenv("MULTICA_LOCAL_AUTH") == "true",
 		AllowSignup:                    os.Getenv("ALLOW_SIGNUP") != "false",
 		AllowedEmails:                  splitAndTrim(os.Getenv("ALLOWED_EMAILS")),
 		AllowedEmailDomains:            splitAndTrim(os.Getenv("ALLOWED_EMAIL_DOMAINS")),
@@ -1585,6 +1586,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	r.With(authVerifyRL).Post("/auth/verify-code", h.VerifyCode)
 	r.With(authRL).Post("/auth/google", h.GoogleLogin)
 	r.Post("/auth/logout", h.Logout)
+	r.Post("/auth/local", h.LocalLogin)
 
 	// Public API
 	r.Get("/api/config", h.GetConfig)

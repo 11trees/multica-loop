@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@multica/core/auth";
+import { useConfigStore } from "@multica/core/config";
 import { useWorkspaceList } from "@multica/core/workspace";
 import { resolvePostAuthDestination, useHasOnboarded } from "@multica/core/paths";
 import { isOfficialMarketingHost } from "@/lib/public-host";
@@ -27,15 +28,20 @@ export function RedirectIfAuthenticated() {
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
   const isLoading = useAuthStore((s) => s.isLoading);
+  const localAuthEnabled = useConfigStore((s) => s.localAuthEnabled);
   const hasOnboarded = useHasOnboarded();
 
   const { workspaces, ready } = useWorkspaceList({ enabled: !!user });
 
   useEffect(() => {
+    if (!isLoading && !user && localAuthEnabled) {
+      router.replace("/login");
+      return;
+    }
     if (isLoading || !user || !ready) return;
     if (isOfficialMarketingHost(window.location.hostname)) return;
     router.replace(resolvePostAuthDestination(workspaces, hasOnboarded));
-  }, [isLoading, user, ready, workspaces, hasOnboarded, router]);
+  }, [isLoading, user, ready, workspaces, hasOnboarded, router, localAuthEnabled]);
 
   return null;
 }

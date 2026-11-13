@@ -20,6 +20,7 @@ import {
   InputOTPSlot,
 } from "@multica/ui/components/ui/input-otp";
 import { useAuthStore } from "@multica/core/auth";
+import { useConfigStore } from "@multica/core/config";
 import { workspaceKeys } from "@multica/core/workspace/queries";
 import { api } from "@multica/core/api";
 import type { User } from "@multica/core/types";
@@ -103,6 +104,8 @@ export function LoginPage({
 }: LoginPageProps) {
   const { t } = useT("auth");
   const qc = useQueryClient();
+  const localAuthEnabled = useConfigStore((state) => state.localAuthEnabled);
+  const localLoginStarted = useRef(false);
   const [step, setStep] = useState<"email" | "code" | "cli_confirm">("email");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
@@ -118,11 +121,38 @@ export function LoginPage({
   // the app having lost their work for no reason.
   const sessionExpired = useAuthStore((state) => state.expired);
 
+  const handleLocalLogin = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const user = await useAuthStore.getState().loginLocally();
+      if (cliCallback) {
+        authSourceRef.current = "cookie";
+        setExistingUser(user);
+        setStep("cli_confirm");
+        setLoading(false);
+        return;
+      }
+      qc.setQueryData(workspaceKeys.list(), await api.listWorkspaces());
+      onTokenObtained?.();
+      onSuccess();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t(($) => $.errors.server_unreachable));
+      setLoading(false);
+    }
+  }, [cliCallback, qc, onTokenObtained, onSuccess, t]);
+
+  useEffect(() => {
+    if (!localAuthEnabled || localLoginStarted.current) return;
+    localLoginStarted.current = true;
+    void handleLocalLogin();
+  }, [localAuthEnabled, handleLocalLogin]);
+
   // Check for existing session when CLI callback is present.
   // Prioritises cookie auth (= current browser session) to avoid authorising
   // the CLI with a stale or mismatched localStorage token.
   useEffect(() => {
-    if (!cliCallback) return;
+    if (!cliCallback || localAuthEnabled) return;
 
     // Snapshot the token before probing. The probe below is *expected* to 401
     // for a token-mode session, and a 401 ends the session — clearing this
@@ -158,7 +188,7 @@ export function LoginPage({
             localStorage.removeItem("multica_token");
           });
       });
-  }, [cliCallback]);
+  }, [cliCallback, localAuthEnabled]);
 
   // Cooldown timer for resend
   useEffect(() => {
@@ -317,16 +347,43 @@ export function LoginPage({
                 ? t(($) => $.cli.authorizing)
                 : t(($) => $.cli.authorize)}
             </Button>
-            <Button
-              variant="ghost"
-              className="w-full"
-              onClick={() => {
-                setExistingUser(null);
-                setStep("email");
-              }}
-            >
-              {t(($) => $.cli.different_account)}
-            </Button>
+            {!localAuthEnabled && (
+              <Button
+                variant="ghost"
+                className="w-full"
+                onClick={() => {
+                  setExistingUser(null);
+                  setStep("email");
+                }}
+              >
+                {t(($) => $.cli.different_account)}
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (localAuthEnabled) {
+    return (
+      <div className="flex min-h-svh items-center justify-center">
+        <Card className="w-full max-w-sm">
+          <CardHeader className="text-center">
+            {logo && <div className="mx-auto mb-4">{logo}</div>}
+            <CardTitle className="text-display-sm">
+              {t(($) => $.web.callback.signing_in)}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {error && (
+              <>
+                <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>
+                <Button className="mt-3 w-full" onClick={() => void handleLocalLogin()} disabled={loading}>
+                  {t(($) => $.desktop.recovery.retry)}
+                </Button>
+              </>
+            )}
           </CardContent>
         </Card>
       </div>

@@ -70,6 +70,7 @@ export function AuthInitializer({
           });
         }
         configStore.getState().setAuthConfig({
+          localAuthEnabled: cfg.local_auth_enabled === true,
           allowSignup: cfg.allow_signup,
           googleClientId: cfg.google_client_id,
           // Old servers omit this field — treat that as "creation allowed"

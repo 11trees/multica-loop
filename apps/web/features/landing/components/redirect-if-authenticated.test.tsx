@@ -6,11 +6,16 @@ const state = vi.hoisted(() => ({
   isLoading: false,
   workspaces: [] as { id: string; slug: string }[],
   ready: false,
+  localAuthEnabled: false,
   replace: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: state.replace }),
+}));
+
+vi.mock("@multica/core/config", () => ({
+  useConfigStore: (selector: (config: { localAuthEnabled: boolean }) => unknown) => selector(state),
 }));
 
 vi.mock("@multica/core/auth", () => ({
@@ -39,6 +44,7 @@ vi.mock("@/lib/public-host", () => ({
 import { RedirectIfAuthenticated } from "./redirect-if-authenticated";
 
 beforeEach(() => {
+  state.localAuthEnabled = false;
   state.user = { id: "user-1" };
   state.isLoading = false;
   state.workspaces = [];
@@ -47,6 +53,12 @@ beforeEach(() => {
 });
 
 describe("RedirectIfAuthenticated", () => {
+  it("enters automatic local sign-in from a fresh root visit", () => {
+    state.user = null;
+    state.localAuthEnabled = true;
+    render(<RedirectIfAuthenticated />);
+    expect(state.replace).toHaveBeenCalledWith("/login");
+  });
   it("does not redirect after an initial workspace-list failure", () => {
     render(<RedirectIfAuthenticated />);
 

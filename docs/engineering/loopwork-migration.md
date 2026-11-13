@@ -49,10 +49,9 @@ must be designed together rather than assuming a per-issue workflow choice.
   until every relevant transition path has been checked.
 - Plugin backend endpoints are operated by us. Workspace plugin KV is bounded;
   decide durable draft/evidence storage separately before adding runtime state.
-- A local no-login entry must produce a real local identity/session. It must
-  not disable task identity or impersonate an existing account through headers.
-  The existing authenticated mode remains available; deployment/network scope
-  and frontend/desktop bootstrap behavior must be specified before activation.
+- The local no-login entry produces a real local identity/session, preserving
+  task identity and membership checks. See [local access](local-access.md)
+  for its direct-loopback scope and Web/Desktop/CLI bootstrap behavior.
 
 ## Milestones
 
@@ -80,10 +79,15 @@ must be designed together rather than assuming a per-issue workflow choice.
 
 ## Current implementation
 
-The first increment contains only the definition loader and two original YAML
-fixtures in `packages/command-chain`. It validates authoring structure; it does
-not execute chains, validate observed evidence, persist drafts, alter issue
-status, start agents, enable plugins, or change login behavior.
+The definition loader and two original YAML fixtures are in
+`packages/command-chain`. They validate authoring structure; they do not execute
+chains, validate observed evidence, persist drafts, or authorize handoff.
+
+The fork also has an opt-in local single-user entry, shared Web/Desktop
+automatic login, and managed development profile support. Plugin deployment,
+trusted run binding, the synchronous handoff boundary, and actual command-chain
+execution are still pending. Completing local access alone does not complete
+milestone 2 or the migration.
 
 ## Cutover and rollback
 

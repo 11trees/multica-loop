@@ -29,6 +29,7 @@ function renderWithI18n(ui: ReactElement) {
 
 const mockSendCode = vi.hoisted(() => vi.fn());
 const mockVerifyCode = vi.hoisted(() => vi.fn());
+const mockLoginLocally = vi.hoisted(() => vi.fn());
 const mockApiListWorkspaces = vi.hoisted(() => vi.fn());
 const mockApiVerifyCode = vi.hoisted(() => vi.fn());
 const mockApiSetToken = vi.hoisted(() => vi.fn());
@@ -52,6 +53,7 @@ vi.mock("@multica/core/auth", () => ({
       const state = {
         sendCode: mockSendCode,
         verifyCode: mockVerifyCode,
+        loginLocally: mockLoginLocally,
         expired: mockAuthState.expired,
       };
       return selector ? selector(state) : state;
@@ -60,6 +62,7 @@ vi.mock("@multica/core/auth", () => ({
       getState: () => ({
         sendCode: mockSendCode,
         verifyCode: mockVerifyCode,
+        loginLocally: mockLoginLocally,
       }),
     },
   ),
@@ -82,6 +85,7 @@ vi.mock("@multica/core/types", () => ({}));
 // ---------------------------------------------------------------------------
 
 import { LoginPage, validateCliCallback } from "./login-page";
+import { configStore } from "@multica/core/config";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -102,6 +106,7 @@ describe("LoginPage", () => {
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     vi.clearAllMocks();
+    configStore.setState({ localAuthEnabled: false });
     mockAuthState.expired = false;
     // Default: no existing session (getMe rejects when no auth)
     mockApiGetMe.mockRejectedValue(new Error("unauthorized"));
@@ -114,7 +119,28 @@ describe("LoginPage", () => {
   });
 
   afterEach(() => {
+    configStore.setState({ localAuthEnabled: false });
     vi.useRealTimers();
+  });
+
+  it("automatically opens the local workspace without requesting an email code", async () => {
+    configStore.setState({ localAuthEnabled: true });
+    mockLoginLocally.mockResolvedValue({ id: "local-user", email: "local@multica-loop.invalid" });
+    mockApiListWorkspaces.mockResolvedValue([{ id: "local-ws", slug: "loopwork-local" }]);
+    renderWithI18n(<LoginPage onSuccess={onSuccess} />);
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledOnce());
+    expect(mockLoginLocally).toHaveBeenCalledOnce();
+    expect(mockSendCode).not.toHaveBeenCalled();
+    expect(screen.queryByPlaceholderText("you@example.com")).not.toBeInTheDocument();
+  });
+
+  it("shows a retryable error when local bootstrap is unavailable", async () => {
+    configStore.setState({ localAuthEnabled: true });
+    mockLoginLocally.mockRejectedValueOnce(new Error("local workspace unavailable"));
+    renderWithI18n(<LoginPage onSuccess={onSuccess} />);
+    await screen.findByText("local workspace unavailable");
+    expect(screen.getByRole("button", { name: "Try again" })).toBeEnabled();
+    expect(onSuccess).not.toHaveBeenCalled();
   });
 
   // -------------------------------------------------------------------------
