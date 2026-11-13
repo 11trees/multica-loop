@@ -81,7 +81,7 @@ must be designed together rather than assuming a per-issue workflow choice.
 
 ## Current implementation
 
-The standalone kernel and two original YAML fixtures are in
+The standalone kernel and original development/verification YAML definitions are in
 `packages/command-chain`. The loader validates authoring structure. The engine
 supports scoped artifact and metadata edits, field validation, phase completion,
 explicit confirmations, rewind invalidation, item freezing, and run-attempt
@@ -103,14 +103,20 @@ preserves questions superseded by rewind and does not convert answers into
 passing evidence. Human authentication and answer/abandon APIs are connected;
 question UI and automatic continuation remain pending.
 
-Development and other engineering builtin implementations are pending. The
+Development gates now cover frozen scope, implementation claims, recovery
+resolutions, code review, current captured command checks, and clean commits.
+The same issue can hand the actual development commit and unchanged frozen
+oracles to a different verification agent. Structured receipt capture currently
+supports Codex; other providers and workspace mapping remain pending. See
+[development handoff](development-handoff.md) for the exact provenance and limits.
+Other engineering builtin implementations are pending. The
 engine rejects completion of a builtin without its host handler. Generic
 runtime tests use explicit stubs; verification tests use its migrated gates.
 Neither is evidence of a delivered real unit. The opt-in local application now
 persists contracts and drafts in the managed environment's SQLite database.
 Human configuration freezes sources and the actual clean Git HEAD; the service
 checks that repository again on every agent operation. Active drafts must be
-explicitly abandoned before their contract is replaced. Evidence capture,
+explicitly abandoned before their contract is replaced. Additional observation capture,
 remote-daemon repository mapping, issue-deletion retention, and authoritative
 result publication remain pending.
 
@@ -124,8 +130,8 @@ credentials, and continuation. See [run binding](run-binding.md) for its exact
 trust and verification boundary.
 
 The native `multica engineering` CLI and Go host endpoints now execute the
-verification chain through a bundled Node worker. Claim assembly injects
-instructions only for the configured verifier role. A live native-CLI fixture
+development and verification chains through a bundled Node worker. Claim assembly
+injects instructions for the current configured role. A live native-CLI fixture
 test covers frozen Git identity, phase commands, human answers, reclaimed
 continuation, and refusal after repository edits. See
 [engineering service](engineering-service.md) for setup and limits.

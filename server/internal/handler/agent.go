@@ -397,6 +397,7 @@ type TaskCancellationActor struct {
 }
 
 type AgentTaskResponse struct {
+	EngineeringChain string `json:"engineering_chain,omitempty"`
 	// Restricted marks a run on an issue in a private project the caller
 	// cannot see (MUL-8472): only identity, status, timing and usage remain.
 	Restricted bool `json:"restricted,omitempty"`

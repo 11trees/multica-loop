@@ -26,7 +26,8 @@ func (h *Handler) invokeEngineering(w http.ResponseWriter, r *http.Request, acti
 	}
 	if action == "configure" {
 		var selection struct {
-			AgentID string `json:"agent_id"`
+			AgentID     string `json:"agent_id"`
+			DeveloperID string `json:"developer_agent_id"`
 		}
 		if err := json.Unmarshal(payload, &selection); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid engineering agent selection")
@@ -34,6 +35,11 @@ func (h *Handler) invokeEngineering(w http.ResponseWriter, r *http.Request, acti
 		}
 		if _, ok := h.loadAgentForUser(w, r, selection.AgentID); !ok {
 			return
+		}
+		if selection.DeveloperID != "" {
+			if _, ok := h.loadAgentForUser(w, r, selection.DeveloperID); !ok {
+				return
+			}
 		}
 	}
 	result, err := h.EngineeringWorker.Call(r.Context(), map[string]any{"actor": actor, "action": action, "payload": payload})

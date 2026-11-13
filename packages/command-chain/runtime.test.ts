@@ -30,7 +30,7 @@ function openStore() {
   return store;
 }
 async function createDevelopment(handlers: BuiltinHandlers = acceptingDevHandlers) {
-  const chain = parseCommandChainDefinition(await readFile(new URL("./fixtures/development.yaml", import.meta.url), "utf8"), devProfile);
+  const chain = parseCommandChainDefinition(await readFile(new URL("./definitions/development.yaml", import.meta.url), "utf8"), devProfile);
   const engine = new CommandChainEngine(openStore(), handlers);
   const draft = await engine.create({ id: "development-unit", chain, binding, attemptId: "run-1" });
   return { engine, draft, chain };

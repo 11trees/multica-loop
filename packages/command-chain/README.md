@@ -7,8 +7,9 @@ adapters. YAML cannot define executable commands, validators, or transitions.
 
 The loader validates syntax, references, writable block boundaries, and the
 mandatory builtin sequence. `CommandChainEngine` adds phase execution and
-durable drafts through an injected `DraftStore`. Development/other business
-builtins and trusted Multica integration remain separate work.
+durable drafts through an injected `DraftStore`. Development and independent
+verification have host-owned builtin implementations; the other chains remain
+separate migration work.
 
 The identifier grammar excludes numeric keys so YAML declaration order survives
 JavaScript object enumeration. Only authoring format version 1 is accepted.
@@ -136,7 +137,7 @@ pnpm --filter @multica/command-chain typecheck
 pnpm --filter @multica/command-chain lint
 ```
 
-`fixtures/development.yaml` and `definitions/verification.yaml` are unchanged
+`definitions/development.yaml` and `definitions/verification.yaml` are unchanged
 copies of LoopWork's `command-chains/default/dev-agent.yaml` and
 `command-chains/default/test-agent.yaml` from commit
 `17982f2b93100b42d65ed650869c9cc97ff92b5a`. Tests exercise both real definitions
@@ -147,8 +148,10 @@ connections, and invalidate downstream output. Generic runtime tests use
 deliberate stub handlers. `verification.test.ts` exercises the actual migrated
 verification handlers, including coverage, attribution, stale contract/code
 bindings, blocked observations, and passed/failed conclusion compilation.
-The development fixture is import evidence only. The unchanged verification
-definition is also embedded in the executable application worker. Package tests
+Both unchanged development and verification definitions are embedded in the
+executable application worker. Development checks reference structured runtime
+receipts and the observed repository snapshot; see
+[development handoff](../../docs/engineering/development-handoff.md). Package tests
 use temporary repositories/databases and do not access agent accounts or user
 databases. See [the engineering service](../../docs/engineering/engineering-service.md)
 for its authenticated host API, native CLI, durable contracts, actual Git checks,

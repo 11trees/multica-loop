@@ -1,7 +1,7 @@
 # Engineering verification service
 
-The local fork can now run the independent verification chain through the native
-Multica CLI. Go authenticates each request, projects the human/run identity, and
+The local fork can run independent verification, optionally following development,
+through the native Multica CLI. Go authenticates each request, projects the human/run identity, and
 invokes a bundled Node worker over private stdin/stdout. The worker owns frozen
 contracts and drafts in a local SQLite database. It receives no bearer credential,
 JWT signing key, or PostgreSQL credential. There is no additional HTTP listener.
@@ -55,6 +55,12 @@ the frozen source/revision content. Code and contract versions are never supplie
 by the agent. Keep test artifacts in ignored locations or outside the checked
 repository. Repository paths currently refer to the API host, so remote-daemon
 checkout mapping is not supported yet.
+
+To run development first, also supply a different `developer_agent_id` and
+nonempty `implementation_guidance`. See [development handoff](development-handoff.md)
+for captured check requirements and supported runtimes. The CLI selects the
+current role from the task identity and transfers the committed snapshot to
+the verifier after development finalization.
 
 One contract revision owns one draft. Repeated `start` calls on the same run
 return its checkpoint. Replacement requires the expected current revision and
@@ -116,7 +122,7 @@ observations, not a real delivered business change. Its fixture helper removes
 its own PostgreSQL/SQLite records. Normal issue-deletion retention/cleanup for
 engineering history remains an application integration task.
 
-Development and the other chains, real observation/receipt capture, automated
+The other chains, additional provider receipt adapters, automated
 run continuation, UI, remote repository mapping, and the synchronous host handoff
 gate are still required for cutover. Agent issue-status changes are not yet gated
 by this service; successful process exit is not evidence of engineering delivery.

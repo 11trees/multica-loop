@@ -19,7 +19,7 @@ beforeEach(async () => {
   await writeFile(join(repo, "README.md"), "Fixture repository\n");
   git("add", "README.md"); git("commit", "-qm", "Initialize fixture");
   source = await readFile(new URL("./definitions/verification.yaml", import.meta.url), "utf8");
-  app = new EngineeringApplication(join(dir, "application.sqlite"), source);
+  app = new EngineeringApplication(join(dir, "application.sqlite"), source, await readFile(new URL("./definitions/development.yaml", import.meta.url), "utf8"));
 });
 afterEach(async () => { app.close(); await rm(dir, { recursive: true, force: true }); });
 async function invoke(actor: ApplicationRequest["actor"], action: Exclude<ApplicationRequest["action"], "selection">, payload?: unknown) {
@@ -91,4 +91,64 @@ it("preserves abandoned history and creates a new pinned revision", async () => 
   expect(revised.contract.binding.revision).toBe(2);
   expect(revised.contract.binding.contractVersion).not.toBe(initial.contract.binding.contractVersion);
   expect((await invoke(task, "start")).draft?.id).not.toBe(initial.draft?.id);
+});
+
+it("hands a committed development result and frozen oracles to a different verification agent", async () => {
+  const verifier = { ...task, agentId: human.userId, attemptId: "test:claim1" };
+  await invoke(human, "configure", { expected_revision: 0, agent_id: verifier.agentId, developer_agent_id: task.agentId,
+    implementation_guidance: "Implement the frozen fixture acceptance without changing its oracle", repository_path: repo, sources });
+  await expect(invoke(verifier, "start")).rejects.toThrow(/not handed off/);
+  expect(await app.invoke({actor:task,action:"selection"})).toEqual({configured:true,chain:"development"});
+  let state = await invoke(task, "start");
+  const command = async (value: unknown) => { state = await invoke(task, "command", { expected_sequence: state.draft!.sequence, command: value }); };
+  await command({ type: "phase.complete" });
+  await expect(command({ type: "phase.complete" })).rejects.toThrow(/no implementation claim/);
+  await writeFile(join(repo, "implementation.js"), "export const ready = true;\n");
+  await command({ type: "acceptance.assess", key: "ac1", evidence: "implementation.js:1" });
+  await command({ type: "phase.complete" });
+  await command({ type: "artifact.put", ref: "development.code-review", content: "summary: Scope reviewed\nevidence: implementation.js:1" });
+  await command({ type: "phase.complete" });
+  await expect(command({ type: "check.record", key: "syntax", receipt_id: "invented", summary: "Invented success" })).rejects.toThrow(/not from the current run/);
+  const receipt = { id: "command1", sequence: 10, command: "node --check implementation.js", cwd: repo, status: "completed", exit_code: 0 };
+  const captured = await app.invoke({ actor: { ...task, kind: "daemon" }, action: "receipt", payload: receipt });
+  if (!("captured" in captured)) throw new Error("Expected captured receipt");
+  await command({ type: "check.record", key: "syntax", receipt_id: captured.captured, summary: "Syntax checked" });
+  await command({ type: "phase.complete" });
+  await expect(command({ type: "phase.complete", confirmation: "Done" })).rejects.toThrow(/uncommitted changes/);
+  git("add", "."); git("commit", "-qm", "Implement fixture");
+  await command({ type: "phase.complete", confirmation: "Scoped commit created" });
+  await command({ type: "phase.complete", confirmation: "Evidence and commit match" });
+  expect(state.draft?.status).toBe("completed");
+  expect(state.conclusion).toMatchObject({ kind: "development", commit: git("rev-parse", "HEAD") });
+  const testing = await invoke(verifier, "start");
+  expect(testing.chain).toBe("verification");
+  expect(testing.contract.binding.codeVersion).toBe(git("rev-parse", "HEAD"));
+  expect(testing.contract.sources).toEqual(sources);
+  expect(testing.draft?.development).toBeUndefined();
+  expect(await app.invoke({actor:task,action:"selection"})).toEqual({configured:false,chain:"verification"});
+  expect(await app.invoke({actor:verifier,action:"selection"})).toEqual({configured:true,chain:"verification"});
+});
+
+it("rejects a superseded/changed captured check and preserves the original receipt on replay", async () => {
+  await invoke(human, "configure", { expected_revision: 0, agent_id: human.userId, developer_agent_id: task.agentId, implementation_guidance: "Implement fixture", repository_path: repo, sources });
+  let state = await invoke(task, "start");
+  const command = async (value: unknown) => { state = await invoke(task, "command", { expected_sequence: state.draft!.sequence, command: value }); };
+  await command({ type: "phase.complete" }); await command({ type: "acceptance.assess", key: "ac1", evidence: "README.md" }); await command({ type: "phase.complete" });
+  await command({ type: "artifact.put", ref: "development.code-review", content: "summary: Reviewed\nevidence: README.md" }); await command({ type: "phase.complete" });
+  const receipt = { id: "check1", sequence: 1, command: "node --check README.md", cwd: repo, status: "completed", exit_code: 0 };
+  const captured = await app.invoke({ actor: { ...task, kind: "daemon" }, action: "receipt", payload: receipt });
+  if (!("captured" in captured)) throw new Error("Expected receipt");
+  await command({ type: "check.record", key: "syntax", receipt_id: captured.captured, summary: "Fixture check" });
+  await app.invoke({ actor: { ...task, kind: "daemon" }, action: "receipt", payload: { ...receipt, id: "check2", sequence: 2, status: "failed", exit_code: 1 } });
+  await expect(command({ type: "phase.complete" })).rejects.toThrow(/superseded/);
+  await writeFile(join(repo, "README.md"), "Changed after capture\n");
+  expect(await app.invoke({ actor: { ...task, kind: "daemon" }, action: "receipt", payload: receipt })).toEqual(captured);
+  await expect(command({ type: "phase.complete" })).rejects.toThrow(/Code changed after review/);
+  await command({ type: "phase.rewind", to: "review", reason: "Review the changed implementation" });
+  await command({ type: "phase.complete" });
+  await command({ type: "check.record", key: "syntax", receipt_id: captured.captured, summary: "Old observation" });
+  await expect(command({ type: "phase.complete" })).rejects.toThrow(/earlier repository snapshot/);
+  await command({ type: "phase.rewind", to: "implement", reason: "Correct implementation" });
+  expect(state.draft?.development?.checks).toEqual([]);
+  expect(state.draft?.artifacts.some(item => item.ref === "development.code-review")).toBe(false);
 });

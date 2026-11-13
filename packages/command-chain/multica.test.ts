@@ -25,7 +25,7 @@ async function setup() {
     builtins: { "delivery-spec": { acceptsArtifacts: false }, "implementation-evidence": { acceptsArtifacts: true }, "command-verification": { acceptsArtifacts: true } },
     metadataKeys: ["tracking.requirement_card_id"], repositoryAdapters: [],
   };
-  const chain = parseCommandChainDefinition(await readFile(new URL("./fixtures/development.yaml", import.meta.url), "utf8"), profile);
+  const chain = parseCommandChainDefinition(await readFile(new URL("./definitions/development.yaml", import.meta.url), "utf8"), profile);
   const transport = vi.fn<typeof fetch>().mockImplementation(async () => Response.json(wire));
   const client = new MulticaRunClient({ baseUrl: "http://localhost:18729", taskToken: "mat_test_only", fetch: transport });
   const engine = new CommandChainEngine(store, { "delivery-spec": () => ({ errors: [] }) });
