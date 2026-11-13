@@ -28,7 +28,7 @@ beforeEach(async () => {
 afterEach(async () => { app.close(); await rm(directory, { recursive: true, force: true }); });
 const actor = (agentId: string, round: number) => ({ kind: "task" as const, workspaceId: human.workspaceId, issueId: human.issueId, agentId, attemptId: `${agentId}:${round}` });
 async function invoke(owner: ApplicationRequest["actor"], action: ApplicationRequest["action"], payload?: unknown) {
-  const state = await app.invoke({ actor: owner, action, payload }); if (!("draft" in state)) throw new Error("Expected chain state"); return state;
+  const state = await app.invoke({ actor: owner, action, payload }); if (!("draft" in state) || !("rework" in state)) throw new Error("Expected chain state"); return state;
 }
 function configure(max = 3) { return invoke(human, "configure", { expected_revision: 0, agent_id: verifier, developer_agent_id: developer, implementation_guidance: "Implement frozen heading", repository_path: repository, sources, auto_continue: true, max_reworks: max }); }
 const pending = () => app.invoke({ actor: { kind: "coordinator" }, action: "continuations" });

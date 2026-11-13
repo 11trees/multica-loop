@@ -30,6 +30,7 @@ func (h *Handler) invokeEngineering(w http.ResponseWriter, r *http.Request, acti
 			AgentID      string `json:"agent_id"`
 			DeveloperID  string `json:"developer_agent_id"`
 			AnalystID    string `json:"analyst_agent_id"`
+			PlannerID    string `json:"planner_agent_id"`
 			Dependencies []struct {
 				IssueID string `json:"issue_id"`
 			} `json:"dependency_issues"`
@@ -40,6 +41,11 @@ func (h *Handler) invokeEngineering(w http.ResponseWriter, r *http.Request, acti
 		}
 		if _, ok := h.loadAgentForUser(w, r, selection.AgentID); !ok {
 			return
+		}
+		if selection.PlannerID != "" {
+			if _, ok := h.loadAgentForUser(w, r, selection.PlannerID); !ok {
+				return
+			}
 		}
 		if selection.AnalystID != "" {
 			if _, ok := h.loadAgentForUser(w, r, selection.AnalystID); !ok {

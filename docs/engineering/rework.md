@@ -111,6 +111,6 @@ owned fixture metadata; no installed agent CLI or model is executed.
 
 The SQLite transition is separate from native task admission and filesystem
 effects. This does not establish a cross-database transaction, external-effect
-deduplication, or complete failure arbitration. Requirement planning, system arbitration,
+deduplication, or complete failure arbitration. Native unit publication/orchestration, system arbitration,
 final review, remaining chains, other provider receipt adapters, and real
 business/provider acceptance remain required for the full migration.

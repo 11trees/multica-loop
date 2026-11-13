@@ -100,5 +100,5 @@ Remote-daemon clones, cross-host filesystem access, submodules, Git filter/line-
 ending conversion, and simultaneous edits to generated instruction files still
 need acceptance work. The binding/fingerprint checks are observations, not an
 atomic filesystem snapshot or a transaction across PostgreSQL and SQLite. This
-does not finish requirement planning, final review, system arbitration,
+does not finish native unit publication/orchestration, final review, system arbitration,
 other chains, or real-provider delivery acceptance.

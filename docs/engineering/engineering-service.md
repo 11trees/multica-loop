@@ -6,6 +6,8 @@ through the native Multica CLI. Go authenticates each request, projects the huma
 invokes a bundled Node worker over private stdin/stdout. The worker owns frozen
 contracts and drafts in a local SQLite database. It receives no bearer credential,
 JWT signing key, or PostgreSQL credential. There is no additional HTTP listener.
+[Requirement context and planning](requirements.md) use the same host/CLI under
+a distinct frozen issue workflow. Their completed plan is not a delivery pass.
 
 ## Start and configure
 

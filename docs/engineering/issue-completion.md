@@ -20,6 +20,10 @@ its own authorization. Incomplete, failed, dirty, or changed-code states return
 status, content, workflow handoff, or wakeup side effect is published by a
 rejected single-issue write.
 
+A [requirement workflow](requirements.md) cannot complete from a finished context
+or plan. Native unit publication/orchestration and final review remain pending;
+the parent completion call rejects until those delivery gates exist and pass.
+
 ## Covered writers
 
 | Writer | Enforcement |
@@ -50,7 +54,7 @@ item after previous items have committed. No global concurrent-edit or
 cross-database atomicity guarantee is claimed.
 
 This first boundary enforces the migrated development/verification protocol.
-Requirement planning, final review, system arbitration, remote clone
+Native unit publication/orchestration, final review, system arbitration, remote clone
 mapping, and real-provider acceptance still need migration. A process exit or a
 merged PR alone cannot replace the current independent verification verdict.
 

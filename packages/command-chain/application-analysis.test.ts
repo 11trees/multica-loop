@@ -23,7 +23,7 @@ beforeEach(async()=>{
   app=new EngineeringApplication(database,definitionSources[0]!,definitionSources[1],definitionSources[2]);
 });
 afterEach(async()=>{app.close();await rm(directory,{recursive:true,force:true});});
-async function invoke(owner:ApplicationRequest["actor"],action:ApplicationRequest["action"],payload?:unknown){const result=await app.invoke({actor:owner,action,payload});if(!("draft" in result))throw new Error("Expected chain state");return result;}
+async function invoke(owner:ApplicationRequest["actor"],action:ApplicationRequest["action"],payload?:unknown){const result=await app.invoke({actor:owner,action,payload});if(!("draft" in result) || !("rework" in result))throw new Error("Expected chain state");return result;}
 const configure=(extra={})=>invoke(human,"configure",{expected_revision:0,agent_id:verifier,developer_agent_id:developer,analyst_agent_id:analyst,repository_path:repository,sources,unit,auto_continue:true,...extra});
 async function start(owner=actor(analyst)){
   await app.invoke({actor:{...owner,kind:"daemon"},action:"bind",payload:{work_dir:repository,mode:"in_place",overlays:[]}});

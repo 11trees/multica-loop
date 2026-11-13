@@ -26,7 +26,7 @@ afterEach(async () => { app.close(); await rm(dir, { recursive: true, force: tru
 async function invoke(actor: ApplicationRequest["actor"], action: Exclude<ApplicationRequest["action"], "selection">, payload?: unknown) {
   if (action === "start" && actor.kind === "task") await app.invoke({ actor: { ...actor, kind: "daemon" }, action: "bind", payload: { work_dir: repo, mode: "in_place", overlays: [] } });
   const result = await app.invoke({ actor, action, payload });
-  if (!("draft" in result)) throw new Error("Expected application state");
+  if (!("draft" in result) || !("rework" in result)) throw new Error("Expected application state");
   return result;
 }
 function configure() { return invoke(human, "configure", { expected_revision: 0, agent_id: task.agentId, repository_path: repo, sources }); }

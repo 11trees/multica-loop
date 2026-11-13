@@ -29,3 +29,6 @@ export type { DevelopmentContract, CommandReceipt, DevelopmentRuntime } from "./
 
 export { createAnalysisHandlers, compileAnalysisConclusion, analysisContractSchema, analysisProfile } from "./analysis";
 export type { AnalysisContract } from "./analysis";
+
+export { createContextHandlers, compileContextConclusion, contextContractSchema, contextProfile } from "./context";
+export { createPlanningHandlers, compilePlanningConclusion, planningContractSchema, planningProfile } from "./planning";

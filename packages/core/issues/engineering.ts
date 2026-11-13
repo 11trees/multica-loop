@@ -1,8 +1,8 @@
 import { queryOptions, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { issueKeys } from "./queries";
-import type { EngineeringCheckpoint, EngineeringConfiguration } from "./engineering-schema";
-export type { EngineeringOverview, EngineeringCheckpoint, EngineeringConfiguration, EngineeringDeliveryUnit } from "./engineering-schema";
+import type { EngineeringCheckpoint, RequirementConfiguration, EngineeringConfiguration } from "./engineering-schema";
+export type { EngineeringOverview, RequirementConfiguration, EngineeringCheckpoint, EngineeringConfiguration, EngineeringDeliveryUnit } from "./engineering-schema";
 
 export function engineeringOverviewOptions(workspaceId: string, issueId: string) {
   return queryOptions({
@@ -19,8 +19,9 @@ export function useEngineeringActions(workspaceId: string, issueId: string) {
     client.invalidateQueries({ queryKey: issueKeys.tasks(issueId) }),
   ]);
   const configure = useMutation({ mutationFn: (input: EngineeringConfiguration) => api.configureEngineering(issueId, input), onSettled: refresh });
+  const configureRequirement=useMutation({mutationFn:(input:RequirementConfiguration)=>api.configureRequirementEngineering(issueId,input),onSettled:refresh});
   const answer = useMutation({ mutationFn: (input: { expectedSequence: number; requestId: string; answer: string; selectedOption?:string }) => api.answerEngineering(issueId, input), onSettled: refresh });
   const abandon = useMutation({ mutationFn: (input: { expectedSequence: number; reason: string }) => api.abandonEngineering(issueId, input), onSettled: refresh });
   const run = useMutation({ mutationFn: (input: EngineeringCheckpoint) => api.runEngineering(issueId, input), onSettled: refresh });
-  return { configure, answer, abandon, run };
+  return { configure, configureRequirement, answer, abandon, run };
 }

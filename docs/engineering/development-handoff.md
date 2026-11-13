@@ -103,7 +103,7 @@ Git commit, and an independent Chromium observation of the committed HTML page.
 It passed with a recorded screenshot. Its runtime report is supplied by the
 fixture control plane; actual provider/model execution remains unverified.
 
-Development plus verification is not the full migration: requirement context,
-requirement planning, final review, other workflow paths, system arbitration,
+Development plus verification is not the full migration: native unit publication/orchestration,
+final review, other workflow paths, system arbitration,
 remote repository mapping, final-review integration, and cross-database
 handoff acceptance remain.
