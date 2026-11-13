@@ -4,7 +4,7 @@ import type { CommandChainProfile } from "./definition";
 import { draftSchema, PhaseValidationError, type BuiltinHandlers, type ChainDraft } from "./runtime";
 
 const text=z.string().trim().min(1);
-const subject=z.strictObject({key:text.max(240),kind:z.enum(["intent","target","impact","acceptance","delivery_unit","feedback_acceptance"]),content:text,sourceRef:text.optional(),contractRef:text.optional(),storyIndex:text.optional(),requiredEvidenceRefs:z.array(text).min(1)});
+const subject=z.strictObject({key:text.max(240),kind:z.enum(["intent","target","expected","impact","acceptance","delivery_unit","feedback_acceptance"]),content:text,sourceRef:text.optional(),contractRef:text.optional(),storyIndex:text.optional(),requiredEvidenceRefs:z.array(text).min(1)});
 const evidence=z.strictObject({ref:text.max(240),kind:text,status:text,revision:text,fingerprint:z.string().regex(/^[a-f0-9]{64}$/),independentTest:z.boolean(),content:text});
 export const reviewContractSchema=z.strictObject({binding:draftSchema.shape.binding,generation:z.number().int().positive(),subjects:z.array(subject).min(1),evidence:z.array(evidence).min(1)})
   .superRefine((value,ctx)=>{

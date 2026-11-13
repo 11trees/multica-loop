@@ -26,55 +26,60 @@ func (s *engineeringCoordinatorFixture) Call(_ context.Context, input any) (json
 }
 
 func TestEngineeringContinuationWaitsForPriorRunAndDoesNotRepeatTerminalDispatch(t *testing.T) {
-	runtimeID := dbfx.Runtime(t, "Engineering continuation runtime", testutil.Cols{"runtime_mode": "local", "daemon_id": "engineering-continuation"})
-	agentID := dbfx.Agent(t, "Engineering continuation verifier", runtimeID)
-	projectID := dbfx.Project(t, "Engineering continuation project")
-	issueID := dbfx.Issue(t, "Engineering continuation issue", testutil.Cols{"project_id": projectID, "status": "todo"})
-	dbfx.Insert(t, "project_resource", testutil.Cols{"project_id": projectID, "workspace_id": testWorkspaceID, "resource_type": "local_directory", "resource_ref": json.RawMessage(`{"local_path":"/fixture/repo","daemon_id":"engineering-continuation","execution_mode":"in_place"}`)})
-	priorTask := dbfx.Task(t, agentID, testutil.Cols{"runtime_id": runtimeID, "issue_id": issueID, "status": "running"})
-	targetID := dbfx.Task(t, agentID, testutil.Cols{"runtime_id": runtimeID, "issue_id": issueID, "status": "completed"})
-	dbfx.Exec(t, `DELETE FROM agent_task_queue WHERE id=$1`, targetID)
-	h := *testHandler
-	worker := &engineeringCoordinatorFixture{item: engineeringContinuation{WorkspaceID: testWorkspaceID, IssueID: issueID, AgentID: agentID, UserID: testUserID, TaskID: targetID, ExpectedRevision: 1, ExpectedSequence: 8, Reason: "human_answers"}}
-	h.EngineeringWorker = worker
-	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM agent_task_queue WHERE issue_id=$1`, issueID) })
-	if err := h.ReconcileEngineering(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if worker.prepares != 0 {
-		t.Fatal("an active prior task was bypassed")
-	}
-	dbfx.Exec(t, `UPDATE agent_task_queue SET status='deferred' WHERE id=$1`, priorTask)
-	if err := h.ReconcileEngineering(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if worker.prepares != 0 {
-		t.Fatal("a deferred prior task was bypassed")
-	}
-	dbfx.Exec(t, `UPDATE agent_task_queue SET status='completed',completed_at=now() WHERE id=$1`, priorTask)
-	if err := h.ReconcileEngineering(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	task, err := h.Queries.GetAgentTask(context.Background(), parseUUID(targetID))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if task.Status != "queued" || uuidToString(task.AgentID) != agentID || uuidToString(task.OriginatorUserID) != testUserID {
-		t.Fatalf("wrong continuation: %+v", task)
-	}
-	if worker.prepares != 1 {
-		t.Fatal("continuation was not revalidated")
-	}
-	dbfx.Exec(t, `UPDATE agent_task_queue SET status='failed',completed_at=now() WHERE id=$1`, targetID)
-	for range 2 {
-		if err := h.ReconcileEngineering(context.Background()); err != nil {
-			t.Fatal(err)
-		}
-	}
-	var count int
-	dbfx.QueryRow(t, `SELECT count(*) FROM agent_task_queue WHERE issue_id=$1`, issueID).Scan(&count)
-	if count != 2 || worker.prepares != 1 {
-		t.Fatalf("terminal continuation retried automatically: tasks=%d prepares=%d", count, worker.prepares)
+	for _, reason := range []string{"human_answers", "reproduction_handoff"} {
+		t.Run(reason, func(t *testing.T) {
+			runtimeID := dbfx.Runtime(t, "Engineering continuation runtime", testutil.Cols{"runtime_mode": "local", "daemon_id": "engineering-continuation"})
+			agentID := dbfx.Agent(t, "Engineering continuation verifier", runtimeID)
+			projectID := dbfx.Project(t, "Engineering continuation project")
+			issueID := dbfx.Issue(t, "Engineering continuation issue", testutil.Cols{"project_id": projectID, "status": "todo"})
+			dbfx.Insert(t, "project_resource", testutil.Cols{"project_id": projectID, "workspace_id": testWorkspaceID, "resource_type": "local_directory", "resource_ref": json.RawMessage(`{"local_path":"/fixture/repo","daemon_id":"engineering-continuation","execution_mode":"in_place"}`)})
+			priorTask := dbfx.Task(t, agentID, testutil.Cols{"runtime_id": runtimeID, "issue_id": issueID, "status": "running"})
+			targetID := dbfx.Task(t, agentID, testutil.Cols{"runtime_id": runtimeID, "issue_id": issueID, "status": "completed"})
+			dbfx.Exec(t, `DELETE FROM agent_task_queue WHERE id=$1`, targetID)
+			h := *testHandler
+			worker := &engineeringCoordinatorFixture{item: engineeringContinuation{WorkspaceID: testWorkspaceID, IssueID: issueID, AgentID: agentID, UserID: testUserID, TaskID: targetID, ExpectedRevision: 1, ExpectedSequence: 8, Reason: reason}}
+			h.EngineeringWorker = worker
+			t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM agent_task_queue WHERE issue_id=$1`, issueID) })
+			if err := h.ReconcileEngineering(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if worker.prepares != 0 {
+				t.Fatal("an active prior task was bypassed")
+			}
+			dbfx.Exec(t, `UPDATE agent_task_queue SET status='deferred' WHERE id=$1`, priorTask)
+			if err := h.ReconcileEngineering(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if worker.prepares != 0 {
+				t.Fatal("a deferred prior task was bypassed")
+			}
+			dbfx.Exec(t, `UPDATE agent_task_queue SET status='completed',completed_at=now() WHERE id=$1`, priorTask)
+			if err := h.ReconcileEngineering(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			task, err := h.Queries.GetAgentTask(context.Background(), parseUUID(targetID))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if task.Status != "queued" || uuidToString(task.AgentID) != agentID || uuidToString(task.OriginatorUserID) != testUserID {
+				t.Fatalf("wrong continuation: %+v", task)
+			}
+			if worker.prepares != 1 {
+				t.Fatal("continuation was not revalidated")
+			}
+			dbfx.Exec(t, `UPDATE agent_task_queue SET status='failed',completed_at=now() WHERE id=$1`, targetID)
+			for range 2 {
+				if err := h.ReconcileEngineering(context.Background()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var count int
+			dbfx.QueryRow(t, `SELECT count(*) FROM agent_task_queue WHERE issue_id=$1`, issueID).Scan(&count)
+			if count != 2 || worker.prepares != 1 {
+				t.Fatalf("terminal continuation retried automatically: tasks=%d prepares=%d", count, worker.prepares)
+			}
+
+		})
 	}
 }
 

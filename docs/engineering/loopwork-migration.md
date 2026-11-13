@@ -76,7 +76,7 @@ must be designed together rather than assuming a per-issue workflow choice.
 4. **A complete requirement.** Add requirement context, planning, delivery
    analysis, dependencies, and final review. Exit: a multi-unit requirement
    reaches an auditable final result with only necessary human intervention.
-5. **Additional paths.** Migrate reproduction, feedback additions, business
+5. **Additional paths.** Complete Bug Fix acceptance, feedback additions, business
    analysis, and end-to-end flows. Restore parallel analysis only after serial
    execution and resource ownership are verified.
 6. **Cutover.** Default new work to Multica, drain old work on LoopWork, keep
@@ -121,6 +121,9 @@ connected; other providers and remote clone mapping remain pending. See
 structured decisions and authenticated human option choices, answer review, and
 frozen-spec handoff to development. The original acceptances remain unchanged;
 analysis-derived guardrail/focus sources are appended with draft provenance.
+[Readonly bug reproduction](reproduction.md) now separates missing conditions from
+reproduced observations and freezes its evidence before planning. Real-provider
+Bug Fix acceptance remains pending.
 [Requirement context and planning](requirements.md) now publish stable, versioned
 acceptance entities and compile source-covered ordered units on the requirement
 issue. They use native context/planner runs and authenticated human decisions.

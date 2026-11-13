@@ -1867,6 +1867,11 @@
     "copy_failed": "URL을 복사할 수 없습니다"
   },
   "engineering": {
+    "reproduction_agent": "재현 에이전트",
+    "reproduction": "버그 재현",
+    "phase_investigation": "재현 조사",
+    "reproduction_evidence": "재현 증거",
+    "not_reproduced_notice": "기록된 조건에서 재현되지 않았습니다. 전달 계획은 계속 차단됩니다.",
     "publish_units": "단위 게시",
     "retry_publication": "게시 재시도",
     "start_final_review": "최종 검토 시작",

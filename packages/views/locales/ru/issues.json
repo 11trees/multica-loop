@@ -2098,6 +2098,11 @@
     "copy_failed": "Не удалось скопировать URL"
   },
   "engineering": {
+    "reproduction_agent": "Агент воспроизведения",
+    "reproduction": "Воспроизведение ошибки",
+    "phase_investigation": "Исследование воспроизведения",
+    "reproduction_evidence": "Доказательства воспроизведения",
+    "not_reproduced_notice": "Ошибка не воспроизведена в записанных условиях. Планирование остаётся заблокированным.",
     "publish_units": "Опубликовать единицы",
     "retry_publication": "Повторить публикацию",
     "start_final_review": "Начать итоговую проверку",

@@ -21,6 +21,8 @@ accepted commit must be its ancestor. In-place review requires that exact clean
 HEAD; worktree review uses a runtime binding at that commit. Scope contains:
 
 - The original business intent, targets and resolved business impacts.
+- Reliable Existing Expected for bug requirements, with reproduction history
+  retained as supporting facts rather than delivered-commit Test evidence.
 - Permanent requirement acceptances with their exact revisions and oracles.
 - Every delivered unit's frozen meaning and resolved analysis contract.
 - Actual passed independent verification conclusions, including scenario/result

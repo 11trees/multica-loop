@@ -47,6 +47,7 @@ func TestEngineeringClaimInstructions(t *testing.T) {
 		{"configured", json.RawMessage(`{"configured":true,"chain":"development","repository_path":"/fixture/repository","code_version":"0123456789abcdef0123456789abcdef01234567"}`), nil, true, false},
 		{"context", json.RawMessage(`{"configured":true,"chain":"context","repository_path":"/fixture/repository","code_version":"0123456789abcdef0123456789abcdef01234567"}`), nil, true, false},
 		{"planning", json.RawMessage(`{"configured":true,"chain":"planning","repository_path":"/fixture/repository","code_version":"0123456789abcdef0123456789abcdef01234567"}`), nil, true, false},
+		{"reproduction", json.RawMessage(`{"configured":true,"chain":"reproduction","repository_path":"/fixture/repository","code_version":"0123456789abcdef0123456789abcdef01234567"}`), nil, true, false},
 		{"analysis", json.RawMessage(`{"configured":true,"chain":"analysis","repository_path":"/fixture/repository","code_version":"0123456789abcdef0123456789abcdef01234567"}`), nil, true, false},
 		{"unknown role", json.RawMessage(`{"configured":true,"chain":"unknown","repository_path":"/fixture/repository","code_version":"0123456789abcdef0123456789abcdef01234567"}`), nil, false, true},
 		{"unregistered", json.RawMessage(`{"configured":false}`), nil, false, false},
@@ -91,7 +92,7 @@ func TestEngineeringClaimInstructions(t *testing.T) {
 				t.Fatal("configured role did not receive command-chain instructions")
 			}
 			expectedChain := "development"
-			if tc.name == "analysis" || tc.name == "context" || tc.name == "planning" {
+			if tc.name == "analysis" || tc.name == "context" || tc.name == "planning" || tc.name == "reproduction" {
 				expectedChain = tc.name
 			}
 			if tc.configured && response.EngineeringChain != expectedChain {
@@ -185,5 +186,19 @@ func TestEngineeringConfigureChecksPlannerBeforeWorker(t *testing.T) {
 	testutil.Call(t, h.ConfigureEngineeringVerification, request).Want(http.StatusNotFound)
 	if len(worker.inputs) != 0 {
 		t.Fatal("unchecked planner reached worker")
+	}
+}
+
+func TestEngineeringConfigureChecksReproducerBeforeWorker(t *testing.T) {
+	runtimeID := dbfx.Runtime(t, "Bug reproduction runtime")
+	agentID := dbfx.Agent(t, "Bug context agent", runtimeID)
+	issueID := dbfx.Issue(t, "Bug reproduction issue")
+	h := *testHandler
+	worker := &engineeringRecorder{}
+	h.EngineeringWorker = worker
+	request := withURLParam(newRequest(http.MethodPost, "/api/issues/"+issueID+"/engineering/verification", map[string]any{"kind": "requirement", "item_kind": "bug", "agent_id": agentID, "planner_agent_id": agentID, "reproduction_agent_id": "019a0000-0000-7000-8000-000000000099"}), "id", issueID)
+	testutil.Call(t, h.ConfigureEngineeringVerification, request).Want(http.StatusNotFound)
+	if len(worker.inputs) != 0 {
+		t.Fatal("unchecked reproducer reached worker")
 	}
 }

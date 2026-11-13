@@ -61,6 +61,7 @@ export const draftSchema = z.strictObject({
   events: z.array(event),
   decisions: z.array(decisionStateSchema).max(200).optional(),
   acceptances: z.array(acceptanceDraftSchema).max(200).optional(),
+  reproduction: z.strictObject({history:z.array(z.strictObject({sequence,attemptId:text,artifacts:z.array(artifactItem)}))}).optional(),
   development: z.strictObject({
     reviewFingerprint: text.optional(),
     claims: z.array(z.strictObject({ key: text, evidence: text, attemptId: text })),
@@ -108,6 +109,7 @@ export type BuiltinHandler = {
   readonly rewind?: (draft: ChainDraft, target: string) => void;
   readonly finalize?: (draft: Readonly<ChainDraft>) => readonly string[];
   readonly beforeComplete?: (draft: ChainDraft) => void;
+  readonly beforePause?: (draft: Readonly<ChainDraft>) => void;
 };
 export type BuiltinHandlers = Readonly<Record<string, BuiltinHandler>>;
 
@@ -336,6 +338,7 @@ export class CommandChainEngine {
     const phase = currentPhase(draft);
     const handler = phase.type === "builtin" && Object.hasOwn(this.builtins, phase.builtin) ? this.builtins[phase.builtin] : undefined;
     if (handler?.runtimeInputs && pendingRuntimeInputs(draft).some(request => request.phase === draft.phase)) {
+      handler.beforePause?.(draft);
       draft.status = "waiting_for_answers";
       return;
     }

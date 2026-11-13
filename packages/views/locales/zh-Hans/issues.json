@@ -1867,6 +1867,11 @@
     "copy_failed": "无法复制地址"
   },
   "engineering": {
+    "reproduction_agent": "复现智能体",
+    "reproduction": "问题复现",
+    "phase_investigation": "复现调查",
+    "reproduction_evidence": "复现证据",
+    "not_reproduced_notice": "在已记录条件下尚未复现，暂不能进入交付规划。",
     "publish_units": "发布单元",
     "retry_publication": "重试发布",
     "start_final_review": "开始终审",

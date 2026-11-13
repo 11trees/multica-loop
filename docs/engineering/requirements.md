@@ -264,3 +264,7 @@ interface.
 SQLite publication, PostgreSQL task admission and filesystem observations are
 separate boundaries. No cross-database transaction or global exactly-once
 execution is established by these checks.
+
+Bug Fix inserts [readonly reproduction](reproduction.md) between completed context
+and planning. Only a reproduced conclusion may populate the planner; original
+acceptance oracles remain unchanged.

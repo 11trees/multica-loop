@@ -77,3 +77,7 @@ The [bounded implementation rework](rework.md) path is connected. [Managed-unit 
 remaining command chains, other provider receipts, remote repository mapping,
 and real delivered-business acceptance remain pending. A task process completing
 is still insufficient for the synchronous issue completion gate.
+
+Bug context also hands off to the frozen [reproducer](reproduction.md). The same
+checkpoint scheduler resumes authenticated fact answers and queues planning only
+after reproduced evidence settles; prior native runs must finish first.

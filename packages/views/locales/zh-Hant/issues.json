@@ -1867,6 +1867,11 @@
     "copy_failed": "無法複製位址"
   },
   "engineering": {
+    "reproduction_agent": "重現 AI 代理",
+    "reproduction": "問題重現",
+    "phase_investigation": "重現調查",
+    "reproduction_evidence": "重現證據",
+    "not_reproduced_notice": "在已記錄的條件下尚未重現，暫時無法進入交付規劃。",
     "publish_units": "發布單元",
     "retry_publication": "重試發布",
     "start_final_review": "開始終審",

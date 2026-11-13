@@ -1942,6 +1942,11 @@
     "copy_failed": "No se pudo copiar la URL"
   },
   "engineering": {
+    "reproduction_agent": "Agente de reproducción",
+    "reproduction": "Reproducción del fallo",
+    "phase_investigation": "Investigar la reproducción",
+    "reproduction_evidence": "Evidencias de reproducción",
+    "not_reproduced_notice": "No se ha reproducido con las condiciones registradas. La planificación sigue bloqueada.",
     "publish_units": "Publicar unidades",
     "retry_publication": "Reintentar publicación",
     "start_final_review": "Iniciar revisión final",

@@ -27,11 +27,12 @@ func (h *Handler) invokeEngineering(w http.ResponseWriter, r *http.Request, acti
 	}
 	if action == "configure" {
 		var selection struct {
-			AgentID      string `json:"agent_id"`
-			DeveloperID  string `json:"developer_agent_id"`
-			AnalystID    string `json:"analyst_agent_id"`
-			PlannerID    string `json:"planner_agent_id"`
-			Dependencies []struct {
+			AgentID        string `json:"agent_id"`
+			DeveloperID    string `json:"developer_agent_id"`
+			AnalystID      string `json:"analyst_agent_id"`
+			PlannerID      string `json:"planner_agent_id"`
+			ReproductionID string `json:"reproduction_agent_id"`
+			Dependencies   []struct {
 				IssueID string `json:"issue_id"`
 			} `json:"dependency_issues"`
 		}
@@ -44,6 +45,11 @@ func (h *Handler) invokeEngineering(w http.ResponseWriter, r *http.Request, acti
 		}
 		if selection.PlannerID != "" {
 			if _, ok := h.loadAgentForUser(w, r, selection.PlannerID); !ok {
+				return
+			}
+		}
+		if selection.ReproductionID != "" {
+			if _, ok := h.loadAgentForUser(w, r, selection.ReproductionID); !ok {
 				return
 			}
 		}

@@ -15,19 +15,20 @@ import { reviewGapSources, compileReviewConclusion, createReviewHandlers, review
 import type { compileAnalysisConclusion } from "./analysis";
 import type { compileVerificationConclusion } from "./verification";
 import { artifactBlock } from "./artifacts";
+import { compileReproductionConclusion, reproductionState, createReproductionHandlers, reproductionContractSchema, reproductionProfile } from "./reproduction";
 
 const text=z.string().trim().min(1),sequence=z.number().int().nonnegative();
-const configuration=z.strictObject({kind:z.literal("requirement"),expected_revision:sequence,agent_id:z.uuid(),planner_agent_id:z.uuid(),repository_path:text,input:text.max(40000),item_kind:z.enum(["requirement","bug"]).default("requirement"),decision_mode:decisionModeSchema.default("balanced"),auto_continue:z.boolean().default(false)});
+const configuration=z.strictObject({kind:z.literal("requirement"),expected_revision:sequence,agent_id:z.uuid(),planner_agent_id:z.uuid(),reproduction_agent_id:z.uuid().optional(),repository_path:text,input:text.max(40000),item_kind:z.enum(["requirement","bug"]).default("requirement"),decision_mode:decisionModeSchema.default("balanced"),auto_continue:z.boolean().default(false)});
 const acceptanceSchema=z.strictObject({id:z.uuid(),key:text,scope:z.literal("requirement"),statement:text,oracle:text,sourceRef:text,revision:z.number().int().positive(),active:z.boolean()});
 const reviewUnitProof=z.strictObject({issue_id:z.uuid(),contract_hash:text,plan_draft_id:z.uuid(),parent_revision:z.number().int().positive(),unit_key:text});
 const reviewRecordSchema=z.strictObject({agentId:z.uuid(),userId:z.uuid(),draftId:z.uuid(),source:text,contract:reviewContractSchema,units:z.array(reviewUnitProof).min(1),accepted:z.record(z.string(),verificationContractSchema.shape.binding),settled:z.boolean().default(false),reportHash:text.optional(),acknowledgement:z.strictObject({userId:z.uuid(),reportHash:text,sequence:sequence,acknowledgedAt:z.iso.datetime()}).optional()});
 type DeliveryEvidence={binding:z.infer<typeof verificationContractSchema.shape.binding>;analysis:ReturnType<typeof compileAnalysisConclusion>;verification:ReturnType<typeof compileVerificationConclusion>};
-const recordSchema=z.strictObject({workspaceId:z.uuid(),issueId:z.uuid(),createdBy:z.uuid(),repositoryPath:text,agentId:z.uuid(),plannerAgentId:z.uuid(),autoContinue:z.boolean(),contextDraftId:z.uuid(),planDraftId:z.uuid(),contextSource:text,planningSource:text,contextContract:contextContractSchema,contextHandoff:z.boolean(),planningContract:planningContractSchema.optional(),acceptances:z.array(acceptanceSchema).default([]),publicationRequestedBy:z.uuid().optional(),deliveryPolicy:z.strictObject({analystId:z.uuid(),developerId:z.uuid(),verifierId:z.uuid(),maxReworks:sequence.max(10),mode:z.enum(["in_place","worktree"]),userId:z.uuid()}).optional(),accepted:z.record(z.string(),verificationContractSchema.shape.binding).default({}),reviews:z.array(reviewRecordSchema).default([])});
+const recordSchema=z.strictObject({workspaceId:z.uuid(),issueId:z.uuid(),createdBy:z.uuid(),repositoryPath:text,agentId:z.uuid(),plannerAgentId:z.uuid(),autoContinue:z.boolean(),contextDraftId:z.uuid(),planDraftId:z.uuid(),contextSource:text,planningSource:text,contextContract:contextContractSchema,contextHandoff:z.boolean(),planningContract:planningContractSchema.optional(),reproduction:z.strictObject({agentId:z.uuid(),draftId:z.uuid(),source:text,contract:reproductionContractSchema.optional(),handoff:z.boolean()}).optional(),acceptances:z.array(acceptanceSchema).default([]),publicationRequestedBy:z.uuid().optional(),deliveryPolicy:z.strictObject({analystId:z.uuid(),developerId:z.uuid(),verifierId:z.uuid(),maxReworks:sequence.max(10),mode:z.enum(["in_place","worktree"]),userId:z.uuid()}).optional(),accepted:z.record(z.string(),verificationContractSchema.shape.binding).default({}),reviews:z.array(reviewRecordSchema).default([])});
 type Record=z.infer<typeof recordSchema>;
 type ReviewRecord=z.infer<typeof reviewRecordSchema>;
 const managedUnitSchema=z.strictObject({workspaceId:z.uuid(),issueId:z.uuid(),parentIssueId:z.uuid(),parentRevision:z.number().int().positive(),planDraftId:z.uuid(),planSequence:sequence,unit:deliveryUnitSchema,sources:verificationContractSchema.shape.sources,contractHash:text,published:z.boolean()});
 const executionSchema=z.strictObject({repositoryPath:text,overlays:z.array(z.strictObject({path:text,hash:text,executable:z.boolean(),originalHash:text.nullable(),originalExecutable:z.boolean()}))});
-export type RequirementDefinitions={context:string;planning:string;review?:string};
+export type RequirementDefinitions={context:string;planning:string;review?:string;reproduction?:string};
 
 function stableId(value:string){const hash=createHash("sha256").update(value).digest("hex");return `${hash.slice(0,8)}-${hash.slice(8,12)}-5${hash.slice(13,16)}-a${hash.slice(17,20)}-${hash.slice(20,32)}`;}
 
@@ -38,7 +39,7 @@ export class RequirementApplication {
     db.exec("CREATE TABLE IF NOT EXISTS requirement_acceptance (workspace_id TEXT NOT NULL,issue_id TEXT NOT NULL,acceptance_key TEXT NOT NULL,revision INTEGER NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(workspace_id,issue_id,acceptance_key,revision))");
     db.exec("CREATE TABLE IF NOT EXISTS requirement_execution (workspace_id TEXT NOT NULL,issue_id TEXT NOT NULL,revision INTEGER NOT NULL,agent_id TEXT NOT NULL,attempt_id TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(workspace_id,issue_id,revision,agent_id,attempt_id))");
     db.exec("CREATE TABLE IF NOT EXISTS requirement_unit (workspace_id TEXT NOT NULL,issue_id TEXT NOT NULL,parent_issue_id TEXT NOT NULL,unit_index INTEGER NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(workspace_id,issue_id))");
-    if(definitions){parseCommandChainDefinition(definitions.context,contextProfile);parseCommandChainDefinition(definitions.planning,planningProfile);if(definitions.review)parseCommandChainDefinition(definitions.review,reviewProfile);}
+    if(definitions){parseCommandChainDefinition(definitions.context,contextProfile);parseCommandChainDefinition(definitions.planning,planningProfile);if(definitions.reproduction)parseCommandChainDefinition(definitions.reproduction,reproductionProfile);if(definitions.review)parseCommandChainDefinition(definitions.review,reviewProfile);}
   }
   current(workspaceId:string,issueId:string){const row=this.db.prepare("SELECT payload FROM requirement_contract WHERE workspace_id=? AND issue_id=? ORDER BY revision DESC LIMIT 1").get(workspaceId,issueId);return row ? recordSchema.parse(JSON.parse(String(row.payload))) : undefined;}
   managedUnit(workspaceId:string,issueId:string){const row=this.db.prepare("SELECT payload FROM requirement_unit WHERE workspace_id=? AND issue_id=?").get(workspaceId,issueId);return row ? managedUnitSchema.parse(JSON.parse(String(row.payload))) : undefined;}
@@ -83,6 +84,7 @@ export class RequirementApplication {
     };
     const contextDraft=await this.drafts.read(record.contextDraftId);if(!contextDraft)throw new Error("Requirement context is missing");
     const context=compileContextConclusion(contextDraft,record.contextContract);add(`REQUIREMENT_CONTEXT:${contextDraft.id}`,"requirement-context",record.contextContract.binding.revision,context);
+    if(record.reproduction?.handoff){const draft=await this.drafts.read(record.reproduction.draftId);if(!draft)throw new Error("Reproduction evidence is missing");await this.validateReproduction(record);add(`REPRODUCTION:${draft.id}`,"reproduction",draft.binding.revision,compileReproductionConclusion(draft,record.reproduction.contract!));}
     for(const item of units){
       const value=await this.deliveryEvidence(record.workspaceId,item.issueId);
       if(JSON.stringify(value.binding) !== JSON.stringify(record.accepted[item.unit.key]))throw new DraftConflictError("Accepted unit verification changed before requirement review");
@@ -92,7 +94,7 @@ export class RequirementApplication {
     for(const review of record.reviews.filter(item=>item.contract.generation<beforeGeneration)){const draft=await this.drafts.read(review.draftId);if(draft?.status === "completed")add(`REVIEW:${draft.id}:r${review.contract.generation}`,"review-history",review.contract.generation,compileReviewConclusion(draft,review.contract));}
     const all=units.map(item=>proofs.get(item.unit.key)!);
     const subjects:ReviewContract["subjects"]=[{key:`REQUIREMENT_CONTEXT:${contextDraft.id}:intent`,kind:"intent",content:context.intent,sourceRef:`REQUIREMENT_CONTEXT:${contextDraft.id}:intent`,requiredEvidenceRefs:all}];
-    for(const item of context.assertions.filter(item=>item.perspective === "target"))subjects.push({key:`REQUIREMENT_CONTEXT:${contextDraft.id}:assertion:${item.key}`,kind:"target",content:item.statement,sourceRef:item.source,requiredEvidenceRefs:all});
+    for(const item of context.assertions.filter(item=>item.perspective === "target" || record.contextContract.kind === "bug" && item.perspective === "expected" && !["inferred","conflicted"].includes(item.evidence)))subjects.push({key:`REQUIREMENT_CONTEXT:${contextDraft.id}:assertion:${item.key}`,kind:item.perspective === "expected" ? "expected" : "target",content:item.statement,sourceRef:item.source,requiredEvidenceRefs:all});
     for(const item of context.impacts)subjects.push({key:`REQUIREMENT_CONTEXT:${contextDraft.id}:impact:${item.key}`,kind:"impact",content:`[${item.disposition}] ${item.statement}\n${item.rationale}`,sourceRef:item.source,requiredEvidenceRefs:all});
     for(const acceptance of record.acceptances){
       const ref=`ACCEPTANCE:${acceptance.id}:r${acceptance.revision}`,relevant=units.filter(item=>item.sources.some(source=>source.sourceRef === ref));
@@ -109,11 +111,11 @@ export class RequirementApplication {
     const expected=reviewContractSchema.parse({...review.contract,subjects:facts.subjects,evidence:facts.evidence});
     if(JSON.stringify(expected.subjects) !== JSON.stringify(review.contract.subjects) || JSON.stringify(expected.evidence) !== JSON.stringify(review.contract.evidence) || JSON.stringify(facts.units) !== JSON.stringify(review.units) || facts.codeVersion !== review.contract.binding.codeVersion || JSON.stringify(record.accepted) !== JSON.stringify(review.accepted))throw new DraftConflictError("Frozen requirement review facts or accepted versions changed");
   }
-  private reviewExecution(record:Record,review:ReviewRecord,draft:ChainDraft){
+  private readonlyExecution(record:Record,review:{agentId:string;contract:{binding:ChainDraft["binding"]}},draft:ChainDraft){
     const row=this.db.prepare("SELECT payload FROM requirement_execution WHERE workspace_id=? AND issue_id=? AND revision=? AND agent_id=? AND attempt_id=?").get(record.workspaceId,record.issueId,record.contextContract.binding.revision,review.agentId,draft.attemptId);
-    if(!row)throw new Error("Review runtime repository is unavailable");
+    if(!row)throw new Error("Read-only requirement runtime repository is unavailable");
     const execution=executionSchema.parse(JSON.parse(String(row.payload))),code=repositorySnapshot(execution.repositoryPath,true,execution.overlays);
-    if(code.codeVersion !== review.contract.binding.codeVersion)throw new DraftConflictError("Final review repository changed from its frozen commit");
+    if(code.codeVersion !== review.contract.binding.codeVersion)throw new DraftConflictError("Read-only requirement repository changed from its frozen commit");
     return execution;
   }
   private async configureReview(record:Record,request:ApplicationRequest){
@@ -137,7 +139,7 @@ export class RequirementApplication {
   }
   private async settleReview(record:Record,draft:ChainDraft){
     const review=record.reviews.at(-1)!;if(review.settled)return;
-    await this.validateReview(record,review);this.reviewExecution(record,review,draft);
+    await this.validateReview(record,review);this.readonlyExecution(record,review,draft);
     const conclusion=compileReviewConclusion(draft,review.contract),existing=this.publication(record).units;
     const ordered:typeof conclusion.units=[];
     while(ordered.length<conclusion.units.length){const next=conclusion.units.find(item=>!ordered.includes(item) && item.dependsOn.every(key=>ordered.some(unit=>unit.key === key)));if(!next)throw new Error("Review forward units cannot be ordered");ordered.push(next);}
@@ -162,7 +164,7 @@ export class RequirementApplication {
   private async reviewCompletion(record:Record){
     const review=record.reviews.at(-1);if(!review)throw new DraftConflictError("Requirement delivery and final review must complete; a context or plan is not delivered work");
     await this.validateReview(record,review);const draft=await this.drafts.read(review.draftId);if(!draft)throw new DraftConflictError("Requirement final review is incomplete");
-    this.reviewExecution(record,review,draft);const result=compileReviewConclusion(draft,review.contract);
+    this.readonlyExecution(record,review,draft);const result=compileReviewConclusion(draft,review.contract);
     if(result.verdict !== "report_ready" || !review.settled || !review.reportHash)throw new DraftConflictError("Requirement final review has unresolved closure gaps");
     return {review,draft,result};
   }
@@ -176,6 +178,7 @@ export class RequirementApplication {
   private async publish(record:Record,request:ApplicationRequest){
     if(request.actor.kind !== "human")throw new Error("Only a human can publish planned delivery units");
     const expected=z.strictObject({expected_revision:sequence,expected_sequence:sequence}).parse(request.payload),draft=await this.drafts.read(record.planDraftId);
+    if(record.contextContract.kind === "bug" && !record.reproduction?.handoff)throw new Error("Reproduce the bug before delivery publication");
     if(expected.expected_revision !== record.contextContract.binding.revision || expected.expected_sequence !== (await this.drafts.read(this.role(record).draftId))?.sequence)throw new DraftConflictError("Requirement plan changed; reload before publication");
     if(!record.contextHandoff || !draft || !record.planningContract)throw new Error("Complete requirement planning before publication");
     const plan=compilePlanningConclusion(draft,record.planningContract);
@@ -199,7 +202,11 @@ export class RequirementApplication {
     return this.publication(record);
   }
   private save(record:Record){this.db.prepare("UPDATE requirement_contract SET payload=? WHERE workspace_id=? AND issue_id=? AND revision=?").run(JSON.stringify(record),record.workspaceId,record.issueId,record.contextContract.binding.revision);}
-  private role(record:Record){const review=record.reviews.at(-1);return review ? {chain:"review",agentId:review.agentId,draftId:review.draftId,contract:review.contract,source:review.source,profile:reviewProfile} : record.contextHandoff ? {chain:"planning",agentId:record.plannerAgentId,draftId:record.planDraftId,contract:record.planningContract!,source:record.planningSource,profile:planningProfile} : {chain:"context",agentId:record.agentId,draftId:record.contextDraftId,contract:record.contextContract,source:record.contextSource,profile:contextProfile};}
+  private role(record:Record){
+    if(record.contextHandoff && record.contextContract.kind === "bug" && !record.reproduction)throw new Error("Reconfigure this bug with a reproduction agent before planning");
+    const reproduction=record.reproduction;
+    if(record.contextHandoff && reproduction && !reproduction.handoff){if(!reproduction.contract)throw new Error("Reproduction inputs are unavailable");return {chain:"reproduction",agentId:reproduction.agentId,draftId:reproduction.draftId,contract:reproduction.contract,source:reproduction.source,profile:reproductionProfile};}
+    const review=record.reviews.at(-1);return review ? {chain:"review",agentId:review.agentId,draftId:review.draftId,contract:review.contract,source:review.source,profile:reviewProfile} : record.contextHandoff ? {chain:"planning",agentId:record.plannerAgentId,draftId:record.planDraftId,contract:record.planningContract!,source:record.planningSource,profile:planningProfile} : {chain:"context",agentId:record.agentId,draftId:record.contextDraftId,contract:record.contextContract,source:record.contextSource,profile:contextProfile};}
   private latestAcceptances(record:Record){return this.db.prepare("SELECT a.payload FROM requirement_acceptance a WHERE workspace_id=? AND issue_id=? AND revision=(SELECT MAX(v.revision) FROM requirement_acceptance v WHERE v.workspace_id=a.workspace_id AND v.issue_id=a.issue_id AND v.acceptance_key=a.acceptance_key)").all(record.workspaceId,record.issueId).map(row=>acceptanceSchema.parse(JSON.parse(String(row.payload))));}
   private async settleContext(record:Record,draft:ChainDraft){
     if(record.contextHandoff)return;
@@ -211,6 +218,10 @@ export class RequirementApplication {
     const retired=previous.filter(item=>item.active && !active.some(value=>value.key === item.key)).map(item=>({...item,revision:item.revision+1,active:false}));
     const sources=[...conclusion.impacts.map(item=>({key:`impact:${item.key}`,kind:item.disposition,content:item.statement,sourceRef:`REQUIREMENT_CONTEXT:${draft.id}:impact:${item.key}`})),...active.map(item=>({key:`acceptance:${item.key}`,kind:"acceptance",content:item.statement,sourceRef:`ACCEPTANCE:${item.id}:r${item.revision}`,oracle:item.oracle}))];
     record.planningContract=planningContractSchema.parse({binding:{...record.contextContract.binding,contractVersion:createHash("sha256").update(JSON.stringify(conclusion)).digest("hex")},sources,existingKeys:[]});
+    if(record.reproduction){
+      const content=JSON.stringify(conclusion),fingerprint=createHash("sha256").update(content).digest("hex");
+      record.reproduction.contract=reproductionContractSchema.parse({binding:{...record.contextContract.binding,contractVersion:fingerprint},decisionMode:record.contextContract.decisionMode,contextRef:`REQUIREMENT_CONTEXT:${draft.id}`,contextFingerprint:fingerprint,contextContent:content,expectedBehavior:conclusion.assertions.filter(item=>item.perspective === "expected" && !["inferred","conflicted"].includes(item.evidence)).map(item=>item.statement).join("\n")});
+    }
     record.acceptances=active;record.contextHandoff=true;
     this.db.exec("BEGIN IMMEDIATE");
     try{
@@ -219,10 +230,33 @@ export class RequirementApplication {
       this.save(record);this.db.exec("COMMIT");
     }catch(error){this.db.exec("ROLLBACK");throw error;}
   }
+  private async validateReproduction(record:Record){
+    const reproduction=record.reproduction;if(!reproduction?.contract)throw new Error("Frozen reproduction inputs are unavailable");
+    const context=await this.drafts.read(record.contextDraftId);if(!context)throw new Error("Reproduction context is missing");
+    const content=JSON.stringify(compileContextConclusion(context,record.contextContract));
+    if(content !== reproduction.contract.contextContent || createHash("sha256").update(content).digest("hex") !== reproduction.contract.contextFingerprint)throw new DraftConflictError("Frozen reproduction context changed");
+  }
+  private async settleReproduction(record:Record,draft:ChainDraft){
+    const reproduction=record.reproduction!;if(reproduction.handoff)return;
+    await this.validateReproduction(record);this.readonlyExecution(record,{agentId:reproduction.agentId,contract:reproduction.contract!},draft);
+    const result=compileReproductionConclusion(draft,reproduction.contract!),parts=[{kind:"preserve" as const,value:result.verdict!.expectedBehavior},...[
+      {verdict:result.verdict},...result.steps.map(step=>({step})),...result.evidence.map(evidence=>({evidence})),
+    ].map(value=>({kind:"change" as const,value:JSON.stringify(value)}))];
+    const sources=parts.flatMap((part,index)=>Array.from({length:Math.ceil(part.value.length/4000)},(_,chunk)=>({key:`reproduction:${index}:${chunk}`,kind:part.kind,content:part.value.slice(chunk*4000,(chunk+1)*4000),sourceRef:`REPRODUCTION:${draft.id}:r${draft.binding.revision}`})));
+    const planning={...record.planningContract!,sources:[...record.planningContract!.sources,...sources],reproduction:{draftId:draft.id,sequence:draft.sequence,codeVersion:result.binding.codeVersion,report:result.report},binding:{...record.planningContract!.binding,contractVersion:createHash("sha256").update(JSON.stringify({context:record.planningContract,result})).digest("hex")}};
+    record.planningContract=planningContractSchema.parse(planning);reproduction.handoff=true;
+    this.db.exec("BEGIN IMMEDIATE");try{
+      const current=this.current(record.workspaceId,record.issueId)!;
+      if(current.contextContract.binding.revision !== record.contextContract.binding.revision || current.reproduction?.draftId !== draft.id)throw new DraftConflictError("Reproduction generation changed before handoff");
+      if(!current.reproduction.handoff)this.save(record);this.db.exec("COMMIT");
+    }catch(error){this.db.exec("ROLLBACK");throw error;}
+  }
   async overview(record:Record){
     const role=this.role(record),draft=await this.drafts.read(role.draftId),contextDraft=record.contextHandoff ? await this.drafts.read(record.contextDraftId) : undefined;
     const context=contextDraft ? compileContextConclusion(contextDraft,record.contextContract) : null;
     const planningDraft=record.contextHandoff ? await this.drafts.read(record.planDraftId) : undefined;
+    const reproductionDraft=record.reproduction ? await this.drafts.read(record.reproduction.draftId) : undefined;
+    const reproductionResult=reproductionDraft?.status === "completed" ? compileReproductionConclusion(reproductionDraft,record.reproduction!.contract!) : null;
     const plan=planningDraft?.status === "completed" ? compilePlanningConclusion(planningDraft,record.planningContract!) : null;
     const review=record.reviews.at(-1),reviewResult=review && draft?.status === "completed" ? compileReviewConclusion(draft,review.contract) : null;
     return {enabled:true,configured:true,auto_continue:record.autoContinue || !!record.reviews.length,chain:role.chain,agent_id:role.agentId,revision:record.contextContract.binding.revision,sequence:draft?.sequence ?? 0,code_version:role.contract.binding.codeVersion,repository_path:record.repositoryPath,draft_id:draft?.id ?? null,status:draft?.status ?? "unstarted",current_phase:draft?.phase ?? null,
@@ -230,17 +264,19 @@ export class RequirementApplication {
       sources:record.planningContract?.sources.map(item=>({key:item.key,kind:item.kind,description:item.content,oracle:item.oracle ?? item.content,source_ref:item.sourceRef})) ?? [],
       artifacts:draft?.artifacts.map(item=>({...item,title:artifactBlock(draft.definition,item.ref).title})) ?? [],decisions:draft?.decisions ?? contextDraft?.decisions ?? [],
       questions:[...(contextDraft?.runtimeInputs.map(item=>({...item,active:false})) ?? []),...(draft?.runtimeInputs ?? [])].map(item=>({...item,decision_key:item.decisionKey,recommendation_option:item.recommendationOption,answer:item.answer ? {text:item.answer.text,user_id:item.answer.userId,sequence:item.answer.sequence,selected_option:item.answer.selectedOption} : null})),
-      requirement:{kind:record.contextContract.kind,input:record.contextContract.input,context:context ? {intent:context.intent,changeSummary:context.changeSummary,acceptances:record.acceptances} : null,plan,review_enabled:!!this.definitions?.review,delivery_units:this.publication(record).units.map(item=>item.unit),review:review ? {generation:review.contract.generation,draft_id:review.draftId,agent_id:review.agentId,report_hash:review.reportHash ?? null,acknowledgement:review.acknowledgement ?? null,result:reviewResult,history:await Promise.all(record.reviews.slice(0,-1).map(async item=>{const previous=await this.drafts.read(item.draftId);return {generation:item.contract.generation,draft_id:item.draftId,code_version:item.contract.binding.codeVersion,result:previous?.status === "completed" ? compileReviewConclusion(previous,item.contract) : null};}))} : null,delivery_policy:record.deliveryPolicy ?? null,accepted:record.accepted,publication:record.publicationRequestedBy ? this.publication(record) : null},result:null,
+      requirement:{reproduction:record.reproduction ? {agent_id:record.reproduction.agentId,draft_id:record.reproduction.draftId,status:reproductionDraft?.status ?? "unstarted",observation:reproductionDraft ? reproductionState(reproductionDraft).verdict ?? null : null,result:reproductionResult ? {verdict:"reproduced",report:reproductionResult.report,code_version:reproductionResult.binding.codeVersion} : null} : null,kind:record.contextContract.kind,input:record.contextContract.input,context:context ? {intent:context.intent,changeSummary:context.changeSummary,acceptances:record.acceptances} : null,plan,review_enabled:!!this.definitions?.review,delivery_units:this.publication(record).units.map(item=>item.unit),review:review ? {generation:review.contract.generation,draft_id:review.draftId,agent_id:review.agentId,report_hash:review.reportHash ?? null,acknowledgement:review.acknowledgement ?? null,result:reviewResult,history:await Promise.all(record.reviews.slice(0,-1).map(async item=>{const previous=await this.drafts.read(item.draftId);return {generation:item.contract.generation,draft_id:item.draftId,code_version:item.contract.binding.codeVersion,result:previous?.status === "completed" ? compileReviewConclusion(previous,item.contract) : null};}))} : null,delivery_policy:record.deliveryPolicy ?? null,accepted:record.accepted,publication:record.publicationRequestedBy ? this.publication(record) : null},result:null,
     };
   }
   async continuations(){
     const rows=this.db.prepare("SELECT r.payload FROM requirement_contract r WHERE revision=(SELECT MAX(v.revision) FROM requirement_contract v WHERE v.workspace_id=r.workspace_id AND v.issue_id=r.issue_id)").all(),pending=[];
-    for(const row of rows){const record=recordSchema.parse(JSON.parse(String(row.payload)));if(!record.autoContinue && !record.reviews.length)continue;
+    for(const row of rows){const record=recordSchema.parse(JSON.parse(String(row.payload)));
       if(!record.contextHandoff){const draft=await this.drafts.read(record.contextDraftId);if(draft?.status === "completed")await this.settleContext(record,draft);}
+      if(record.reproduction?.contract && !record.reproduction.handoff){const reproductionDraft=await this.drafts.read(record.reproduction.draftId);if(reproductionDraft?.status === "completed")await this.settleReproduction(record,reproductionDraft);}
+      if(!record.autoContinue && !record.reviews.length)continue;
       const role=this.role(record),draft=await this.drafts.read(role.draftId),review=record.reviews.at(-1);
       if(review && draft?.status === "completed" && !review.settled)await this.settleReview(record,draft);
       const result=review && draft?.status === "completed" ? compileReviewConclusion(draft,review.contract) : null,units=this.publication(record).units;
-      const reason=role.chain === "review" && !draft ? "review_ready" : result?.verdict === "closure_gap" && units.some(item=>!item.published) ? "review_forward" : result?.verdict === "closure_gap" && units.every(item=>record.accepted[item.unit.key]) ? "review_next" : role.chain === "planning" && !draft ? "context_handoff" : draft?.status === "waiting_for_answers" && draft.runtimeInputs.some(item=>item.active) && draft.runtimeInputs.every(item=>!item.active || item.answer) ? "human_answers" : null;
+      const reason=role.chain === "reproduction" && !draft ? "reproduction_handoff" : role.chain === "review" && !draft ? "review_ready" : result?.verdict === "closure_gap" && units.some(item=>!item.published) ? "review_forward" : result?.verdict === "closure_gap" && units.every(item=>record.accepted[item.unit.key]) ? "review_next" : role.chain === "planning" && !draft ? "context_handoff" : draft?.status === "waiting_for_answers" && draft.runtimeInputs.some(item=>item.active) && draft.runtimeInputs.every(item=>!item.active || item.answer) ? "human_answers" : null;
       if(reason)pending.push({workspace_id:record.workspaceId,issue_id:record.issueId,agent_id:role.agentId,user_id:review?.userId ?? record.createdBy,task_id:stableId(`multica:engineering:continuation:${role.draftId}:${draft?.sequence ?? 0}`),expected_revision:record.contextContract.binding.revision,expected_sequence:draft?.sequence ?? 0,reason});
     }return pending;
   }
@@ -250,12 +286,15 @@ export class RequirementApplication {
     if(action === "configure"){
       if(actor.kind !== "human")throw new Error("Only a human can freeze requirement inputs");
       const config=configuration.parse(request.payload);if(!this.definitions)throw new Error("Requirement definitions are unavailable");
+      if(config.item_kind === "bug" && (!config.reproduction_agent_id || !this.definitions.reproduction))throw new Error("Bug Fix requires a reproduction agent and definition");
+      if(config.item_kind === "requirement" && config.reproduction_agent_id)throw new Error("Reproduction is only configured for Bug Fix");
+      if(config.reproduction_agent_id && [config.agent_id,config.planner_agent_id].includes(config.reproduction_agent_id))throw new Error("Reproduction requires a separate agent from context and planning");
       if(config.agent_id === config.planner_agent_id)throw new Error("Context and planning require separate agents");
       if(config.expected_revision !== (record?.contextContract.binding.revision ?? 0))throw new DraftConflictError("Requirement revision changed; reload before configuring");
       if(record?.publicationRequestedBy)throw new Error("Published unit bindings must be reconciled before replacing this requirement plan");
       if(record){const draft=await this.drafts.read(this.role(record).draftId);if(draft && !["completed","abandoned"].includes(draft.status))throw new Error("Abandon the active requirement draft before replacing its input");}
       const code=repositorySnapshot(config.repository_path),revision=config.expected_revision+1;
-      record=recordSchema.parse({workspaceId:actor.workspaceId,issueId:actor.issueId,createdBy:actor.userId,repositoryPath:code.repositoryPath,agentId:config.agent_id,plannerAgentId:config.planner_agent_id,autoContinue:config.auto_continue,contextDraftId:randomUUID(),planDraftId:randomUUID(),contextSource:this.definitions.context,planningSource:this.definitions.planning,contextHandoff:false,
+      record=recordSchema.parse({workspaceId:actor.workspaceId,issueId:actor.issueId,createdBy:actor.userId,repositoryPath:code.repositoryPath,agentId:config.agent_id,plannerAgentId:config.planner_agent_id,autoContinue:config.auto_continue,contextDraftId:randomUUID(),planDraftId:randomUUID(),contextSource:this.definitions.context,planningSource:this.definitions.planning,contextHandoff:false,...(config.reproduction_agent_id ? {reproduction:{agentId:config.reproduction_agent_id,draftId:randomUUID(),source:this.definitions.reproduction!,handoff:false}} : {}),
         contextContract:{input:config.input,kind:config.item_kind,decisionMode:config.decision_mode,binding:{workspaceId:actor.workspaceId,issueId:actor.issueId,revision,codeVersion:code.codeVersion,contractVersion:createHash("sha256").update(JSON.stringify(config)).digest("hex")}}});
       const inserted=this.db.prepare("INSERT INTO requirement_contract(workspace_id,issue_id,revision,payload) VALUES(?,?,?,?) ON CONFLICT DO NOTHING").run(record.workspaceId,record.issueId,revision,JSON.stringify(record));
       if(inserted.changes !== 1)throw new DraftConflictError("Requirement revision changed");
@@ -273,6 +312,7 @@ export class RequirementApplication {
     if(action === "configure-review")return this.configureReview(record,request);
     if(action === "review-ack")return this.acknowledgeReview(record,request);
     const role=this.role(record),review=record.reviews.at(-1);
+    if(role.chain === "reproduction" && ["selection","prepare-run","bind","start","command","read"].includes(action))await this.validateReproduction(record);
     if(action === "completion" || action === "verified-binding"){
       if(actor.kind !== "host")throw new Error("Only the host can authorize requirement completion");
       const conclusion=await this.reviewCompletion(record);
@@ -308,7 +348,7 @@ export class RequirementApplication {
       if(!row)throw new Error("The runtime must bind its requirement repository first");const execution=executionSchema.parse(JSON.parse(String(row.payload))),code=repositorySnapshot(execution.repositoryPath,true,execution.overlays);
       if(code.codeVersion !== role.contract.binding.codeVersion)throw new Error("Requirement repository changed from its frozen snapshot");
     }
-    const engine=new CommandChainEngine(this.drafts,role.chain === "review" ? createReviewHandlers(review!.contract) : role.chain === "context" ? createContextHandlers(record.contextContract) : createPlanningHandlers(record.planningContract!));let draft=await this.drafts.read(role.draftId);
+    const engine=new CommandChainEngine(this.drafts,role.chain === "review" ? createReviewHandlers(review!.contract) : role.chain === "reproduction" ? createReproductionHandlers(record.reproduction!.contract!) : role.chain === "context" ? createContextHandlers(record.contextContract) : createPlanningHandlers(record.planningContract!));let draft=await this.drafts.read(role.draftId);
     if(action === "start" && actor.kind === "task"){
       if(!draft)draft=await engine.create({id:role.draftId,chain:parseCommandChainDefinition(role.source,role.profile),binding:role.contract.binding,attemptId:actor.attemptId});
       else if(draft.status === "abandoned")throw new Error("Requirement draft was abandoned");
@@ -323,12 +363,13 @@ export class RequirementApplication {
     if(review && draft?.status === "completed")await this.settleReview(record,draft);
     const view=this.view(record,draft);
     if(actor.kind === "task" && draft?.status === "completed" && role.chain === "context")await this.settleContext(record,draft);
+    if(actor.kind === "task" && draft?.status === "completed" && role.chain === "reproduction")await this.settleReproduction(record,draft);
     return view;
   }
   private view(record:Record,draft?:ChainDraft){
     const role=this.role(record),phase=draft?.phase ? draft.definition.phases[draft.phase] : undefined;
     return {chain:role.chain,agentId:role.agentId,repositoryPath:record.repositoryPath,contract:role.contract,draft:draft ?? null,
-      instructions:phase?.type === "builtin" ? `${phase.builtin}: ${role.chain === "review" ? "Reconcile original obligations and combined final behavior against frozen independent verification. Do not run tests, invent delivery facts, or treat development claims as proof. Record a closure gap when evidence does not establish composition; forward complete units instead of a report. Human reading acknowledgement is separate." : "Read the frozen inputs."} Requirement acceptances use acceptance.put/remove only in their definition phase. ${decisionPolicies[record.contextContract.decisionMode]}` : phase?.instructions,
-      decisionSchema:z.toJSONSchema(decisionProposalSchema),conclusion:draft?.status === "completed" ? role.chain === "review" ? compileReviewConclusion(draft,record.reviews.at(-1)!.contract) : role.chain === "context" ? compileContextConclusion(draft,record.contextContract) : compilePlanningConclusion(draft,record.planningContract!) : null,receipts:[]};
+      instructions:phase?.type === "builtin" ? `${phase.builtin}: ${role.chain === "reproduction" ? "Reproduce without modifying persistent repository files. Preserve exact Existing Expected; distinguish current observations from reports and root-cause hypotheses. Only reproduced may hand off to planning. Missing facts require not_reproduced and human input. After answers, rewind investigation and obtain fresh observations before changing the verdict." : role.chain === "review" ? "Reconcile original obligations and combined final behavior against frozen independent verification. Do not run tests, invent delivery facts, or treat development claims as proof. Record a closure gap when evidence does not establish composition; forward complete units instead of a report. Human reading acknowledgement is separate." : "Read the frozen inputs."} Requirement acceptances use acceptance.put/remove only in their definition phase. ${decisionPolicies[record.contextContract.decisionMode]}` : phase?.instructions,
+      decisionSchema:z.toJSONSchema(decisionProposalSchema),conclusion:draft?.status === "completed" ? role.chain === "reproduction" ? compileReproductionConclusion(draft,record.reproduction!.contract!) : role.chain === "review" ? compileReviewConclusion(draft,record.reviews.at(-1)!.contract) : role.chain === "context" ? compileContextConclusion(draft,record.contextContract) : compilePlanningConclusion(draft,record.planningContract!) : null,receipts:[]};
   }
 }

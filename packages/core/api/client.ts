@@ -3028,7 +3028,7 @@ export class ApiClient {
   }
 
   async configureRequirementEngineering(issueId:string,input:RequirementConfiguration):Promise<void>{
-    await this.writeEngineering(issueId,"",{kind:"requirement",expected_revision:input.expectedRevision,agent_id:input.contextAgentId,planner_agent_id:input.plannerAgentId,repository_path:input.repositoryPath,input:input.input,item_kind:input.kind,decision_mode:input.decisionMode,auto_continue:input.autoContinue});
+    await this.writeEngineering(issueId,"",{kind:"requirement",expected_revision:input.expectedRevision,agent_id:input.contextAgentId,planner_agent_id:input.plannerAgentId,reproduction_agent_id:input.reproductionAgentId,repository_path:input.repositoryPath,input:input.input,item_kind:input.kind,decision_mode:input.decisionMode,auto_continue:input.autoContinue});
   }
 
   async publishEngineeringUnits(issueId:string,input:EngineeringCheckpoint):Promise<void>{

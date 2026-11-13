@@ -1867,6 +1867,11 @@
     "copy_failed": "URL をコピーできませんでした"
   },
   "engineering": {
+    "reproduction_agent": "再現担当エージェント",
+    "reproduction": "不具合の再現",
+    "phase_investigation": "再現条件の調査",
+    "reproduction_evidence": "再現の証拠",
+    "not_reproduced_notice": "記録された条件では再現できていません。デリバリーの計画には進めません。",
     "publish_units": "単位を作成",
     "retry_publication": "作成を再試行",
     "start_final_review": "最終レビューを開始",
