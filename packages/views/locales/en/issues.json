@@ -1942,6 +1942,9 @@
     "copy_failed": "Couldn't copy the URL"
   },
   "engineering": {
+    "feedback_work_authorize": "Authorize feedback deliveries",
+    "feedback_work_notice": "New units use the existing delivery roles and rework limit. Original units remain in history.",
+    "feedback_verify_pending": "Delivery accepted; feedback verification is still required",
     "start_feedback": "Process feedback",
     "feedback_notice": "Feedback reopens the requirement while it is processed. Select comments and separate feedback roles; unfinished work prevents closure.",
     "feedback_agent": "Triage agent",

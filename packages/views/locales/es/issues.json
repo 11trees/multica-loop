@@ -1942,6 +1942,9 @@
     "copy_failed": "No se pudo copiar la URL"
   },
   "engineering": {
+    "feedback_work_authorize": "Autorizar trabajo de comentarios",
+    "feedback_work_notice": "Las nuevas unidades usan los roles y el límite de revisiones existentes. Las unidades originales permanecen en el historial.",
+    "feedback_verify_pending": "Entrega aceptada; falta verificar cada comentario",
     "start_feedback": "Procesar comentarios",
     "feedback_notice": "El requisito se reabre durante el proceso. Selecciona comentarios y roles separados; el trabajo pendiente impide cerrarlo.",
     "feedback_agent": "Agente de clasificación",

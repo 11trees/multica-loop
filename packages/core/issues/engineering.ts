@@ -1,8 +1,8 @@
 import { queryOptions, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { issueKeys } from "./queries";
-import type { FeedbackCapture, FeedbackCancellation, RequirementReviewConfiguration, RequirementReviewAcknowledgement, RequirementDeliveryConfiguration, EngineeringCheckpoint, RequirementConfiguration, EngineeringConfiguration } from "./engineering-schema";
-export type { FeedbackCapture, FeedbackCancellation, EngineeringOverview, RequirementReviewConfiguration, RequirementReviewAcknowledgement, RequirementDeliveryConfiguration, RequirementConfiguration, EngineeringCheckpoint, EngineeringConfiguration, EngineeringDeliveryUnit } from "./engineering-schema";
+import type { FeedbackWorkAuthorization, FeedbackCapture, FeedbackCancellation, RequirementReviewConfiguration, RequirementReviewAcknowledgement, RequirementDeliveryConfiguration, EngineeringCheckpoint, RequirementConfiguration, EngineeringConfiguration } from "./engineering-schema";
+export type { FeedbackWorkAuthorization, FeedbackCapture, FeedbackCancellation, EngineeringOverview, RequirementReviewConfiguration, RequirementReviewAcknowledgement, RequirementDeliveryConfiguration, RequirementConfiguration, EngineeringCheckpoint, EngineeringConfiguration, EngineeringDeliveryUnit } from "./engineering-schema";
 
 export function engineeringOverviewOptions(workspaceId: string, issueId: string) {
   return queryOptions({
@@ -19,6 +19,7 @@ export function useEngineeringActions(workspaceId: string, issueId: string) {
     client.invalidateQueries({ queryKey: issueKeys.tasks(issueId) }),
   ]);
   const beginFeedback=useMutation({mutationFn:(input:FeedbackCapture)=>api.beginEngineeringFeedback(issueId,input),onSettled:()=>Promise.all([refresh(),client.invalidateQueries({queryKey:issueKeys.all(workspaceId)})])});
+  const authorizeFeedbackWork=useMutation({mutationFn:(input:FeedbackWorkAuthorization)=>api.authorizeEngineeringFeedbackWork(issueId,input),onSettled:refresh});
   const cancelFeedback=useMutation({mutationFn:(input:FeedbackCancellation)=>api.cancelEngineeringFeedback(issueId,input),onSettled:refresh});
   const configure = useMutation({ mutationFn: (input: EngineeringConfiguration) => api.configureEngineering(issueId, input), onSettled: refresh });
   const configureRequirement=useMutation({mutationFn:(input:RequirementConfiguration)=>api.configureRequirementEngineering(issueId,input),onSettled:refresh});
@@ -29,7 +30,7 @@ export function useEngineeringActions(workspaceId: string, issueId: string) {
   const answer = useMutation({ mutationFn: (input: { expectedSequence: number; requestId: string; answer: string; selectedOption?:string }) => api.answerEngineering(issueId, input), onSettled: refresh });
   const abandon = useMutation({ mutationFn: (input: { expectedSequence: number; reason: string }) => api.abandonEngineering(issueId, input), onSettled: refresh });
   const run = useMutation({ mutationFn: (input: EngineeringCheckpoint) => api.runEngineering(issueId, input), onSettled: refresh });
-  return { beginFeedback,cancelFeedback,configure, configureRequirement, publish, deliver, review, acknowledge, answer, abandon, run };
+  return { authorizeFeedbackWork,beginFeedback,cancelFeedback,configure, configureRequirement, publish, deliver, review, acknowledge, answer, abandon, run };
 }
 
 export function feedbackCommentsOptions(workspaceId:string,issueId:string){return queryOptions({queryKey:["engineering-feedback-comments",workspaceId,issueId],queryFn:()=>api.listComments(issueId),enabled:!!workspaceId && !!issueId,staleTime:0});}

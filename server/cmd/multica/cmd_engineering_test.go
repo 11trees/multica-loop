@@ -110,6 +110,7 @@ func TestEngineeringDeliveryAuthorizationUsesHumanEndpoint(t *testing.T) {
 func TestEngineeringRequirementReviewCommandsUseHumanEndpoints(t *testing.T) {
 	for _, operation := range []struct{ name, path, payload string }{
 		{"start-feedback", "/api/issues/parent/engineering/feedback", `{"expected_revision":1,"comment_ids":["comment"]}`},
+		{"start-feedback-deliveries", "/api/issues/parent/engineering/feedback/work", `{"batch_id":"batch","expected_version":1,"planner_agent_id":"planner"}`},
 		{"cancel-feedback", "/api/issues/parent/engineering/feedback/cancel", `{"expected_revision":1,"batch_id":"batch","expected_version":1,"reason":"Stop"}`},
 		{"start-review", "/api/issues/parent/engineering/review", `{"expected_revision":1,"expected_sequence":17,"agent_id":"reviewer"}`},
 		{"acknowledge-report", "/api/issues/parent/engineering/review/acknowledge", `{"expected_revision":1,"expected_sequence":25,"report_hash":"frozen-report"}`},
@@ -125,8 +126,14 @@ func TestEngineeringRequirementReviewCommandsUseHumanEndpoints(t *testing.T) {
 				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 					t.Error(err)
 				}
-				if body["expected_revision"] != float64(1) {
-					t.Error("review checkpoint changed")
+				expected := map[string]any{}
+				if err := json.Unmarshal([]byte(operation.payload), &expected); err != nil {
+					t.Fatal(err)
+				}
+				actualJSON, _ := json.Marshal(body)
+				expectedJSON, _ := json.Marshal(expected)
+				if string(actualJSON) != string(expectedJSON) {
+					t.Error("engineering payload changed")
 				}
 				fmt.Fprint(w, `{"ok":true}`)
 			}))

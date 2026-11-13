@@ -1867,6 +1867,9 @@
     "copy_failed": "URL をコピーできませんでした"
   },
   "engineering": {
+    "feedback_work_authorize": "フィードバック対応を承認",
+    "feedback_work_notice": "新しい単位は既存の実装担当と手戻り回数の上限を使用します。元の単位は履歴に残ります。",
+    "feedback_verify_pending": "実装は承認済みですが、各フィードバックの検証が必要です",
     "start_feedback": "フィードバックを処理",
     "feedback_notice": "処理中は要件を再開します。コメントと別々の担当を選択してください。未完了の作業がある間は終了できません。",
     "feedback_agent": "振り分け担当エージェント",

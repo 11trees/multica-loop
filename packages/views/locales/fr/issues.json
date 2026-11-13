@@ -1942,6 +1942,9 @@
     "copy_failed": "Impossible de copier l'URL"
   },
   "engineering": {
+    "feedback_work_authorize": "Autoriser les travaux de retour",
+    "feedback_work_notice": "Les nouvelles unités utilisent les rôles et la limite de reprises existants. Les unités initiales restent dans l’historique.",
+    "feedback_verify_pending": "Livraison acceptée ; chaque retour doit encore être vérifié",
     "start_feedback": "Traiter les retours",
     "feedback_notice": "Le besoin est rouvert pendant le traitement. Sélectionnez des commentaires et des rôles distincts ; les travaux en attente empêchent la clôture.",
     "feedback_agent": "Agent de triage",

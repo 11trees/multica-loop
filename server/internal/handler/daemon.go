@@ -3069,12 +3069,13 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 			"action": "selection",
 		})
 		var role struct {
-			ParentID    string                  `json:"parent_issue_id"`
-			ReviewUnits []engineeringReviewUnit `json:"review_units"`
-			Configured  *bool                   `json:"configured"`
-			Chain       string                  `json:"chain"`
-			Repository  string                  `json:"repository_path"`
-			Commit      string                  `json:"code_version"`
+			FeedbackGroupID string                  `json:"feedback_group_id"`
+			ParentID        string                  `json:"parent_issue_id"`
+			ReviewUnits     []engineeringReviewUnit `json:"review_units"`
+			Configured      *bool                   `json:"configured"`
+			Chain           string                  `json:"chain"`
+			Repository      string                  `json:"repository_path"`
+			Commit          string                  `json:"code_version"`
 		}
 		invalid := selectErr != nil || json.Unmarshal(selection, &role) != nil || role.Configured == nil
 		if !invalid && *role.Configured {
@@ -3084,7 +3085,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		if invalid {
 			return resp, nil, nil, 0, 0, h.failClaimedTaskBeforeLaunch(r.Context(), task, "Engineering role lookup is unavailable.", taskfailure.ReasonEnvironmentPrepareFailed, "engineering_unavailable", http.StatusServiceUnavailable, "engineering unavailable")
 		}
-		if *role.Configured && (role.Chain == "review" || role.Chain == "feedback-triage") {
+		if *role.Configured && (role.Chain == "review" || role.Chain == "feedback-triage" || role.FeedbackGroupID != "") {
 			issue, err := h.Queries.GetIssueInWorkspace(r.Context(), db.GetIssueInWorkspaceParams{ID: task.IssueID, WorkspaceID: parseUUID(runtimeWorkspaceID)})
 			if err == nil {
 				err = h.reviewNativeUnits(r.Context(), issue, role.ReviewUnits, true)
@@ -3109,6 +3110,9 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 			resp.Agent.Instructions += "\n\nThis issue uses the engineering command chain. First run `multica engineering start`, then read the returned draft phase, sequence, inputs, and instructions. Submit edits with `multica engineering command --payload '<JSON>'` where JSON contains expected_sequence and command. Use phase.complete only after the phase gates pass. If waiting_for_answers, stop and return control to the host; do not answer your own questions or mark delivery complete through issue status. Your task token and claim determine identity."
 			if role.Chain == "feedback-triage" {
 				resp.Agent.Instructions += "\nYour role is feedback triage. Read the frozen native comments and original report. Every comment belongs to exactly one stable group. Preserve original oracles and affected-unit scope. Reply/historical correction/learning are distinct from forward delivery/report work; do not declare pending work completed or modify historical artifacts. Clarifications require authenticated answers."
+			}
+			if role.FeedbackGroupID != "" {
+				resp.Agent.Instructions += "\nThis readonly feedback group preserves frozen comments and original delivery history. Plan only the group's forward obligations; do not rewrite accepted units. A defect must finish reproduced observations before planning. Native publication and subsequent delivery acceptance belong to the host. Completing this checkpoint does not resolve the feedback comments."
 			}
 			if role.Chain == "reproduction" {
 				resp.Agent.Instructions += "\nYour role is read-only bug reproduction. Preserve the frozen Existing Expected. Record actual conditions, steps and locatable evidence, without changing persistent repository files. Only reproduced may proceed to planning; not_reproduced must preserve observations and request missing facts. Human answers are not reproduction evidence: rewind investigation to obtain fresh observations. Hypotheses are not implementation obligations."

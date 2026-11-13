@@ -1867,6 +1867,9 @@
     "copy_failed": "URL을 복사할 수 없습니다"
   },
   "engineering": {
+    "feedback_work_authorize": "피드백 작업 승인",
+    "feedback_work_notice": "새 단위는 기존 작업 역할과 재작업 횟수 제한을 사용합니다. 원래 단위는 이력에 유지됩니다.",
+    "feedback_verify_pending": "작업은 승인되었으며 각 피드백을 검증해야 합니다",
     "start_feedback": "피드백 처리",
     "feedback_notice": "처리 중 요구 사항이 다시 열립니다. 댓글과 별도 담당을 선택하세요. 미완료 작업이 있으면 종료할 수 없습니다.",
     "feedback_agent": "분류 에이전트",

@@ -135,3 +135,13 @@ it("captures only native comment identities and refuses malformed feedback ackno
  respond({cancelled:true});await client.cancelEngineeringFeedback("parent",{batchId:input.requestId,expectedVersion:2,reason:"Preserve pending work"});expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]![1]?.body))).toEqual({batch_id:input.requestId,expected_version:2,reason:"Preserve pending work"});
  respond({...body,chain:"feedback-triage",requirement:null});await expect(client.getEngineeringOverview("parent")).rejects.toThrow(/Invalid engineering overview/);
 });
+
+it("authorizes only feedback role identities and validates forward work overview facts",async()=>{
+ const client=new ApiClient("https://api.example.test"),input={batchId:"batch",expectedVersion:1,plannerId:"planner",reproducerId:"reproducer"};
+ respond({authorized:true});await client.authorizeEngineeringFeedbackWork("parent",input);expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]![1]?.body))).toEqual({batch_id:"batch",expected_version:1,planner_agent_id:"planner",reproduction_agent_id:"reproducer"});
+ respond({authorized:"true"});await expect(client.authorizeEngineeringFeedbackWork("parent",input)).rejects.toThrow(/Invalid feedback work authorization/);
+ const work={planner_id:"planner",reproducer_id:"reproducer",appended:true,unit_ids:["child"]},batch={id:"batch",number:1,version:1,status:"executing",agent_id:"triager",verifier_id:"feedback-verifier",forward_work:work,summary:null,comments:[],groups:[]};
+ const requirement={kind:"requirement",input:"Frozen feedback",context:null,plan:null,feedback:{enabled:true,active:true,unresolved_count:1,expected_batch_number:1,batches:[batch]}};
+ respond({...body,chain:"feedback-triage",requirement});expect(await client.getEngineeringOverview("parent")).toMatchObject({requirement:{feedback:{batches:[{forward_work:work}]}}});
+ for(const invalid of [{...work,appended:"true"},{...work,planner_id:""},{...work,unit_ids:[null]}]){respond({...body,chain:"feedback-triage",requirement:{...requirement,feedback:{...requirement.feedback,batches:[{...batch,forward_work:invalid}]}}});await expect(client.getEngineeringOverview("parent")).rejects.toThrow(/Invalid engineering overview/);}
+});

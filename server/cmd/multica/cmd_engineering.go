@@ -23,6 +23,7 @@ func init() {
 		{"start-deliveries <issue-id>", "start-deliveries", "Authorize frozen roles and bounded serial delivery for a published plan (human only)"},
 		{"start-review <issue-id>", "start-review", "Authorize requirement reconciliation and automatic gap follow-up (human only)"},
 		{"start-feedback <issue-id>", "start-feedback", "Freeze native comments and begin feedback triage (human only)"},
+		{"start-feedback-deliveries <issue-id>", "start-feedback-deliveries", "Authorize frozen feedback reproduction and planning roles (human only)"},
 		{"cancel-feedback <issue-id>", "cancel-feedback", "Cancel an active feedback batch without resolving its comments (human only)"},
 		{"acknowledge-report <issue-id>", "acknowledge-report", "Confirm reading the exact current closure report and close the requirement (human only)"},
 		{"inspect <issue-id>", "inspect", "Read the issue's contract and questions (human only)"},
@@ -63,6 +64,9 @@ func init() {
 				}
 				if op.path == "cancel-feedback" {
 					path = "/api/issues/" + url.PathEscape(args[0]) + "/engineering/feedback/cancel"
+				}
+				if op.path == "start-feedback-deliveries" {
+					path = "/api/issues/" + url.PathEscape(args[0]) + "/engineering/feedback/work"
 				}
 				if op.path == "answer" {
 					path += "answers"

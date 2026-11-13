@@ -1867,6 +1867,9 @@
     "copy_failed": "無法複製位址"
   },
   "engineering": {
+    "feedback_work_authorize": "授權回饋交付",
+    "feedback_work_notice": "新增單元沿用現有交付角色與返工次數上限，歷史單元保留。",
+    "feedback_verify_pending": "交付已通過，仍需逐一驗證回饋",
     "start_feedback": "處理回饋",
     "feedback_notice": "回饋處理期間會重新開啟需求。選擇評論與獨立回饋角色；未完成工作會阻止結案。",
     "feedback_agent": "分流 AI 代理",

@@ -1867,6 +1867,9 @@
     "copy_failed": "无法复制地址"
   },
   "engineering": {
+    "feedback_work_authorize": "授权反馈交付",
+    "feedback_work_notice": "新增单元沿用现有交付角色和返工次数上限，历史单元保留。",
+    "feedback_verify_pending": "交付已通过，仍需逐条验证反馈",
     "start_feedback": "处理反馈",
     "feedback_notice": "反馈处理期间会重新打开需求。选择评论和独立反馈角色；未完成的工作会阻止结卡。",
     "feedback_agent": "分流智能体",
