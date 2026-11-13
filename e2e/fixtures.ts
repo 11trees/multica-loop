@@ -55,6 +55,15 @@ export class TestApiClient {
   private seededIssueIds: string[] = [];
   private createdPropertyIds: string[] = [];
 
+  async loginLocally() {
+    const response = await fetch(`${API_BASE}/auth/local`, { method: "POST" });
+    if (!response.ok) throw new Error(`local login failed: ${response.status}`);
+    const data = await response.json();
+    this.token = data.token;
+    this.email = data.user.email;
+    return data;
+  }
+
   async login(email: string, name: string) {
     const client = new pg.Client(DATABASE_URL);
     await client.connect();

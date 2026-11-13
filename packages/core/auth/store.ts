@@ -40,6 +40,7 @@ export interface AuthState {
 
   retryAuthentication: () => void;
   sendCode: (email: string) => Promise<void>;
+  loginLocally: () => Promise<User>;
   verifyCode: (email: string, code: string) => Promise<User>;
   loginWithGoogle: (code: string, redirectUri: string) => Promise<User>;
   loginWithToken: (token: string) => Promise<User>;
@@ -70,6 +71,17 @@ export function createAuthStore(options: AuthStoreOptions) {
 
     sendCode: async (email: string) => {
       await api.sendCode(email);
+    },
+
+    loginLocally: async () => {
+      const { token, user } = await api.localLogin();
+      if (!cookieAuth) {
+        storage.setItem("multica_token", token);
+        api.setToken(token);
+      }
+      onLogin?.();
+      set({ user, isLoading: false, status: "authenticated", expired: false });
+      return user;
     },
 
     verifyCode: async (email: string, code: string) => {

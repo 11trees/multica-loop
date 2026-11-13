@@ -33,6 +33,18 @@ function makeApi(): ApiClient {
 }
 
 describe("authStore", () => {
+  it.each([false, true])("opens a local session in cookieAuth=%s mode", async (cookieAuth) => {
+    const storage = makeStorage();
+    const api = makeApi();
+    api.localLogin = vi.fn().mockResolvedValue({ token: "local-test-token", user: fakeUser });
+    const onLogin = vi.fn();
+    const store = createAuthStore({ api, storage, cookieAuth, onLogin });
+    await store.getState().loginLocally();
+    expect(store.getState().status).toBe("authenticated");
+    expect(store.getState().user).toBe(fakeUser);
+    expect(onLogin).toHaveBeenCalledOnce();
+    expect(storage.getItem("multica_token")).toBe(cookieAuth ? null : "local-test-token");
+  });
   it("publishes a retry request instead of silently ignoring it", () => {
     const storage = makeStorage({ multica_token: "t" });
     const api = makeApi();

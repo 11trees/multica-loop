@@ -68,6 +68,8 @@ type dbExecutor interface {
 }
 
 type Config struct {
+	// LocalAuthEnabled enables the fork's loopback-only, single-user session bootstrap.
+	LocalAuthEnabled    bool
 	AllowSignup         bool
 	AllowedEmails       []string
 	AllowedEmailDomains []string

@@ -744,12 +744,19 @@ EOF
 ensure_credentials() {
   local server="http://localhost:${BACKEND_PORT}" config="$PROFILE_DIR/config.json"
   local code="${MULTICA_DEV_VERIFICATION_CODE:-$DEV_CODE_DEFAULT}"
-  local verify jwt pat ws
+  local verify jwt pat ws identity
+
+  if [ "${MULTICA_LOCAL_AUTH:-}" = true ]; then
+    DEV_EMAIL="local@multica-loop.invalid"
+    WORKSPACE_NAME="Local workspace"
+    WORKSPACE_SLUG="loopwork-local"
+  fi
 
   if [ -f "$config" ]; then
     pat="$(json_field "$(cat "$config")" token || true)"
     ws="$(json_field "$(cat "$config")" workspace_id || true)"
-    if [ -n "$pat" ] && curl -sf --max-time 5 "$server/api/me" -H "Authorization: Bearer $pat" >/dev/null 2>&1; then
+    identity="$(curl -sf --max-time 5 "$server/api/me" -H "Authorization: Bearer $pat" 2>/dev/null || true)"
+    if [ -n "$pat" ] && [ -n "$identity" ] && { [ "${MULTICA_LOCAL_AUTH:-}" != true ] || [ "$(json_field "$identity" email || true)" = "$DEV_EMAIL" ]; }; then
       WORKSPACE_ID="$ws"
       DEV_TOKEN="$pat"
       write_profile_config "$config" "$pat" "$ws"
@@ -759,12 +766,16 @@ ensure_credentials() {
     fi
   fi
 
-  curl -sf -X POST "$server/auth/send-code" -H 'Content-Type: application/json' \
+  if [ "${MULTICA_LOCAL_AUTH:-}" = true ]; then
+    verify="$(curl -sf -X POST "$server/auth/local")" || die "Local workspace bootstrap failed. Restart the API after changing MULTICA_LOCAL_AUTH."
+  else
+    curl -sf -X POST "$server/auth/send-code" -H 'Content-Type: application/json' \
     -d "{\"email\":\"${DEV_EMAIL}\"}" >/dev/null \
     || die "send-code failed. Is MULTICA_DEV_VERIFICATION_CODE set and APP_ENV non-production?"
 
-  verify="$(curl -sS -X POST "$server/auth/verify-code" -H 'Content-Type: application/json' \
-    -d "{\"email\":\"${DEV_EMAIL}\",\"code\":\"${code}\"}")"
+    verify="$(curl -sS -X POST "$server/auth/verify-code" -H 'Content-Type: application/json' \
+      -d "{\"email\":\"${DEV_EMAIL}\",\"code\":\"${code}\"}")"
+  fi
   jwt="$(json_field "$verify" token || true)"
   [ -n "$jwt" ] || die "verify-code failed: $verify
 Do not retry immediately — repeated attempts lock the code. Wait ~40s and re-run."
@@ -776,9 +787,12 @@ Do not retry immediately — repeated attempts lock the code. Wait ~40s and re-r
   [ -n "$pat" ] || die "Personal access token creation failed: $pat_response"
 
   local ws_response
-  ws_response="$(curl -sS -X POST "$server/api/workspaces" -H "Authorization: Bearer $pat" \
+  ws_response='{}'
+  if [ "${MULTICA_LOCAL_AUTH:-}" != true ]; then
+    ws_response="$(curl -sS -X POST "$server/api/workspaces" -H "Authorization: Bearer $pat" \
     -H 'Content-Type: application/json' \
     -d "{\"name\":\"${WORKSPACE_NAME}\",\"slug\":\"${WORKSPACE_SLUG}\"}")"
+  fi
   ws="$(json_field "$ws_response" id || true)"
   if [ -z "$ws" ]; then
     ws="$(node -e '
@@ -1262,7 +1276,9 @@ print_status_json() {
 }
 
 print_handoff() {
-  local entrypoint
+  local entrypoint signin
+  signin="${DEV_EMAIL}  ·  code ${MULTICA_DEV_VERIFICATION_CODE:-$DEV_CODE_DEFAULT}"
+  [ "${MULTICA_LOCAL_AUTH:-}" != true ] || signin="automatic local session (no email or OAuth)"
   if component_selected web; then
     entrypoint="Open        http://localhost:${FRONTEND_PORT}/${WORKSPACE_SLUG}/issues"
   elif component_selected desktop; then
@@ -1281,7 +1297,7 @@ print_handoff() {
 ${C_GREEN}✓ Environment ready.${C_OFF}
 
   ${entrypoint}
-  Sign in     ${DEV_EMAIL}  ·  code ${MULTICA_DEV_VERIFICATION_CODE:-$DEV_CODE_DEFAULT}
+  Sign in     ${signin}
   Token       profile ${PROFILE} (onboarded, workspace /${WORKSPACE_SLUG})
   Fixtures    make env-exec ARGS="-- node scripts/dev-fixtures.mjs all"
   Backend     http://localhost:${BACKEND_PORT}   (GET /health reports pid + commit + started_at)

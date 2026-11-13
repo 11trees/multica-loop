@@ -346,6 +346,7 @@ import {
   EMPTY_LIST_WEBHOOK_DELIVERIES_RESPONSE,
   EMPTY_WEBHOOK_DELIVERY,
   AppConfigSchema,
+  LocalLoginResponseSchema,
   type AppConfigResponse,
   StoreThemeListSchema,
   EMPTY_STORE_THEME_LIST,
@@ -1103,6 +1104,11 @@ export class ApiClient {
   }
 
   // Auth
+  async localLogin(): Promise<LoginResponse> {
+    const raw = await this.fetch<unknown>("/auth/local", { method: "POST" });
+    return parseSearchIndexResponse<LoginResponse>(raw, LocalLoginResponseSchema, "POST /auth/local");
+  }
+
   async sendCode(email: string): Promise<void> {
     await this.fetch("/auth/send-code", {
       method: "POST",
