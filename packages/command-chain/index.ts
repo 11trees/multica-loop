@@ -37,3 +37,6 @@ export type { ReviewContract } from "./review";
 
 export { reproductionContractSchema, reproductionProfile, createReproductionHandlers, compileReproductionConclusion } from "./reproduction";
 export type { ReproductionContract } from "./reproduction";
+
+export { feedbackTriageProfile, feedbackVerifyProfile, feedbackTriageContractSchema, feedbackVerifyContractSchema, createFeedbackTriageHandlers, createFeedbackVerifyHandlers, compileFeedbackTriageConclusion, compileFeedbackVerifyConclusion } from "./feedback";
+export type { FeedbackTriageContract, FeedbackVerifyContract, FeedbackGroup } from "./feedback";

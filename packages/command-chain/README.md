@@ -189,3 +189,14 @@ conclusions append source-covered planning facts. The standalone profile is
 platform independent; native orchestration stays in the requirement host. See
 [reproduction](../../docs/engineering/reproduction.md) for actual acceptance and
 provider/semantic boundaries.
+
+## Feedback foundation
+
+`feedback.ts` supplies the imported triage and verification profiles. The main
+entry exports only their platform-independent schemas, handlers and compilers.
+The Node-only `@multica/command-chain/feedback-store` subpath persists frozen
+batches, work groups and per-comment verification receipts with SQLite CAS.
+An authoritative host resolver is required before verification can be frozen
+or settled. It is not wired into the private worker or native feedback controls.
+See [feedback boundaries](../../docs/engineering/feedback.md) before integrating
+these components with issue comments, roles, forward delivery and completion.
