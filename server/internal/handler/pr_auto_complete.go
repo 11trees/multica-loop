@@ -268,6 +268,10 @@ func (h *Handler) maybeAutoCompleteIssue(ctx context.Context, workspaceID, issue
 	if d.State != prAutoCompleteAllMerged {
 		return
 	}
+	if err := h.requireEngineeringCompletion(ctx, issue.WorkspaceID, db.UpdateIssueParams{ID: issue.ID, Status: strToText(d.Target)}); err != nil {
+		slog.Warn("pr auto-complete: engineering completion rejected", "err", err, "issue_id", uuidToString(issueID))
+		return
+	}
 
 	tx, err := h.TxStarter.Begin(ctx)
 	if err != nil {

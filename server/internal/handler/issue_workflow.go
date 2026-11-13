@@ -613,7 +613,7 @@ func writeMappingRequired(w http.ResponseWriter, plan workflowMappingPlan, msg s
 // An issue it moves into a done or closed status ends its wakeups, as any
 // status write does; the returned runs are for the caller's post-commit
 // broadcast.
-func remapIssues(ctx context.Context, qtx *db.Queries, wsUUID pgtype.UUID, projectIDs []pgtype.UUID, plan workflowMappingPlan, mapping map[string]string) ([]db.Issue, []db.AgentTaskQueue, error) {
+func (h *Handler) remapIssues(ctx context.Context, qtx *db.Queries, wsUUID pgtype.UUID, projectIDs []pgtype.UUID, plan workflowMappingPlan, mapping map[string]string) ([]db.Issue, []db.AgentTaskQueue, error) {
 	var changed []db.Issue
 	var cancelled []db.AgentTaskQueue
 	for _, req := range plan.Required {
@@ -627,6 +627,9 @@ func remapIssues(ctx context.Context, qtx *db.Queries, wsUUID pgtype.UUID, proje
 			return nil, nil, err
 		}
 		for _, issue := range rows {
+			if err := h.requireEngineeringCompletionWithCatalog(ctx, qtx, wsUUID, db.UpdateIssueParams{ID: issue.ID, Status: strToText(issue.Status)}); err != nil {
+				return nil, nil, err
+			}
 			stopped, err := service.StopClosedIssueWakeups(ctx, qtx, issue)
 			if err != nil {
 				return nil, nil, err
@@ -787,8 +790,11 @@ func (h *Handler) UpdateIssueWorkflow(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to save workflow")
 		return
 	}
-	changed, cancelledWakeups, err := remapIssues(ctx, qtx, wsUUID, projectIDs, plan, req.StatusMapping)
+	changed, cancelledWakeups, err := h.remapIssues(ctx, qtx, wsUUID, projectIDs, plan, req.StatusMapping)
 	if err != nil {
+		if writeEngineeringCompletionError(w, err) {
+			return
+		}
 		slog.Warn("UpdateIssueWorkflow remap failed", append(logger.RequestAttrs(r), "error", err)...)
 		writeError(w, http.StatusInternalServerError, "failed to move issues to the new statuses")
 		return
@@ -1043,8 +1049,11 @@ func (h *Handler) SetProjectWorkflow(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to change workflow")
 		return
 	}
-	changed, cancelledWakeups, err := remapIssues(ctx, qtx, wsUUID, []pgtype.UUID{project.ID}, plan, req.StatusMapping)
+	changed, cancelledWakeups, err := h.remapIssues(ctx, qtx, wsUUID, []pgtype.UUID{project.ID}, plan, req.StatusMapping)
 	if err != nil {
+		if writeEngineeringCompletionError(w, err) {
+			return
+		}
 		slog.Warn("SetProjectWorkflow remap failed", append(logger.RequestAttrs(r), "error", err)...)
 		writeError(w, http.StatusInternalServerError, "failed to move issues to the new statuses")
 		return

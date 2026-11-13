@@ -84,6 +84,10 @@ status or enqueue an agent. A crash between draft completion and handoff can
 re-enter handoff from the completed draft; the commit and checks are revalidated.
 It is not a single transaction with Multica's issue/task database.
 
+Issue completion now uses a separate [synchronous host check](issue-completion.md):
+the latest verification must pass against the current clean commit before a
+human, agent, PR merge, or workflow remap can write a done-category status.
+
 ## Evidence
 
 Package tests cover missing/forged receipts, later failures, changed repository
@@ -100,4 +104,5 @@ fixture control plane; actual provider/model execution remains unverified.
 
 Development plus verification is not the full migration: requirement context,
 planning/analysis, final review, other workflow paths, automatic continuation,
-question UI, workspace mapping, and synchronous issue handoff gates remain.
+question UI, workspace mapping, final-review integration, and cross-database
+handoff acceptance remain.

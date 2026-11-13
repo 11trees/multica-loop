@@ -275,6 +275,9 @@ func (h *Handler) runWithIssueStatusGuard(ctx context.Context, workspaceID pgtyp
 
 // updateIssueWithStatusGuard writes params under the status-archive guard.
 func (h *Handler) updateIssueWithStatusGuard(ctx context.Context, workspaceID pgtype.UUID, statusKey string, params db.UpdateIssueParams) (db.Issue, error) {
+	if err := h.requireEngineeringCompletion(ctx, workspaceID, params); err != nil {
+		return db.Issue{}, err
+	}
 	var issue db.Issue
 	var cancelledWakeups []db.AgentTaskQueue
 	err := h.runWithIssueStatusGuard(ctx, workspaceID, statusKey, func(q *db.Queries) error {
@@ -3825,6 +3828,9 @@ func refreshUntouchedNullableIssueParams(params *db.UpdateIssueParams, current d
 var errIssueFieldConflict = errors.New("issue text field conflict")
 
 func (h *Handler) updateIssueAtomically(ctx context.Context, workspaceID pgtype.UUID, params db.UpdateIssueParams, rawFields map[string]json.RawMessage, titleBase, descriptionBase *string, attachmentIDs []pgtype.UUID, statusKey string, workflowAssignee bool) (db.Issue, db.Issue, bool, error) {
+	if err := h.requireEngineeringCompletion(ctx, workspaceID, params); err != nil {
+		return db.Issue{}, db.Issue{}, false, err
+	}
 	if h.TxStarter == nil {
 		return db.Issue{}, db.Issue{}, false, errors.New("atomic issue update requires transaction starter")
 	}
@@ -4213,6 +4219,9 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 		issue, err = h.updateIssueWithStatusGuard(writeCtx, prevIssue.WorkspaceID, statusKeyForGuard, params)
 	}
 	if err != nil {
+		if writeEngineeringCompletionError(w, err) {
+			return
+		}
 		if writeIssueStatusRaceError(w, err) {
 			return
 		}
@@ -4870,6 +4879,24 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// Reject a known blocked completion before applying any item in this batch.
+	// The shared write helpers recheck the final workflow-resolved target.
+	if h.EngineeringWorker != nil && batchStatusKey != "" {
+		for _, id := range req.IssueIDs {
+			issueID, err := util.ParseUUID(id)
+			if err != nil {
+				continue
+			}
+			issue, err := h.Queries.GetIssueInWorkspace(r.Context(), db.GetIssueInWorkspaceParams{ID: issueID, WorkspaceID: wsUUID})
+			if err != nil || !hidden.CanSeeProject(issue.ProjectID) {
+				continue
+			}
+			if err := h.requireEngineeringCompletion(r.Context(), wsUUID, db.UpdateIssueParams{ID: issue.ID, Status: pgtype.Text{String: batchStatusKey, Valid: true}}); err != nil {
+				writeEngineeringCompletionError(w, err)
+				return
+			}
+		}
+	}
 	for _, issueID := range req.IssueIDs {
 		issueUUID, err := util.ParseUUID(issueID)
 		if err != nil {
@@ -5053,6 +5080,9 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 			issue, err = h.updateIssueWithStatusGuard(writeCtx, wsUUID, issueStatusGuard, params)
 		}
 		if err != nil {
+			if writeEngineeringCompletionError(w, err) {
+				return
+			}
 			// The archive race is a property of the batch's shared target
 			// status, not of one issue, so every remaining item would fail the
 			// same way. Abort with 409 instead of reporting a partial update.

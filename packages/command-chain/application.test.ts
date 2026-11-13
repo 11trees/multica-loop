@@ -28,6 +28,48 @@ async function invoke(actor: ApplicationRequest["actor"], action: Exclude<Applic
   return result;
 }
 function configure() { return invoke(human, "configure", { expected_revision: 0, agent_id: task.agentId, repository_path: repo, sources }); }
+const host = { kind: "host" as const, workspaceId: human.workspaceId, issueId: human.issueId };
+function completion() { return app.invoke({ actor: host, action: "completion" }); }
+
+it("keeps issue completion host-owned and refuses pending, abandoned, or unhanded development", async () => {
+  expect(await completion()).toEqual({ configured: false, allowed: true });
+  await expect(app.invoke({ actor: task, action: "completion" })).rejects.toThrow(/Only the host/);
+  await expect(app.invoke({ actor: host, action: "configure", payload: {} })).rejects.toThrow(/cannot edit/);
+  await configure();
+  await expect(completion()).rejects.toThrow(/Complete independent verification/);
+  const state = await invoke(task, "start");
+  await expect(completion()).rejects.toThrow(/Complete independent verification/);
+  await invoke(human, "abandon", { expected_sequence: state.draft!.sequence, reason: "Correct scope" });
+  await expect(completion()).rejects.toThrow(/Complete independent verification/);
+  await invoke(human, "configure", { expected_revision: 1, agent_id: human.userId, developer_agent_id: task.agentId, implementation_guidance: "Implement fixture", repository_path: repo, sources });
+  await expect(completion()).rejects.toThrow(/not handed off/);
+});
+
+it.each(["passed", "failed"] as const)("authorizes only a current clean passed verification, observed verdict %s", async verdict => {
+  await configure();
+  let state = await invoke(task, "start");
+  const command = async (value: unknown) => { state = await invoke(task, "command", { expected_sequence: state.draft!.sequence, command: value }); };
+  await command({ type: "phase.complete" });
+  await command({ type: "artifact.put", ref: "verification.scenarios", key: "s1", content: "channel: frontend\ntitle: Fixture visible\nsetup: Open fixture\nsteps: Reload fixture\nexpected: Title visible\ncoverageRefs: [ac1]" });
+  await command({ type: "phase.complete" });
+  await command({ type: "artifact.put", ref: "verification.results", key: "s1", content: `status: ${verdict}\nevidence: Fixture observation${verdict === "failed" ? "\nfailureKind: implementation" : ""}` });
+  await command({ type: "phase.complete" });
+  await command({ type: "artifact.put", ref: "verification.evidence-review", content: "summary: Compared observations to frozen oracle" });
+  await command({ type: "phase.complete" });
+  await expect(completion()).rejects.toThrow(/Complete independent verification/);
+  await command({ type: "phase.complete" });
+  if (verdict === "failed") {
+    await expect(completion()).rejects.toThrow(/verification failed; return to dev/);
+    return;
+  }
+  expect(await completion()).toMatchObject({ configured: true, allowed: true, binding: state.contract.binding });
+  await writeFile(join(repo, "README.md"), "Changed after verification\n");
+  await expect(completion()).rejects.toThrow(/uncommitted changes/);
+  git("add", "."); git("commit", "-qm", "Change after verification");
+  await expect(completion()).rejects.toThrow(/commit changed after verification/);
+  await invoke(human, "configure", { expected_revision: 1, agent_id: task.agentId, repository_path: repo, sources });
+  await expect(completion()).rejects.toThrow(/Complete independent verification/);
+});
 
 it("freezes actual repository identity, stable contract content, and one draft per revision", async () => {
   const config = await configure();

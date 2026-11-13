@@ -68,5 +68,6 @@ This is a current-run lookup and kernel bridge, not a synchronous delivery gate.
 An HTTP context read and kernel write are separate operations. Other Multica
 endpoints retain their existing task-token policy; this endpoint does not
 globally revoke old credentials. The local application adds native CLI execution,
-durable contracts, and claim instructions, but role/question UI, automatic
-continuation, and an authoritative handoff transaction remain required before cutover.
+durable contracts, claim instructions, and a separate synchronous
+[issue completion check](issue-completion.md). Role/question UI, automatic
+continuation, and cross-database handoff acceptance remain required before cutover.

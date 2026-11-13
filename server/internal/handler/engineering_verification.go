@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/multica-ai/multica/server/internal/engineering"
+	"github.com/multica-ai/multica/server/internal/issuestatus"
 )
 
 func (h *Handler) invokeEngineering(w http.ResponseWriter, r *http.Request, action string, actor map[string]string) {
@@ -68,6 +69,17 @@ func (h *Handler) humanEngineering(w http.ResponseWriter, r *http.Request, actio
 	issue, ok := h.loadIssueForUser(w, r, chi.URLParam(r, "id"))
 	if !ok {
 		return
+	}
+	if action == "configure" {
+		category, err := issuestatus.CategoryWithError(r.Context(), h.Queries, issue.WorkspaceID, issue.Status)
+		if err != nil {
+			writeError(w, http.StatusServiceUnavailable, "issue lifecycle lookup is unavailable")
+			return
+		}
+		if category == issuestatus.CategoryDone || category == issuestatus.CategoryClosed {
+			writeError(w, http.StatusConflict, "reopen this issue before freezing a new engineering contract")
+			return
+		}
 	}
 	userID, ok := requireUserID(w, r)
 	if !ok {
