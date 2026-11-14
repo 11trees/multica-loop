@@ -34,7 +34,7 @@ const host = { kind: "host" as const, workspaceId: human.workspaceId, issueId: h
 function completion() { return app.invoke({ actor: host, action: "completion" }); }
 
 it("projects human progress and authorizes the frozen role only after every answer at the current checkpoint", async () => {
-  expect(await app.invoke({ actor: human, action: "overview" })).toEqual({ enabled: true, configured: false, business_enabled:false });
+  expect(await app.invoke({ actor: human, action: "overview" })).toEqual({ enabled: true, configured: false, business_enabled:false,end_to_end_enabled:false });
   await configure();
   expect(await app.invoke({ actor: human, action: "overview" })).toMatchObject({ configured: true, agent_id: task.agentId, status: "unstarted", sequence: 0, revision: 1 });
   await expect(app.invoke({ actor: task, action: "overview" })).rejects.toThrow(/human actor/);

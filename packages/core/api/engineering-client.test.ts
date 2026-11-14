@@ -184,3 +184,16 @@ it("keeps report candidates distinct and rejects malformed correction lineage",a
  respond({...body,chain:"review",requirement});expect(await client.getEngineeringOverview("parent")).toMatchObject({requirement:{review:{current:false,correction:{verified:false}}}});
  for(const correction of [{...review.correction,verified:"true"},{...review.correction,baseline_hash:"invalid"},{...review.correction,group_id:""}]){respond({...body,chain:"review",requirement:{...requirement,review:{...review,correction}}});await expect(client.getEngineeringOverview("parent")).rejects.toThrow(/Invalid engineering overview/);}
 });
+
+it("preserves initial End to End roles and budget and rejects missing or inconsistent approved source versions",async()=>{
+ const client=new ApiClient("https://api.example.test");
+ const roles={context:"context",planner:"planner",analyst:"analyst",developer:"developer",verifier:"verifier",reviewer:"reviewer"};
+ respond({configured:true});await client.configureBusinessEngineering("parent",{expectedRevision:0,repositoryPath:"/project",input:"Original idea",roles:{intent:"intent",businessDesign:"design",specification:"spec",review:"spec-review"},delivery:{roles,maxReworks:2},decisionMode:"balanced",autoContinue:true});
+ expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]![1]?.body))).toMatchObject({delivery:{roles,max_reworks:2},auto_continue:true});
+ const {EngineeringOverviewSchema}=await import("../issues/engineering-schema");
+ const base={enabled:true,configured:true,chain:"context",agent_id:"context",revision:1,sequence:0,requirement:{kind:"requirement",input:"Original idea",context:null,plan:null,end_to_end:true}};
+ expect(EngineeringOverviewSchema.safeParse(base).success).toBe(false);
+ const source={projectId:"project",reviewDraftId:"approved-review",reviewHash:"a".repeat(64),specification:"Exact approved specification",stages:["intent","business_design","specification","review"].map(stage=>({stage,draftId:stage === "review" ? "approved-review" : stage,hash:"a".repeat(64),conclusion:"Frozen complete conclusion"}))};
+ expect(EngineeringOverviewSchema.parse({...base,requirement:{...base.requirement,business_source:source}}).requirement?.business_source?.specification).toBe(source.specification);
+ expect(EngineeringOverviewSchema.safeParse({...base,requirement:{...base.requirement,business_source:{...source,reviewHash:"b".repeat(64)}}}).success).toBe(false);
+});

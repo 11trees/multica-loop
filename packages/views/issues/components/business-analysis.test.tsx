@@ -9,7 +9,7 @@ import { BusinessConfigure, BusinessAnalysisPanel } from "./business-analysis";
 
 const listAgents=vi.hoisted(()=>vi.fn());
 vi.mock("@multica/core/api",async original=>({...await original<typeof import("@multica/core/api")>(),api:{listAgents}}));
-const business:NonNullable<EngineeringOverview["business"]>={input:"Reader continues the selected item",projectId:"project",stage:"review",generation:2,version:8,readingEnabled:true,comments:[],readings:[],specification:{draftId:"specification-v2",hash:"a".repeat(64),generation:2,title:"Specification",content:"# Selected item\n\nContinue opens the selected item.",ready:true,acknowledgement:null},history:[]};
+const business:NonNullable<EngineeringOverview["business"]>={endToEnd:false,input:"Reader continues the selected item",projectId:"project",stage:"review",generation:2,version:8,readingEnabled:true,comments:[],readings:[],specification:{draftId:"specification-v2",hash:"a".repeat(64),generation:2,title:"Specification",content:"# Selected item\n\nContinue opens the selected item.",ready:true,acknowledgement:null},history:[]};
 it("preserves configuration input after a failed save and submits four distinct native roles",async()=>{
   const user=userEvent.setup(),save=vi.fn().mockRejectedValueOnce(new Error("Project mapping unavailable")).mockResolvedValue(undefined),client=new QueryClient({defaultOptions:{queries:{retry:false}}});
   listAgents.mockResolvedValue(["Intent","Design","Writer","Reviewer"].map(name=>({id:name,name,archived_at:null})) as Agent[]);
@@ -35,4 +35,15 @@ it("keeps a feedback request ID stable across an unchanged retry and carries its
 it("keeps reading disabled while the native run is active and hides it after acknowledgement",()=>{
   const {unmount}=renderWithI18n(<BusinessAnalysisPanel business={business} pending={false} disabled={true} closed={false} onRead={vi.fn()} onComment={vi.fn()} />);expect(screen.getByRole("button",{name:"I have read it; close analysis"})).toBeDisabled();unmount();
   renderWithI18n(<BusinessAnalysisPanel business={{...business,specification:{...business.specification!,acknowledgement:{userId:"human",draftId:"specification-v2",specificationHash:"a".repeat(64),expectedVersion:8,acknowledgedAt:"2026-11-14T00:00:00.000Z"}}}} pending={false} disabled={false} closed={true} onRead={vi.fn()} onComment={vi.fn()} />);expect(screen.queryByRole("button",{name:"I have read it; close analysis"})).not.toBeInTheDocument();expect(screen.getByText("Specification reading confirmed.")).toBeVisible();
+});
+
+it("authorizes all ten End to End roles and a bounded initial delivery policy",async()=>{
+ const user=userEvent.setup(),save=vi.fn().mockResolvedValue(undefined),client=new QueryClient({defaultOptions:{queries:{retry:false}}});
+ const labels=["Intent agent","Business design agent","Specification agent","Specification review agent","Context agent","Planning agent","Analysis agent","Development agent","Independent verification agent","Review agent"];
+ listAgents.mockResolvedValue(labels.map((name,index)=>({id:`role-${index}`,name,archived_at:null})) as Agent[]);
+ renderWithI18n(<QueryClientProvider client={client}><BusinessConfigure endToEnd workspaceId="workspace" issue={{id:"issue",title:"Reader idea"} as Issue} pending={false} onSave={save} /></QueryClientProvider>);
+ await user.click(screen.getByRole("button",{name:"End to End"}));const dialog=screen.getByRole("dialog");await user.type(within(dialog).getByLabelText("Repository path"),"/project");
+ for(const label of labels){await user.click(within(dialog).getByRole("combobox",{name:label}));await user.click(await screen.findByRole("option",{name:label}));}
+ await user.click(within(dialog).getByRole("button",{name:"Start End to End"}));await waitFor(()=>expect(save).toHaveBeenCalledOnce());
+ expect(save).toHaveBeenCalledWith(expect.objectContaining({autoContinue:true,delivery:{roles:{context:"role-4",planner:"role-5",analyst:"role-6",developer:"role-7",verifier:"role-8",reviewer:"role-9"},maxReworks:2}}));client.clear();
 });

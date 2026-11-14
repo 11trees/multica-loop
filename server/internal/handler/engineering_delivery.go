@@ -40,6 +40,9 @@ func (h *Handler) managedRunScope(ctx context.Context, issue db.Issue) ([]string
 	if err != nil {
 		return nil, err
 	}
+	if err := requireEngineeringBusinessProject(issue, data); err != nil {
+		return nil, err
+	}
 	var scope struct {
 		Managed     *bool                    `json:"managed"`
 		ReviewUnits *[]engineeringReviewUnit `json:"review_units"`

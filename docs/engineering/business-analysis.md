@@ -5,7 +5,8 @@ The four authoring definitions are imported from the read-only LoopWork baseline
 definitions, declared fields, instructions, phase order and rendering flags match
 the source. The native API/CLI and coordinator execute these checkpoints;
 standalone reading, version-bound native comments and shared Web/Desktop controls
-are connected. End to End handoff remains incomplete.
+are connected. [End to End](end-to-end.md) adds initially authorized downstream
+roles and an automatic approved-specification handoff.
 
 | Stage | Definition | Completion or return |
 | --- | --- | --- |
@@ -53,8 +54,9 @@ freezes the original input, four separate native role agents, authenticated
 principal, native project, clean repository commit, execution mode, and all four
 source definitions. `business_contract` retains stage generations and immutable
 accepted-conclusion fingerprints; `business_execution` pins each native attempt
-to exactly one draft. Business and delivery/requirement ownership cannot coexist
-on the same issue, including during initial publication.
+to exactly one draft. Standalone business and delivery/requirement ownership
+cannot coexist. End to End switches active ownership in its atomic handoff while
+retaining the business record as immutable source history.
 
 Configure through the human-only
 `POST /api/issues/{id}/engineering/business-analysis` endpoint, or
@@ -177,9 +179,10 @@ Inspected UI evidence:
 
 ## Remaining pipeline boundaries
 
-End to End must automatically hand the exact approved specification and its
+[End to End](end-to-end.md) hands the exact approved specification and its
 provenance to requirement context using the initially authorized roles, without
-an extra manual approval or a delivered-code claim. That handoff is not connected.
+an extra manual approval or a delivered-code claim. Its controlled native
+acceptance is tracked separately from standalone specification closure.
 Input replacement/reconciliation, real-model specification quality, native
 worktree acceptance, packaged Desktop and historical-data cutover remain separate
 acceptance boundaries. See the [coverage audit](migration-status.md).

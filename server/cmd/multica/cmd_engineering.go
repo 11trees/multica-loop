@@ -21,7 +21,7 @@ func init() {
 		{"configure <issue-id>", "configure", "Freeze a delivery contract and clean repository commit (human only)"},
 		{"acknowledge-specification <issue-id>", "acknowledge-specification", "Confirm reading the exact current business specification (human only)"},
 		{"comment-specification <issue-id>", "comment-specification", "Submit feedback on an exact approved specification version (human only)"},
-		{"configure-business <issue-id>", "configure-business", "Freeze four business analysis roles and the original idea (human only)"},
+		{"configure-business <issue-id>", "configure-business", "Freeze business analysis or authorize ten-role End to End delivery (human only)"},
 		{"publish-units <issue-id>", "publish-units", "Publish a frozen requirement plan as native child issues (human only)"},
 		{"start-deliveries <issue-id>", "start-deliveries", "Authorize frozen roles and bounded serial delivery for a published plan (human only)"},
 		{"start-review <issue-id>", "start-review", "Authorize requirement reconciliation and automatic gap follow-up (human only)"},

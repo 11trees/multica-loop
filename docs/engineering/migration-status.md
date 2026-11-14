@@ -32,16 +32,17 @@ currently embeds all thirteen default definitions. Four business-analysis
 roles now use native API/CLI checkpoints, readonly attempt/project bindings and
 coordinator handoff, including responsibility returns and historical supersession.
 Specification reading/comments and shared controls are connected; End to End
-handoff remains incomplete. See
+handoff and initially authorized delivery passed their controlled local native
+scenario. See
 [business analysis protocol](business-analysis.md) for its verified boundary.
 
 ## Complete user pipelines
 
 | Source pipeline | Migration status | Required remaining work |
 | --- | --- | --- |
-| Direct | Native foundation only | Map and accept LoopWork's explicit result submission and completion semantics; an ordinary Multica run is insufficient evidence of that mapping |
+| Direct | Native foundation only | Source `direct-command.ts` / `direct-pipeline.test.ts`: RUN precedes explicit SUBMIT, with a 4,000-character summary and optional 100,000-character Markdown result; submission is attempt-fenced and atomic, then native completion is automatic. Direct omits independent Test and report reading. None of those gates is established by an ordinary Multica run |
 | Business Analysis | Standalone closure connected | Real-model review quality, native worktree and packaged acceptance before cutover |
-| End to End | Partial | Connect approved business specifications into the delivered requirement path without losing source versions and authority |
+| End to End | Controlled local path connected | Ten initial roles, exact source handoff, authenticated context, two native dependent deliveries, automatic publication/review, a third forward unit and exact report reading passed; real-provider and native worktree/packaged acceptance remain |
 | Develop | Controlled local path connected | Real-provider acceptance, remaining recovery and resource-ownership boundaries before cutover |
 | Bug Fix | Controlled reproduction-to-planning path connected | Real-provider diagnosis and complete Bug Fix delivery acceptance; shared downstream delivery is exercised separately |
 | Post-delivery feedback | Partial | Capture, triage, forward delivery, independent per-comment verification and new report reading connected; report correction connected; original-contract revision and reconciliation remain incomplete |
@@ -75,7 +76,8 @@ The four business-analysis definitions, pure profiles, completion gates and
 artifact compilers are present: `idea-context`, `business-design`,
 `requirement-spec` and `spec-review`. Native role binding, historical publication,
 all responsibility returns and coordinator handoff are connected. Specification
-reading/comments and shared UI are connected; End to End handoff remains pending.
+reading/comments and shared UI are connected; [End to End](end-to-end.md) adds
+exact source handoff and the initial downstream execution policy.
 A generic prompt or successful native task does not establish this migration.
 
 Source inspection confirms these additional acceptance requirements in
