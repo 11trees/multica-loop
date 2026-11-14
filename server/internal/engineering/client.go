@@ -22,6 +22,7 @@ func (e *Rejection) Error() string { return e.Message }
 // projected identity, never bearer credentials, and owns the protocol database.
 type Client struct {
 	Worker, Database string
+	Admin            bool
 	mu               sync.Mutex
 }
 
@@ -34,7 +35,11 @@ func (c *Client) Call(ctx context.Context, input any) (json.RawMessage, error) {
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.CommandContext(ctx, "node", c.Worker, c.Database)
+	args := []string{c.Worker, c.Database}
+	if c.Admin {
+		args = append(args, "--admin")
+	}
+	cmd := exec.CommandContext(ctx, "node", args...)
 	for _, key := range []string{"PATH", "TMPDIR", "TMP", "TEMP", "LANG", "SystemRoot", "WINDIR"} {
 		if value, ok := os.LookupEnv(key); ok {
 			cmd.Env = append(cmd.Env, key+"="+value)

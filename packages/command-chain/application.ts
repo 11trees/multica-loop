@@ -28,8 +28,9 @@ const coordinator = z.strictObject({ kind: z.literal("coordinator") });
 const actor = z.discriminatedUnion("kind", [human, task, daemon, host, coordinator]);
 export const applicationRequestSchema = z.strictObject({
   actor,
-  action: z.enum(["intervention-request", "repair-observations", "configure-direct","direct-run","direct-submit","direct-scope","direct-completed","business-handoff","end-to-end-scope","business-scope","business-read","business-comment","business-comment-intent","business-comment-ack","business-comment-resolved","business-comment-protected","configure-business", "configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations", "verified-binding", "publication", "publication-ack", "delivery-policy", "activate-unit", "accept-unit", "parent-scope", "review-inputs", "configure-review", "review-ack", "begin-feedback", "cancel-feedback", "feedback-restored", "authorize-feedback-work", "prepare-feedback-verification", "prepare-feedback-report"]),
+  action: z.enum(["intervention-request", "repair-observations", "repair-observation-ack", "configure-direct","direct-run","direct-submit","direct-scope","direct-completed","business-handoff","end-to-end-scope","business-scope","business-read","business-comment","business-comment-intent","business-comment-ack","business-comment-resolved","business-comment-protected","configure-business", "configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations", "verified-binding", "publication", "publication-ack", "delivery-policy", "activate-unit", "accept-unit", "parent-scope", "review-inputs", "configure-review", "review-ack", "begin-feedback", "cancel-feedback", "feedback-restored", "authorize-feedback-work", "prepare-feedback-verification", "prepare-feedback-report"]),
   payload: z.unknown().optional(),
+  host_version: z.string().optional(),
 });
 export type ApplicationRequest = z.infer<typeof applicationRequestSchema>;
 const configuration = z.strictObject({
@@ -96,14 +97,15 @@ export class EngineeringApplication {
   private readonly direct:DirectApplication;
   private readonly interventions:InterventionStore;
 
-  constructor(database: string, private readonly definitionSource: string, private readonly developmentSource?: string, private readonly analysisSource?: string,requirementDefinitions?:RequirementDefinitions,businessDefinitions?:BusinessDefinitions) {
+  constructor(database: string, private readonly definitionSource: string, private readonly developmentSource?: string, private readonly analysisSource?: string,requirementDefinitions?:RequirementDefinitions,businessDefinitions?:BusinessDefinitions,kernelVersion?:string) {
     parseCommandChainDefinition(definitionSource, profile);
     this.db = new DatabaseSync(database);
+    if (this.db.prepare("SELECT name FROM sqlite_master WHERE name='admin_control'").get()) { this.db.close(); throw new Error("Business storage cannot reuse the independent Admin database"); }
     this.db.exec(`CREATE TABLE IF NOT EXISTS engineering_contract (
       workspace_id TEXT NOT NULL, issue_id TEXT NOT NULL, revision INTEGER NOT NULL, payload TEXT NOT NULL,
       PRIMARY KEY (workspace_id, issue_id, revision)
     )`);
-    this.interventions = new InterventionStore(this.db);
+    this.interventions = new InterventionStore(this.db,kernelVersion);
     this.drafts = new SqliteDraftStore(database);
     this.direct=new DirectApplication(this.db);
     this.db.exec("CREATE TABLE IF NOT EXISTS engineering_receipt (draft_id TEXT NOT NULL, receipt_id TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY (draft_id, receipt_id))");
@@ -471,6 +473,10 @@ export class EngineeringApplication {
       if (actor.kind !== "coordinator") throw new Error("Only the host can read pending Admin observations");
       return this.interventions.observations();
     }
+    if (action === "repair-observation-ack") {
+      if (actor.kind !== "host") throw new Error("Only the host can acknowledge Admin observation delivery");
+      return this.interventions.acknowledge(actor.workspaceId,actor.issueId,request.payload);
+    }
     if (actor.kind === "coordinator") {
       const pending = await this.invokeWorkflow(request);
       if (!Array.isArray(pending)) throw new Error("Invalid workflow continuations");
@@ -478,10 +484,10 @@ export class EngineeringApplication {
     }
     const pending = this.interventions.pending(actor.workspaceId, actor.issueId);
     if (action === "intervention-request") {
-      if (pending) return this.interventions.request(actor, request.payload, null);
+      if (pending) return this.interventions.request(actor, request.payload, null,request.host_version);
       if (actor.kind !== "task") throw new Error("Only the current native task can request intervention");
       const snapshot = this.direct.current(actor.workspaceId, actor.issueId) ? this.direct.invoke({ actor, action: "read" }) : this.interventions.snapshot(actor);
-      return this.interventions.request(actor, request.payload, snapshot);
+      return this.interventions.request(actor, request.payload, snapshot,request.host_version);
     }
     if (pending && !["read", "overview", "parent-scope", "business-comment-protected"].includes(action)) {
       throw new DraftConflictError("Execution surrendered to Admin; preserve the checkpoint and end execution");

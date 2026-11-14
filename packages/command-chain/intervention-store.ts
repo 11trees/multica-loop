@@ -10,7 +10,7 @@ const viewedSchema = z.strictObject({ chain: text, revision: z.number().int().po
 const recordSchema = z.strictObject({ id: z.uuid(), workspaceId: z.uuid(), issueId: z.uuid(), agentId: z.uuid(), attemptId: text,
   chain: text, phase: text, draftId: text.nullable(), revision: z.number().int().positive(), sequence: z.number().int().nonnegative(),
   summary: text.max(4000), reason: text.max(8000), evidence: text.max(100000), requestedAt: z.iso.datetime(),
-  snapshot: z.unknown(), snapshotHash: text, requestHash: text, observationId: text, receiptHash: text,
+  snapshot: z.unknown(), snapshotHash: text, requestHash: text, observationId: text, receiptHash: text, kernelVersion: text.optional(), hostVersion: text.optional(),
 });
 type Record = z.infer<typeof recordSchema>;
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value, (_, item) => item && typeof item === "object" && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item)).digest("hex");
@@ -21,12 +21,13 @@ export function initializeInterventions(db: DatabaseSync) {
     PRIMARY KEY(workspace_id,issue_id,attempt_id));
     CREATE TABLE IF NOT EXISTS engineering_intervention_view (
     workspace_id TEXT NOT NULL,issue_id TEXT NOT NULL,attempt_id TEXT NOT NULL,payload TEXT NOT NULL,
-    PRIMARY KEY(workspace_id,issue_id,attempt_id))`);
+    PRIMARY KEY(workspace_id,issue_id,attempt_id));
+    CREATE TABLE IF NOT EXISTS engineering_intervention_delivery(observation_id TEXT PRIMARY KEY,case_id TEXT NOT NULL,snapshot_hash TEXT NOT NULL)`);
 }
 
 /** The immutable terminal receipt is also the durable pending Admin observation. */
 export class InterventionStore {
-  constructor(private readonly db: DatabaseSync) { initializeInterventions(db); }
+  constructor(private readonly db: DatabaseSync, private readonly kernelVersion?: string) { initializeInterventions(db); }
   pending(workspaceId: string, issueId: string) {
     const row = this.db.prepare("SELECT payload FROM engineering_intervention WHERE workspace_id=? AND issue_id=?").get(workspaceId, issueId);
     return row ? this.parse(row.payload) : undefined;
@@ -79,7 +80,7 @@ export class InterventionStore {
     const receipts = this.db.prepare("SELECT payload FROM engineering_receipt WHERE draft_id=?").all(draft.id).map(row => JSON.parse(String(row.payload)));
     return { ...viewed.snapshot, draft, instructions: undefined, receipts };
   }
-  request(actor: ApplicationRequest["actor"], input: unknown, snapshot: unknown) {
+  request(actor: ApplicationRequest["actor"], input: unknown, snapshot: unknown, hostVersion?:string) {
     if (actor.kind !== "task") throw new Error("Only the current native task can surrender its execution");
     const body = interventionRequestSchema.parse(input), existing = this.pending(actor.workspaceId, actor.issueId);
     if (existing) {
@@ -94,7 +95,7 @@ export class InterventionStore {
     if (!viewed || viewed.agentId !== actor.agentId || viewed.chain !== checkpoint.chain || viewed.revision !== checkpoint.revision || viewed.draftId !== checkpoint.draftId) {
       throw new DraftConflictError("Read this attempt's editable checkpoint before requesting intervention");
     }
-    const original = { ...body, ...checkpoint, id: randomUUID(), workspaceId: actor.workspaceId, issueId: actor.issueId,
+    const original = { ...body, ...checkpoint, ...(this.kernelVersion ? { kernelVersion: this.kernelVersion } : {}), ...(hostVersion ? {hostVersion} : {}), id: randomUUID(), workspaceId: actor.workspaceId, issueId: actor.issueId,
       agentId: actor.agentId, requestedAt: new Date().toISOString(), snapshot, snapshotHash: hash(snapshot), requestHash: hash(body),
       observationId: `multica:role-request:${actor.workspaceId}:${actor.issueId}:${actor.attemptId}` };
     const record = recordSchema.parse({ ...original, receiptHash: hash(original) });
@@ -118,7 +119,15 @@ export class InterventionStore {
     revision: record.revision, sequence: record.sequence, attempt_id: record.attemptId, agent_id: record.agentId,
     summary: record.summary, reason: record.reason, evidence: record.evidence, requested_at: record.requestedAt,
     observation_id: record.observationId, snapshot_hash: record.snapshotHash }; }
-  observations() { return this.db.prepare("SELECT payload FROM engineering_intervention").all().map(row => this.parse(row.payload)); }
+  acknowledge(workspaceId: string, issueId: string, input: unknown) {
+    const value = z.strictObject({ observation_id: text, case_id: text, snapshot_hash: text }).parse(input), current = this.pending(workspaceId, issueId);
+    if (!current || current.observationId !== value.observation_id || current.snapshotHash !== value.snapshot_hash) throw new DraftConflictError("Admin acknowledgement must pin the original observation");
+    this.db.prepare("INSERT INTO engineering_intervention_delivery VALUES(?,?,?) ON CONFLICT(observation_id) DO NOTHING").run(value.observation_id, value.case_id, value.snapshot_hash);
+    const saved = this.db.prepare("SELECT case_id,snapshot_hash FROM engineering_intervention_delivery WHERE observation_id=?").get(value.observation_id)!;
+    if (saved.case_id !== value.case_id || saved.snapshot_hash !== value.snapshot_hash) throw new DraftConflictError("Observation cannot be linked to another Admin Case");
+    return { acknowledged: true };
+  }
+  observations() { return this.db.prepare("SELECT payload FROM engineering_intervention source WHERE NOT EXISTS (SELECT 1 FROM engineering_intervention_delivery delivery WHERE delivery.observation_id=json_extract(source.payload,'$.observationId')) ORDER BY rowid LIMIT 25").all().map(row => this.parse(row.payload)); }
 }
 
 export const interventionInstructions = "When unable to reconcile a blocker reliably, first read the editable checkpoint (Direct: direct-run), then use multica engineering intervention-request --summary-file <task-temp-file> --reason-file <task-temp-file> --evidence-file <task-temp-file>. An accepted request surrenders this execution to the independent Admin repair path. End execution immediately; preserve the draft and evidence. Do not declare completion, change the oracle or retry the same request with different content.";
