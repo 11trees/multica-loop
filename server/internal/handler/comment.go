@@ -3383,6 +3383,10 @@ func (h *Handler) UpdateComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.protectSpecificationComment(w, r, existing) {
+		return
+	}
+
 	var req struct {
 		Content          string    `json:"content"`
 		ContentBase      *string   `json:"content_base,omitempty"`
@@ -3656,6 +3660,10 @@ func (h *Handler) DeleteComment(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "only comment author or admin can delete")
 		return
 	}
+	if h.protectSpecificationComment(w, r, comment) {
+		return
+	}
+
 	issue, err := h.Queries.GetIssue(r.Context(), comment.IssueID)
 	hasIssue := err == nil
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {

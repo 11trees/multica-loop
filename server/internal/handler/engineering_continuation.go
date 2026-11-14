@@ -15,6 +15,7 @@ import (
 )
 
 type engineeringContinuation struct {
+	CommentID         string   `json:"comment_id,omitempty"`
 	FeedbackBatchID   string   `json:"feedback_batch_id,omitempty"`
 	FeedbackGroupID   string   `json:"feedback_group_id,omitempty"`
 	FeedbackCommentID string   `json:"feedback_comment_id,omitempty"`
@@ -55,6 +56,9 @@ func (h *Handler) ReconcileEngineering(ctx context.Context) error {
 }
 
 func (h *Handler) dispatchEngineeringContinuation(ctx context.Context, item engineeringContinuation) error {
+	if item.Reason == "business_comment_publish" || item.Reason == "business_comment_resolve" {
+		return h.dispatchSpecificationComment(ctx, item)
+	}
 	if item.Reason == "feedback_restore" {
 		return h.restoreEngineeringFeedback(ctx, item)
 	}

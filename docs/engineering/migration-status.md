@@ -13,8 +13,8 @@ definitions and host application are the implementation evidence.
 | --- | --- | --- |
 | `idea-context` | Native checkpoint connected | Frozen original input, role/attempt/project ownership, authenticated choices and intent publication |
 | `business-design` | Native checkpoint connected | Frozen upstream versions, solution publication and intent returns with historical supersession |
-| `requirement-spec` | Native checkpoint connected | Draft/verification/final publication and single-target returns; specification comments/reading remain incomplete |
-| `spec-review` | Native checkpoint connected | Independent frozen native role, findings/verdict, approved specification and responsibility returns; reading remains incomplete |
+| `requirement-spec` | Native checkpoint connected | Draft/verification/final publication, single-target returns and version-bound native comment revisions |
+| `spec-review` | Native checkpoint connected | Independent frozen native role, findings/verdict, approved specification, responsibility returns and exact human reading |
 | `requirement-context` | Implemented for the delivery path | [Context gates](../../packages/command-chain/context.ts), permanent acceptance entities, authenticated choices and native context/planner handoff |
 | `delivery-plan` | Implemented for the delivery path | [Planning gates](../../packages/command-chain/planning.ts), full source-key coverage, ordered dependencies and stable native child publication |
 | `delivery-analysis` | Implemented for managed units | [Analysis gates](../../packages/command-chain/analysis.ts), scoped dependencies, decision authority and specification rework |
@@ -31,7 +31,8 @@ data migration. The target [worker](../../packages/command-chain/worker.ts)
 currently embeds all thirteen default definitions. Four business-analysis
 roles now use native API/CLI checkpoints, readonly attempt/project bindings and
 coordinator handoff, including responsibility returns and historical supersession.
-Specification reading/comments and End to End handoff remain incomplete. See
+Specification reading/comments and shared controls are connected; End to End
+handoff remains incomplete. See
 [business analysis protocol](business-analysis.md) for its verified boundary.
 
 ## Complete user pipelines
@@ -39,7 +40,7 @@ Specification reading/comments and End to End handoff remain incomplete. See
 | Source pipeline | Migration status | Required remaining work |
 | --- | --- | --- |
 | Direct | Native foundation only | Map and accept LoopWork's explicit result submission and completion semantics; an ordinary Multica run is insufficient evidence of that mapping |
-| Business Analysis | Native stages connected; closure incomplete | Shared UI, versioned specification reading/comments and native closure acceptance |
+| Business Analysis | Standalone closure connected | Real-model review quality, native worktree and packaged acceptance before cutover |
 | End to End | Partial | Connect approved business specifications into the delivered requirement path without losing source versions and authority |
 | Develop | Controlled local path connected | Real-provider acceptance, remaining recovery and resource-ownership boundaries before cutover |
 | Bug Fix | Controlled reproduction-to-planning path connected | Real-provider diagnosis and complete Bug Fix delivery acceptance; shared downstream delivery is exercised separately |
@@ -68,13 +69,13 @@ The migration remains active until the relevant source pipelines, named gates,
 artifacts and deployment requirements are accepted against current runtime state.
 Neither this checklist nor a green subset of tests closes the objective.
 
-## Next increment: business analysis and reviewed specifications
+## Business analysis acceptance and next handoff
 
 The four business-analysis definitions, pure profiles, completion gates and
 artifact compilers are present: `idea-context`, `business-design`,
 `requirement-spec` and `spec-review`. Native role binding, historical publication,
 all responsibility returns and coordinator handoff are connected. Specification
-reading/comments, shared UI and End to End handoff remain to be connected.
+reading/comments and shared UI are connected; End to End handoff remains pending.
 A generic prompt or successful native task does not establish this migration.
 
 Source inspection confirms these additional acceptance requirements in
@@ -102,7 +103,12 @@ the frozen original definitions was checked; only source comments were removed.
 The target has implemented these pure gates and native publication/return paths.
 Local host tests cover four roles, all six responsibility returns, source and
 accepted-result fingerprints, old-attempt fencing, inherited human choices and
-readonly/project binding. Native closure and reading history remain incomplete.
+readonly/project binding. Exact reading and versioned comment publication/resolve
+are connected through native completion, with retained reading history. The
+controlled native browser scenario passed in 4.8 minutes, including shared UI
+configuration, quoted feedback, Spec/Review revision and exact new-version reading;
+[wide and narrow screenshots](business-analysis.md#specification-reading-and-versioned-comments)
+were inspected. No provider process ran.
 The implementation retains old artifacts; it cannot substitute approval for
 versioned reading or delivered software. Structural artifact presence and findings
 are protocol evidence; semantic specification quality still needs independent review.

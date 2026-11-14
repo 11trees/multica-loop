@@ -2,7 +2,7 @@ import { FeedbackCaptureSchema, FeedbackCancelledSchema, RequirementReviewConfig
 import type { ZodType } from "zod";
 import { EngineeringOverviewSchema, EngineeringWriteSchema } from "./schemas";
 import type { FeedbackWorkAuthorization, FeedbackCapture, FeedbackCancellation, RequirementReviewConfiguration, RequirementReviewAcknowledgement, RequirementDeliveryConfiguration, EngineeringCheckpoint, RequirementConfiguration, EngineeringConfiguration, EngineeringOverview } from "../issues/engineering-schema";
-import { BusinessConfiguredSchema, type BusinessConfiguration } from "../issues/engineering-schema";
+import { SpecificationReadSchema, SpecificationCommentSubmittedSchema, type SpecificationReading, type SpecificationComment, BusinessConfiguredSchema, type BusinessConfiguration } from "../issues/engineering-schema";
 import { AgentRuntimeSchema, EMPTY_RUNTIME } from "../runtimes/schema";
 import type { IssueWakeup, IssueWakeupInput, IssueWakeupSummaryRow, PausedWakeup, SystemWakeup, WakeupRun, WorkspaceSystemWakeup } from "../types/issue-wakeup";
 import type { WorkspaceWakeupPage, WorkspaceWakeupFilters } from "../types/issue-wakeup";
@@ -3035,6 +3035,15 @@ export class ApiClient {
   async configureBusinessEngineering(issueId:string,input:BusinessConfiguration):Promise<void>{
     const raw=await this.fetch<unknown>(`/api/issues/${issueId}/engineering/business-analysis`,{method:"POST",body:JSON.stringify({expected_revision:input.expectedRevision,repository_path:input.repositoryPath,input:input.input,roles:{intent:input.roles.intent,business_design:input.roles.businessDesign,specification:input.roles.specification,review:input.roles.review},decision_mode:input.decisionMode,auto_continue:input.autoContinue})});
     if(!parseWithFallback(raw,BusinessConfiguredSchema,null,{endpoint:"POST /api/issues/:id/engineering/business-analysis"}))throw new Error("Invalid business configuration response");
+  }
+
+  async acknowledgeBusinessSpecification(issueId:string,input:SpecificationReading):Promise<void>{
+    const raw=await this.fetch<unknown>(`/api/issues/${issueId}/engineering/business-analysis/acknowledge`,{method:"POST",body:JSON.stringify({expected_version:input.expectedVersion,draft_id:input.draftId,specification_hash:input.specificationHash})});
+    if(!parseWithFallback(raw,SpecificationReadSchema,null,{endpoint:"POST /api/issues/:id/engineering/business-analysis/acknowledge"}))throw new Error("Invalid specification reading response");
+  }
+  async commentBusinessSpecification(issueId:string,input:SpecificationComment):Promise<{commentId:string}>{
+    const raw=await this.fetch<unknown>(`/api/issues/${issueId}/engineering/business-analysis/comments`,{method:"POST",body:JSON.stringify({request_id:input.requestId,draft_id:input.draftId,specification_hash:input.specificationHash,content:input.content,anchor_type:input.anchorType,quoted_text:input.quotedText,start_offset:input.startOffset,end_offset:input.endOffset,intent:input.intent})});
+    const result=parseWithFallback(raw,SpecificationCommentSubmittedSchema,null,{endpoint:"POST /api/issues/:id/engineering/business-analysis/comments"});if(!result)throw new Error("Invalid specification comment response");return result;
   }
 
   async publishEngineeringUnits(issueId:string,input:EngineeringCheckpoint):Promise<void>{

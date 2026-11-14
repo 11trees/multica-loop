@@ -20,11 +20,13 @@ const resource = z.strictObject({ path: text, mode: z.enum(["in_place", "worktre
 const configuration = z.strictObject({ expected_revision: z.literal(0), project_id: z.uuid(), repository_path: text, input: text.max(40000),
   roles, decision_mode: decisionModeSchema, auto_continue: z.boolean(), execution_resources: z.array(resource).length(4) });
 const entrySchema = z.strictObject({ stage: businessStageSchema, generation: z.number().int().positive(), draftId: z.uuid(), contract: businessContractSchema,
-  upstream: z.array(z.uuid()), previousDraftId: z.uuid().optional(), triggerDraftId: z.uuid().optional(), reason: text.optional(), settledHash: text.optional(), superseded: z.boolean() });
+  upstream: z.array(z.uuid()), previousDraftId: z.uuid().optional(), triggerDraftId: z.uuid().optional(), reason: text.optional(), settledHash: text.optional(), superseded: z.boolean(), commentIds:z.array(z.uuid()).default([]) });
 type Entry = z.infer<typeof entrySchema>;
+const commentSchema=z.strictObject({id:z.uuid(),requestId:z.uuid(),userId:z.uuid(),draftId:z.uuid(),specificationHash:text,content:text.max(4000),anchorType:z.enum(["file","selection"]),quotedText:text.max(4000).nullable(),startOffset:sequence.nullable(),endOffset:sequence.nullable(),intent:z.enum(["note","question","change_request"]),nativeContent:text,version:text.optional(),reviewedBy:z.uuid().optional(),nativeResolved:z.boolean().default(false)});
+const readingSchema=z.strictObject({userId:z.uuid(),draftId:z.uuid(),specificationHash:text,expectedVersion:sequence,acknowledgedAt:z.iso.datetime()});
 const recordSchema = z.strictObject({ workspaceId: z.uuid(), issueId: z.uuid(), projectId: z.uuid(), revision: z.literal(1), version: sequence,
   createdBy: z.uuid(), repositoryPath: text, codeVersion: text, input: text.max(40000), roles, sources, decisionMode: decisionModeSchema,
-  autoContinue: z.boolean(), mode: z.enum(["in_place", "worktree"]), entries: z.array(entrySchema).min(1), activeDraftId: z.uuid() });
+  autoContinue: z.boolean(), mode: z.enum(["in_place", "worktree"]), entries: z.array(entrySchema).min(1), activeDraftId: z.uuid(),comments:z.array(commentSchema).default([]),readings:z.array(readingSchema).default([]) });
 type Record = z.infer<typeof recordSchema>;
 const executionSchema = z.strictObject({ draftId: z.uuid(), repositoryPath: text, mode: z.enum(["in_place", "worktree"]), branchRef: text.nullable(),
   overlays: z.array(z.strictObject({ path: text, hash: text, executable: z.boolean(), originalHash: text.nullable(), originalExecutable: z.boolean() })) });
@@ -34,6 +36,7 @@ function stableId(value: string) { const hash = fingerprint(value); return `${ha
 
 /** Native business checkpoints; session/task authentication remains in Go. */
 export class BusinessApplication {
+  get enabled(){return !!this.definitions;}
   constructor(private readonly db: DatabaseSync, private readonly drafts: SqliteDraftStore, private readonly definitions?: BusinessDefinitions) {
     db.exec("CREATE TABLE IF NOT EXISTS business_contract (workspace_id TEXT NOT NULL,issue_id TEXT NOT NULL,revision INTEGER NOT NULL,version INTEGER NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(workspace_id,issue_id,revision))");
     db.exec("CREATE TABLE IF NOT EXISTS business_execution (workspace_id TEXT NOT NULL,issue_id TEXT NOT NULL,revision INTEGER NOT NULL,agent_id TEXT NOT NULL,attempt_id TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(workspace_id,issue_id,revision,agent_id,attempt_id))");
@@ -62,7 +65,7 @@ export class BusinessApplication {
     if (entry.settledHash && fingerprint(result) !== entry.settledHash) throw new DraftConflictError("Accepted business conclusion changed");
     return result;
   }
-  private entry(record: Omit<Record, "entries" | "activeDraftId"> & { entries: Entry[] }, stage: BusinessStage, trigger?: Entry): Entry {
+  private entry(record: Pick<Record,"workspaceId"|"issueId"|"projectId"|"revision"|"input"|"roles"|"sources"|"decisionMode"|"codeVersion"|"entries"> & {comments?:Record["comments"]}, stage: BusinessStage, trigger?: Entry): Entry {
     const previous = record.entries.findLast(item => item.stage === stage);
     const upstream = stages.slice(0, stages.indexOf(stage)).map(input => {
       const entry = record.entries.findLast(item => item.stage === input && !item.superseded && item.settledHash);
@@ -72,8 +75,8 @@ export class BusinessApplication {
     const generation = (previous?.generation ?? 0) + 1, draftId = randomUUID();
     const contractVersion = fingerprint({ input: record.input, stage, generation, roles: record.roles, projectId: record.projectId,
       source: record.sources[stage], decisionMode: record.decisionMode, upstream: upstream.map(entry => this.conclusion(record as Record, entry)),
-      ...(previous ? { previous: this.conclusion(record as Record, previous) } : {}), ...(trigger ? { trigger: this.conclusion(record as Record, trigger) } : {}) });
-    return entrySchema.parse({ stage, generation, draftId, upstream: upstream.map(entry => entry.draftId), superseded: false,
+      ...(previous ? { previous: this.conclusion(record as Record, previous) } : {}), ...(trigger ? { trigger: this.conclusion(record as Record, trigger) } : {}),comments:record.comments?.filter(comment=>!!comment.version) ?? [] });
+    return entrySchema.parse({ stage, generation, draftId, upstream: upstream.map(entry => entry.draftId), superseded: false,commentIds:(record.comments ?? []).filter(comment=>!!comment.version).map(comment=>comment.id),
       ...(previous ? { previousDraftId: previous.draftId } : {}), ...(trigger ? { triggerDraftId: trigger.draftId, reason: this.conclusion(record as Record, trigger).disposition === "return_revision" ? "Address the frozen upstream gaps" : "Reassess the upstream output" } : {}),
       contract: { stage, decisionMode: record.decisionMode, binding: { workspaceId: record.workspaceId, issueId: record.issueId, revision: record.revision, contractVersion, codeVersion: record.codeVersion } } });
   }
@@ -100,6 +103,10 @@ export class BusinessApplication {
       const next = this.entry(record, result.target, entry); record.entries.push(next); record.activeDraftId = next.draftId;
     } else if (result.disposition !== "approved") {
       const next = this.entry(record, stages[stages.indexOf(entry.stage) + 1]!); record.entries.push(next); record.activeDraftId = next.draftId;
+    } else {
+      const specification=record.entries.find(item=>entry.upstream.includes(item.draftId) && item.stage === "specification" && !item.superseded);
+      if(!specification)throw new Error("Approved specification has no current authoring source");
+      for(const comment of record.comments)if(comment.version && specification.commentIds.includes(comment.id))comment.reviewedBy=entry.draftId;
     }
     this.save(record);
   }
@@ -126,6 +133,8 @@ export class BusinessApplication {
     for (const row of this.db.prepare("SELECT payload FROM business_contract").all()) {
       const record = recordSchema.parse(JSON.parse(String(row.payload))); let entry = this.active(record), draft = await this.drafts.read(entry.draftId);
       if (draft?.status === "completed" && !entry.settledHash) { this.settle(record, entry, draft); entry = this.active(record); draft = await this.drafts.read(entry.draftId); }
+      const comment=record.comments.find(item=>!item.version || item.reviewedBy && !item.nativeResolved);
+      if(comment){pending.push({workspace_id:record.workspaceId,issue_id:record.issueId,agent_id:record.roles.review,user_id:comment.userId,task_id:comment.id,comment_id:comment.id,expected_revision:record.revision,expected_sequence:record.version,reason:comment.version ? "business_comment_resolve" : "business_comment_publish"});continue;}
       if (!record.autoContinue || draft?.status === "abandoned" || draft?.status === "completed") continue;
       const reason = !draft ? "business_ready" : draft.status === "waiting_for_answers" && draft.runtimeInputs.some(input => input.active) && draft.runtimeInputs.every(input => !input.active || input.answer) ? "human_answers" : null;
       if (reason) pending.push({ workspace_id: record.workspaceId, issue_id: record.issueId, agent_id: record.roles[entry.stage], user_id: record.createdBy,
@@ -140,7 +149,17 @@ export class BusinessApplication {
     const record = this.current(actor.workspaceId, actor.issueId); if (!record) throw new Error("Business analysis is not configured");
     const entry = this.active(record), agentId = record.roles[entry.stage]; let draft = await this.drafts.read(entry.draftId);
     if (action === "configure") throw new Error("This issue owns business analysis; reconcile its inputs before replacing the workflow");
-    if (action === "completion" || action === "verified-binding") throw new DraftConflictError("Business analysis does not authorize delivered-code completion; versioned specification reading remains to be connected");
+    if(action === "business-scope"){if(actor.kind !== "host")throw new Error("Only the host can inspect native business scope");return this.nativeScope(record);}
+    if(action === "business-comment")return this.prepareComment(record,request);
+    if(action === "business-comment-intent" || action === "business-comment-ack" || action === "business-comment-resolved")return this.nativeComment(record,request);
+    if(action === "business-read")return this.acknowledge(record,request);
+    if(action === "verified-binding")throw new DraftConflictError("A business specification is not independent delivered-code verification");
+    if(action === "completion"){
+      if(actor.kind !== "host")throw new Error("Only the host can authorize business completion");
+      const specification=this.approved(record),reading=record.readings.findLast(item=>item.draftId === specification.entry.draftId && item.specificationHash === specification.hash);
+      if(!reading || !this.commentsComplete(record))throw new DraftConflictError("Read and acknowledge the current specification after its versioned comments are reviewed");
+      return {configured:true,allowed:true,business_scope:this.nativeScope(record),binding:specification.result.binding};
+    }
     if (action === "overview") {
       if (actor.kind !== "human") throw new Error("A human actor is required");
       if (draft?.status === "completed" && !entry.settledHash) { this.settle(record, entry, draft); const next = this.active(record); return this.overview(record, next, await this.drafts.read(next.draftId)); }
@@ -209,18 +228,70 @@ export class BusinessApplication {
     const referenced = (id: string) => this.conclusion(record, record.entries.find(item => item.draftId === id)!);
     return { chain: businessProfiles[entry.stage].id, agentId: record.roles[entry.stage], repositoryPath: record.repositoryPath, contract: entry.contract, draft: draft ?? null,
       business: { originalInput: record.input, projectId: record.projectId, stage: entry.stage, generation: entry.generation,
-        upstream: entry.upstream.map(referenced), previous: entry.previousDraftId ? referenced(entry.previousDraftId) : null, returnReason: entry.triggerDraftId ? referenced(entry.triggerDraftId) : null },
+        upstream: entry.upstream.map(referenced), previous: entry.previousDraftId ? referenced(entry.previousDraftId) : null, returnReason: entry.triggerDraftId ? referenced(entry.triggerDraftId) : null,
+        comments:record.comments.filter(comment=>entry.commentIds.includes(comment.id)).map(comment=>({...comment,sourceRef:`SPECIFICATION_COMMENT:${comment.id}:${comment.version}`})) },
       instructions: `Business analysis is readonly. Preserve the original input and exact frozen upstream source versions, research and human choices. Never change repository files or claim software delivery. ${phase?.type === "builtin" ? `${phase.builtin}: register and close only this stage's decisions; gaps return to their sole responsibility owner. Independent review may approve the complete specification or return structured gaps.` : phase?.instructions ?? "Read the frozen stage inputs."} ${decisionPolicies[record.decisionMode]}`,
       decisionSchema: z.toJSONSchema(decisionProposalSchema), conclusion: draft?.status === "completed" ? this.conclusion(record, entry) : null, receipts: [] };
   }
   private overview(record: Record, entry: Entry, draft?: ChainDraft) {
+    const approved=entry.stage === "review" && entry.settledHash && !entry.superseded && this.conclusion(record,entry).disposition === "approved" ? this.approved(record) : null;
+    const reading=approved ? record.readings.findLast(item=>item.draftId === approved.entry.draftId && item.specificationHash === approved.hash) : undefined;
     return { enabled: true, configured: true, auto_continue: record.autoContinue, chain: businessProfiles[entry.stage].id, agent_id: record.roles[entry.stage], revision: record.revision,
       sequence: draft?.sequence ?? 0, code_version: entry.contract.binding.codeVersion, repository_path: record.repositoryPath, draft_id: draft?.id ?? null, status: draft?.status ?? "unstarted", current_phase: draft?.phase ?? null,
       phases: Object.keys(parseCommandChainDefinition(record.sources[entry.stage], businessProfiles[entry.stage]).definition.phases).map(id => ({ id, status: draft?.completedPhases.includes(id) ? "completed" : id === draft?.phase ? "current" : "pending" })),
       sources: [], decisions: draft?.decisions ?? [], artifacts: draft?.artifacts.map(item => ({ ...item, title: artifactBlock(draft.definition, item.ref).title })) ?? [],
       questions: (draft?.runtimeInputs ?? []).map(input => ({ ...input, decision_key: input.decisionKey, recommendation_option: input.recommendationOption, answer: input.answer ? { text: input.answer.text, user_id: input.answer.userId, sequence: input.answer.sequence, selected_option: input.answer.selectedOption } : null })),
-      business: { input: record.input, project_id: record.projectId, stage: entry.stage, generation: entry.generation, reading_enabled: false,
+      business: { input: record.input, project_id: record.projectId, stage: entry.stage, generation: entry.generation,version:record.version,reading_enabled:true,
+        specification:approved ? {draft_id:approved.entry.draftId,hash:approved.hash,generation:approved.entry.generation,title:approved.result.artifact.title,content:approved.result.artifact.content,acknowledgement:reading ?? null,ready:this.commentsComplete(record)} : null,
+        comments:record.comments.map(comment=>({...comment,status:!comment.version ? "publishing" : comment.reviewedBy ? comment.nativeResolved ? "resolved" : "resolving" : "in_progress"})),readings:record.readings,
         history: record.entries.map(item => ({ stage: item.stage, generation: item.generation, draft_id: item.draftId, superseded: item.superseded, settled: !!item.settledHash,
           result: item.settledHash ? this.conclusion(record, item) : null })) }, result: null };
+  }
+
+  protectedComment(workspaceId:string,issueId:string,commentId:string){return !!this.current(workspaceId,issueId)?.comments.some(comment=>comment.id === commentId);}
+  private approved(record:Record){
+    const entry=this.active(record);
+    if(entry.stage !== "review" || !entry.settledHash || entry.superseded)throw new DraftConflictError("Wait for the current independently reviewed specification");
+    const result=this.conclusion(record,entry);if(result.disposition !== "approved")throw new DraftConflictError("The current specification has not been approved");
+    return {entry,result,hash:fingerprint(result)};
+  }
+  private commentsComplete(record:Record){return record.comments.every(comment=>!!comment.version && !!comment.reviewedBy && comment.nativeResolved);}
+  private nativeScope(record:Record){return {project_id:record.projectId,comments:record.comments.map(comment=>({id:comment.id,user_id:comment.userId,content:comment.nativeContent,version:comment.version ?? null,resolved:comment.nativeResolved,reviewer_id:record.roles.review}))};}
+  private acknowledge(record:Record,request:ApplicationRequest){
+    const actor=request.actor;if(actor.kind !== "human")throw new Error("Only a human can acknowledge specification reading");
+    const input=z.strictObject({expected_version:sequence,draft_id:z.uuid(),specification_hash:text.regex(/^[a-f0-9]{64}$/)}).parse(request.payload),current=this.approved(record);
+    if(input.draft_id !== current.entry.draftId || input.specification_hash !== current.hash || !this.commentsComplete(record))throw new DraftConflictError("Read the exact current specification after all versioned comments are reviewed");
+    const existing=record.readings.findLast(item=>item.draftId === input.draft_id && item.specificationHash === input.specification_hash);
+    if(existing && existing.userId === actor.userId && (input.expected_version === existing.expectedVersion || input.expected_version === record.version))return {acknowledged:true};
+    if(input.expected_version !== record.version)throw new DraftConflictError("Business specification changed before reading acknowledgement");
+    record.readings.push({userId:actor.userId,draftId:current.entry.draftId,specificationHash:current.hash,expectedVersion:input.expected_version,acknowledgedAt:new Date().toISOString()});this.save(record);return {acknowledged:true};
+  }
+  private prepareComment(record:Record,request:ApplicationRequest){
+    const actor=request.actor;if(actor.kind !== "human")throw new Error("Only a human can submit specification feedback");
+    const input=z.strictObject({request_id:z.uuid(),draft_id:z.uuid(),specification_hash:text.regex(/^[a-f0-9]{64}$/),content:text.max(4000),anchor_type:z.enum(["file","selection"]).default("file"),quoted_text:z.string().trim().max(4000).nullable().optional().default(null),start_offset:sequence.nullable().optional().default(null),end_offset:sequence.nullable().optional().default(null),intent:z.enum(["note","question","change_request"]).default("change_request")}).parse(request.payload);
+    if(input.anchor_type === "selection" && !input.quoted_text || input.start_offset !== null && input.end_offset !== null && input.end_offset < input.start_offset)throw new Error("Specification selection requires a quote and valid offsets");
+    const nativeContent=input.anchor_type === "selection" ? `${input.quoted_text!.split("\n").map(line=>`> ${line}`).join("\n")}\n\n${input.content}` : input.content;
+    const comment=commentSchema.parse({id:stableId(`multica:specification-comment:${record.workspaceId}:${record.issueId}:${input.request_id}`),requestId:input.request_id,userId:actor.userId,draftId:input.draft_id,specificationHash:input.specification_hash,content:input.content,anchorType:input.anchor_type,quotedText:input.anchor_type === "selection" ? input.quoted_text : null,startOffset:input.start_offset,endOffset:input.end_offset,intent:input.intent,nativeContent});
+    const existing=record.comments.find(item=>item.requestId === comment.requestId);
+    if(existing){const {version:_version,reviewedBy:_reviewed,nativeResolved:_resolved,...frozen}=existing;const {nativeResolved:_newResolved,...proposed}=comment;if(JSON.stringify(frozen) !== JSON.stringify(proposed))throw new DraftConflictError("Specification comment request is already bound to another payload");return {comment_id:existing.id};}
+    const current=this.approved(record);
+    if(current.entry.draftId !== input.draft_id || current.hash !== input.specification_hash || record.readings.some(item=>item.draftId === current.entry.draftId))throw new DraftConflictError("Submit feedback on the current unread specification");
+    if(record.comments.some(item=>!item.version))throw new DraftConflictError("Wait for the pending specification comment to publish");
+    record.comments.push(comment);this.save(record);return {comment_id:comment.id};
+  }
+  private nativeComment(record:Record,request:ApplicationRequest){
+    if(request.actor.kind !== "host")throw new Error("Only the native host can publish specification comments");
+    const input=z.strictObject({comment_id:z.uuid(),version:text.regex(/^[a-f0-9]{64}$/).optional()}).parse(request.payload),comment=record.comments.find(item=>item.id === input.comment_id);
+    if(!comment)throw new Error("Specification comment intent is unavailable");
+    if(request.action === "business-comment-intent")return {...this.nativeScope(record),comment_id:comment.id,user_id:comment.userId,content:comment.nativeContent,published:!!comment.version,reviewed:!!comment.reviewedBy,reviewer_id:record.roles.review};
+    if(!input.version)throw new Error("Native comment version is required");
+    if(request.action === "business-comment-resolved"){
+      if(!comment.reviewedBy || input.version !== comment.version)throw new DraftConflictError("Only the reviewed exact native comment can resolve");
+      if(!comment.nativeResolved){comment.nativeResolved=true;this.save(record);}return {acknowledged:true};
+    }
+    if(comment.version){if(comment.version !== input.version)throw new DraftConflictError("Native specification comment changed");return {acknowledged:true};}
+    this.approved(record);comment.version=input.version;
+    for(const entry of record.entries)if(entry.stage === "specification" || entry.stage === "review")entry.superseded=true;
+    const next=this.entry(record,"specification");record.entries.push(next);record.activeDraftId=next.draftId;this.save(record);return {acknowledged:true};
   }
 }

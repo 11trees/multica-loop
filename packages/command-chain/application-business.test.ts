@@ -4,6 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { stringify } from "yaml";
 import { z } from "zod";
@@ -41,6 +42,9 @@ afterEach(async () => { app.close(); await rm(directory, { recursive: true, forc
 const invoke = (actor: ApplicationRequest["actor"], action: ApplicationRequest["action"], payload?: unknown) => app.invoke({ actor, action, payload });
 const configuration = (mode: "in_place" | "worktree" = "in_place") => ({ expected_revision: 0, project_id: projectId, repository_path: repository, input: "Reader continues the selected item", roles, decision_mode: "balanced", auto_continue: true, execution_resources: stageOrder.map(() => ({ path: repository, mode })) });
 const overview = async () => overviewSchema.parse(await invoke(human, "overview"));
+const closureSchema=z.object({business:z.object({version:z.number(),specification:z.object({draft_id:z.string(),hash:z.string(),content:z.string(),ready:z.boolean(),acknowledgement:z.object({userId:z.string()}).nullable()}).nullable(),comments:z.array(z.object({id:z.string(),status:z.string(),reviewedBy:z.string().optional()})),readings:z.array(z.unknown())})});
+const closure=async()=>closureSchema.parse(await invoke(human,"overview")).business;
+const host={kind:"host" as const,workspaceId:human.workspaceId,issueId:human.issueId};
 const actor = (stage: BusinessStage, attemptId = randomUUID()) => ({ kind: "task" as const, workspaceId: human.workspaceId, issueId: human.issueId, projectId, agentId: roles[stage], attemptId });
 async function start(stage: BusinessStage, owner = actor(stage), mode: "in_place" | "worktree" = "in_place", path = repository) {
   await invoke({ ...owner, kind: "daemon" }, "bind", { work_dir: path, mode, overlays: [] });
@@ -67,9 +71,9 @@ it("runs all four source roles with frozen upstream publications and independent
     expect(session.state.conclusion).toMatchObject({ disposition: stage === "review" ? "approved" : "advance" });
     app.close(); app = open();
   }
-  const state = await overview(); expect(state.business).toMatchObject({ stage: "review", generation: 1, reading_enabled: false }); expect(state.business.history.every(entry => entry.settled && !entry.superseded)).toBe(true); expect(state.business.history.at(-1)!.result!.artifact.content).toBe(specification);
+  const state = await overview(); expect(state.business).toMatchObject({ stage: "review", generation: 1, reading_enabled: true }); expect(state.business.history.every(entry => entry.settled && !entry.superseded)).toBe(true); expect(state.business.history.at(-1)!.result!.artifact.content).toBe(specification);
   expect(await invoke({ kind: "coordinator" }, "continuations")).toEqual([]);
-  await expect(invoke({ kind: "host", workspaceId: human.workspaceId, issueId: human.issueId }, "completion")).rejects.toThrow(/specification reading/);
+  await expect(invoke({ kind: "host", workspaceId: human.workspaceId, issueId: human.issueId }, "completion")).rejects.toThrow(/Read.*specification/);
   await expect(invoke(human, "prepare-run", { expected_revision: 1, expected_sequence: state.sequence })).rejects.toThrow(/terminal/);
 });
 const returns: { stage: BusinessStage; target: BusinessStage }[] = [{ stage: "business_design", target: "intent" }, { stage: "specification", target: "intent" }, { stage: "specification", target: "business_design" }, { stage: "review", target: "intent" }, { stage: "review", target: "business_design" }, { stage: "review", target: "specification" }];
@@ -129,3 +133,41 @@ it("rechecks the current native project on every business task operation and run
   await expect(invoke(missing, "read")).rejects.toThrow(/Native business project changed/);
   expect(viewSchema.parse(await invoke(session.owner, "read")).draft!.id).toBe(session.state.draft!.id);
 });
+
+async function approved(){await invoke(human,"configure-business",configuration());for(const stage of stageOrder){const session=await start(stage);await session.until(null);}return closure();}
+it("accepts only authenticated reading of the exact current approved specification and preserves an idempotent acknowledgement",async()=>{
+  const current=await approved(),spec=current.specification!;
+  const input={expected_version:current.version,draft_id:spec.draft_id,specification_hash:spec.hash};
+  await expect(invoke(actor("review"),"business-read",input)).rejects.toThrow(/Only a human/);
+  await expect(invoke(human,"business-read",{...input,specification_hash:"f".repeat(64)})).rejects.toThrow(/exact current/);
+  await expect(invoke(human,"business-read",{...input,expected_version:current.version+1})).rejects.toThrow(/changed/);
+  await expect(invoke(host,"completion")).rejects.toThrow(/Read.*specification/);
+  expect(await invoke(human,"business-read",input)).toEqual({acknowledged:true});expect(await invoke(human,"business-read",input)).toEqual({acknowledged:true});
+  expect((await closure()).readings).toHaveLength(1);expect(await invoke(host,"completion")).toMatchObject({configured:true,allowed:true,business_scope:{project_id:projectId,comments:[]}});
+  await expect(invoke(host,"verified-binding")).rejects.toThrow(/not independent/);
+},20000);
+it("persists native comment publication before revising only Spec and Review and requires a new exact reading",async()=>{
+  const current=await approved(),spec=current.specification!,requestId=randomUUID();
+  const input={request_id:requestId,draft_id:spec.draft_id,specification_hash:spec.hash,content:"Explain which item remains selected",anchor_type:"selection",quoted_text:"selected item",start_offset:12,end_offset:25,intent:"change_request"};
+  await expect(invoke(human,"business-comment",{...input,quoted_text:null})).rejects.toThrow(/quote/);
+  const comment=z.object({comment_id:z.string()}).parse(await invoke(human,"business-comment",input));
+  expect(await invoke({kind:"coordinator"},"continuations")).toEqual([expect.objectContaining({reason:"business_comment_publish",comment_id:comment.comment_id})]);
+  await expect(invoke(human,"business-read",{expected_version:current.version+1,draft_id:spec.draft_id,specification_hash:spec.hash})).rejects.toThrow(/comments are reviewed/);
+  app.close();app=open();
+  const intent=z.object({content:z.string(),user_id:z.string()}).parse(await invoke(host,"business-comment-intent",comment));expect(intent.content).toBe("> selected item\n\nExplain which item remains selected");expect(intent.user_id).toBe(human.userId);
+  const version=createHash("sha256").update(intent.content).digest("hex");
+  await expect(invoke(actor("review"),"business-comment-ack",{...comment,version})).rejects.toThrow(/Only the native host/);
+  await invoke(host,"business-comment-ack",{...comment,version});await invoke(host,"business-comment-ack",{...comment,version});
+  expect(await invoke(human,"business-comment",input)).toEqual(comment);
+  await expect(invoke(human,"business-comment",{...input,content:"Replace previous feedback"})).rejects.toThrow(/already bound/);
+  const state=await overview();expect(state.business).toMatchObject({stage:"specification",generation:2});expect(state.business.history.filter(item=>item.superseded).map(item=>item.stage)).toEqual(["specification","review"]);
+  expect(state.business.history.filter(item=>!item.superseded && item.settled).map(item=>[item.stage,item.generation])).toEqual([["intent",1],["business_design",1]]);
+  const writer=await start("specification"),values=outputs("specification");values.final=one(specification+"\n\nThe selected item is the user's explicit selection.");await writer.until(null,values);
+  const reviewer=await start("review"),reviewValues=outputs("review");reviewValues["approved-specification"]=values.final;await reviewer.until(null,reviewValues);
+  expect(await invoke({kind:"coordinator"},"continuations")).toEqual([expect.objectContaining({reason:"business_comment_resolve",comment_id:comment.comment_id})]);
+  await expect(invoke(host,"business-comment-resolved",{...comment,version:"e".repeat(64)})).rejects.toThrow(/exact native comment/);await invoke(host,"business-comment-resolved",{...comment,version});
+  const revised=await closure();expect(revised.specification).toMatchObject({ready:true,acknowledgement:null});expect(revised.comments[0]).toMatchObject({status:"resolved"});expect(revised.specification!.draft_id).not.toBe(spec.draft_id);
+  await expect(invoke(human,"business-read",{expected_version:revised.version,draft_id:spec.draft_id,specification_hash:spec.hash})).rejects.toThrow(/exact current/);
+  await invoke(human,"business-read",{expected_version:revised.version,draft_id:revised.specification!.draft_id,specification_hash:revised.specification!.hash});expect(await invoke(host,"completion")).toMatchObject({allowed:true,business_scope:{comments:[{id:comment.comment_id,version,resolved:true}]}});
+  expect(await invoke(host,"business-comment-protected",comment)).toEqual({protected:true});expect(await invoke(host,"business-comment-protected",{comment_id:randomUUID()})).toEqual({protected:false});
+},20000);

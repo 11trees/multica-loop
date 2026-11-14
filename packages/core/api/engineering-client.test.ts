@@ -9,6 +9,22 @@ const body = { enabled: true, configured: true, chain: "verification", agent_id:
 const respond = (value: unknown) => vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(value), { headers: { "Content-Type": "application/json" } })));
 afterEach(() => vi.unstubAllGlobals());
 
+it("binds business reading and comments to their exact published version at human endpoints",async()=>{
+  const client=new ApiClient("https://api.example.test"),reading={expectedVersion:8,draftId:"spec-v2",specificationHash:"a".repeat(64)};
+  respond({acknowledged:true});await client.acknowledgeBusinessSpecification("analysis",reading);expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]![1]?.body))).toEqual({expected_version:8,draft_id:"spec-v2",specification_hash:"a".repeat(64)});
+  respond({acknowledged:"true"});await expect(client.acknowledgeBusinessSpecification("analysis",reading)).rejects.toThrow(/Invalid specification reading/);
+  const feedback={requestId:"request",draftId:"spec-v2",specificationHash:"a".repeat(64),content:"Clarify item identity",anchorType:"selection" as const,quotedText:"selected item",intent:"question" as const};
+  respond({submitted:true,comment_id:"native-comment"});expect(await client.commentBusinessSpecification("analysis",feedback)).toEqual({commentId:"native-comment"});expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]![1]?.body))).toMatchObject({request_id:"request",draft_id:"spec-v2",anchor_type:"selection",quoted_text:"selected item",intent:"question"});
+  respond({submitted:true});await expect(client.commentBusinessSpecification("analysis",feedback)).rejects.toThrow(/Invalid specification comment/);
+});
+it("rejects incomplete specification reading and comment proofs",async()=>{
+  const client=new ApiClient("https://api.example.test"),result={kind:"business-analysis",stage:"review",draftId:"review-v2",binding:{workspaceId:"workspace",issueId:"analysis",revision:1,contractVersion:"contract",codeVersion:"commit"},disposition:"approved",artifact:{title:"Specification",content:"# Selected item"}};
+  const specification={draft_id:"review-v2",hash:"a".repeat(64),generation:2,title:"Specification",content:"# Selected item",ready:true,acknowledgement:null};
+  const business={input:"Reader continues",project_id:"project",stage:"review",generation:2,version:8,reading_enabled:true,specification,comments:[],readings:[],history:[{stage:"review",generation:2,draft_id:"review-v2",superseded:false,settled:true,result}]};
+  respond({...body,chain:"spec-review",business});expect(await client.getEngineeringOverview("analysis")).toMatchObject({business:{version:8,specification:{draftId:"review-v2",ready:true}}});
+  for(const invalid of [{...business,version:undefined},{...business,specification:{...specification,content:"Other specification"}},{...business,specification:{...specification,acknowledgement:{userId:"human",draftId:"old",specificationHash:"a".repeat(64),expectedVersion:8,acknowledgedAt:"2026-11-14T00:00:00.000Z"}}},{...business,comments:[{id:"comment",draftId:"review-v1",content:"Clarify",quotedText:null,anchorType:"file",intent:"question",status:"resolved"}]}]){respond({...body,chain:"spec-review",business:invalid});await expect(client.getEngineeringOverview("analysis")).rejects.toThrow(/Invalid engineering overview/);}
+});
+
 it("freezes business roles through the dedicated human endpoint and rejects malformed confirmation",async()=>{
   const client=new ApiClient("https://api.example.test"),input={expectedRevision:0,repositoryPath:"/project",input:"Reader continues",roles:{intent:"intent",businessDesign:"design",specification:"spec",review:"review"},decisionMode:"balanced" as const,autoContinue:true};
   respond({configured:true});await client.configureBusinessEngineering("parent",input);expect(vi.mocked(fetch).mock.calls[0]![0]).toBe("https://api.example.test/api/issues/parent/engineering/business-analysis");expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]![1]?.body))).toMatchObject({roles:{intent:"intent",business_design:"design",specification:"spec",review:"review"},input:"Reader continues"});

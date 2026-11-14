@@ -47,15 +47,28 @@ func (h *Handler) requireEngineeringCompletionWithCatalog(ctx context.Context, c
 		return &engineeringCompletionError{message: "engineering completion validation is unavailable", unavailable: true}
 	}
 	var permission struct {
-		Configured  *bool                    `json:"configured"`
-		Allowed     *bool                    `json:"allowed"`
-		ReviewUnits *[]engineeringReviewUnit `json:"review_units"`
+		Configured  *bool                     `json:"configured"`
+		Allowed     *bool                     `json:"allowed"`
+		ReviewUnits *[]engineeringReviewUnit  `json:"review_units"`
+		Business    *engineeringBusinessScope `json:"business_scope"`
 	}
 	if json.Unmarshal(result, &permission) != nil || permission.Configured == nil || permission.Allowed == nil {
 		return &engineeringCompletionError{message: "engineering completion validation returned an invalid result", unavailable: true}
 	}
 	if !*permission.Allowed {
 		return &engineeringCompletionError{message: "independent verification has not authorized issue completion"}
+	}
+	if permission.Business != nil {
+		issue, err := h.Queries.GetIssueInWorkspace(ctx, db.GetIssueInWorkspaceParams{ID: params.ID, WorkspaceID: workspaceID})
+		if err != nil {
+			return &engineeringCompletionError{message: "business native scope is unavailable", unavailable: true}
+		}
+		if params.ProjectID != issue.ProjectID {
+			return &engineeringCompletionError{message: "business specification project must remain unchanged"}
+		}
+		if err = h.businessNativeScope(ctx, issue, *permission.Business, true); err != nil {
+			return &engineeringCompletionError{message: err.Error()}
+		}
 	}
 	if permission.ReviewUnits != nil {
 		parent, err := h.Queries.GetIssueInWorkspace(ctx, db.GetIssueInWorkspaceParams{ID: params.ID, WorkspaceID: workspaceID})
