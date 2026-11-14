@@ -19,6 +19,7 @@ func init() {
 		{"status", "/api/engineering/verification", "Read this run's engineering checkpoint"},
 		{"command", "/api/engineering/verification/commands", "Execute a JSON phase/artifact/runtime-input command"},
 		{"configure <issue-id>", "configure", "Freeze a delivery contract and clean repository commit (human only)"},
+		{"configure-business <issue-id>", "configure-business", "Freeze four business analysis roles and the original idea (human only)"},
 		{"publish-units <issue-id>", "publish-units", "Publish a frozen requirement plan as native child issues (human only)"},
 		{"start-deliveries <issue-id>", "start-deliveries", "Authorize frozen roles and bounded serial delivery for a published plan (human only)"},
 		{"start-review <issue-id>", "start-review", "Authorize requirement reconciliation and automatic gap follow-up (human only)"},
@@ -49,6 +50,9 @@ func init() {
 				path = "/api/issues/" + url.PathEscape(args[0]) + "/engineering/verification/"
 				if op.path == "publish-units" {
 					path = "/api/issues/" + url.PathEscape(args[0]) + "/engineering/publication"
+				}
+				if op.path == "configure-business" {
+					path = "/api/issues/" + url.PathEscape(args[0]) + "/engineering/business-analysis"
 				}
 				if op.path == "start-deliveries" {
 					path = "/api/issues/" + url.PathEscape(args[0]) + "/engineering/delivery"

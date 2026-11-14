@@ -8,6 +8,10 @@ await build({
   bundle: true, platform: "node", format: "esm", target: "node22.13",
   banner: { js: 'import { createRequire } from "node:module"; const require = createRequire(import.meta.url);' },
   define: {
+    DEFAULT_IDEA_CONTEXT_SOURCE: JSON.stringify(readFileSync(new URL("../definitions/idea-context.yaml", import.meta.url), "utf8")),
+    DEFAULT_BUSINESS_DESIGN_SOURCE: JSON.stringify(readFileSync(new URL("../definitions/business-design.yaml", import.meta.url), "utf8")),
+    DEFAULT_REQUIREMENT_SPEC_SOURCE: JSON.stringify(readFileSync(new URL("../definitions/requirement-spec.yaml", import.meta.url), "utf8")),
+    DEFAULT_SPEC_REVIEW_SOURCE: JSON.stringify(readFileSync(new URL("../definitions/spec-review.yaml", import.meta.url), "utf8")),
     DEFAULT_VERIFICATION_SOURCE: JSON.stringify(readFileSync(new URL("../definitions/verification.yaml", import.meta.url), "utf8")),
     DEFAULT_CONTEXT_SOURCE: JSON.stringify(readFileSync(new URL("../definitions/context.yaml", import.meta.url), "utf8")),
     DEFAULT_FEEDBACK_TRIAGE_SOURCE: JSON.stringify(readFileSync(new URL("../definitions/feedback-triage.yaml", import.meta.url), "utf8")),

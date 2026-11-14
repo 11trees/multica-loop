@@ -2108,6 +2108,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			r.Post("/api/issues/{id}/engineering/publication", h.PublishEngineeringUnits)
 			r.Post("/api/issues/{id}/engineering/delivery", h.AuthorizeEngineeringDelivery)
 			r.Post("/api/issues/{id}/engineering/feedback", h.BeginEngineeringFeedback)
+			r.Post("/api/issues/{id}/engineering/business-analysis", h.ConfigureEngineeringBusiness)
 			r.Post("/api/issues/{id}/engineering/feedback/cancel", h.CancelEngineeringFeedback)
 			r.Post("/api/issues/{id}/engineering/feedback/work", h.AuthorizeEngineeringFeedbackWork)
 			r.Post("/api/issues/{id}/engineering/review", h.ConfigureEngineeringReview)

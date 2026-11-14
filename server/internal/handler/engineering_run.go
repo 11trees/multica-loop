@@ -13,6 +13,7 @@ import (
 )
 
 type EngineeringRunContextResponse struct {
+	ProjectID   string `json:"-"`
 	APIVersion  int    `json:"api_version"`
 	WorkspaceID string `json:"workspace_id"`
 	IssueID     string `json:"issue_id"`
@@ -87,6 +88,7 @@ func (h *Handler) loadEngineeringRun(w http.ResponseWriter, r *http.Request) (En
 	taskID := uuidToString(task.ID)
 	w.Header().Set("Cache-Control", "no-store")
 	return EngineeringRunContextResponse{
+		ProjectID:  uuidToString(issue.ProjectID),
 		APIVersion: 1, WorkspaceID: workspaceID, IssueID: uuidToString(issue.ID),
 		TaskID: taskID, AgentID: uuidToString(task.AgentID), RuntimeID: uuidToString(task.RuntimeID),
 		Attempt: task.Attempt, ClaimID: claimID, AttemptID: taskID + ":" + claimID, Status: task.Status,

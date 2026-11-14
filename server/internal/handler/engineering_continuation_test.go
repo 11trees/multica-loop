@@ -26,7 +26,7 @@ func (s *engineeringCoordinatorFixture) Call(_ context.Context, input any) (json
 }
 
 func TestEngineeringContinuationWaitsForPriorRunAndDoesNotRepeatTerminalDispatch(t *testing.T) {
-	for _, reason := range []string{"human_answers", "reproduction_handoff"} {
+	for _, reason := range []string{"business_ready", "human_answers", "reproduction_handoff"} {
 		t.Run(reason, func(t *testing.T) {
 			runtimeID := dbfx.Runtime(t, "Engineering continuation runtime", testutil.Cols{"runtime_mode": "local", "daemon_id": "engineering-continuation"})
 			agentID := dbfx.Agent(t, "Engineering continuation verifier", runtimeID)

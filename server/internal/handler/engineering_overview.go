@@ -107,6 +107,10 @@ func (h *Handler) RunEngineering(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "invalid engineering run selection")
 		return
 	}
+	if err := requireEngineeringBusinessProject(issue, result); err != nil {
+		engineeringControlError(w, err)
+		return
+	}
 	if _, err := util.ParseUUID(selection.AgentID); err != nil {
 		writeError(w, http.StatusServiceUnavailable, "invalid engineering agent selection")
 		return
@@ -152,6 +156,10 @@ func (h *Handler) RunEngineering(w http.ResponseWriter, r *http.Request) {
 	}
 	if json.Unmarshal(checked, &confirmed) != nil || confirmed.AgentID != selection.AgentID {
 		writeError(w, http.StatusServiceUnavailable, "engineering role changed while preparing the run")
+		return
+	}
+	if err := requireEngineeringBusinessProject(issue, checked); err != nil {
+		engineeringControlError(w, err)
 		return
 	}
 	task, err := h.TaskService.EnqueueEngineeringRun(r.Context(), issue, agent.ID, parseUUID(userID), "Continue the configured engineering chain with multica engineering start. Preserve its frozen inputs and current phase.")

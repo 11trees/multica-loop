@@ -32,7 +32,7 @@ Multica 코드를 작성하거나, 번역을 변경하거나, 중국어 제품 �
 | --- | --- | --- |
 | `packages/core` | 앱 종속적이지 않은 것만 | `react-dom`, `next/*`, UI 라이브러리, `process.env`, `localStorage` 직접 사용(영속화는 `StorageAdapter` 경유) |
 | `packages/ui` | 없음 | `@multica/core`, 비즈니스 로직 |
-| `packages/command-chain` | 플랫폼 독립 프로토콜; application, repository, storage(`feedback-store.ts` 포함), worker는 Node 전용 | UI 패키지의 Node 전용 파일 import; worker에 bearer 자격 증명 전달 |
+| `packages/command-chain` | 플랫폼 독립 프로토콜; application (`business-application.ts`), repository, storage(`feedback-store.ts` 포함), worker는 Node 전용 | UI 패키지의 Node 전용 파일 import; worker에 bearer 자격 증명 전달 |
 | `packages/views` | `core/`, `ui/` | `next/*`, `react-router-dom`, store 정의 |
 | `apps/web/platform/` | `next/*` | 다른 앱 |
 | `apps/desktop/.../platform/` | `react-router-dom`, electron | 다른 앱 |

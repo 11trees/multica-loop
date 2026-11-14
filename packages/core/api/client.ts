@@ -2,6 +2,7 @@ import { FeedbackCaptureSchema, FeedbackCancelledSchema, RequirementReviewConfig
 import type { ZodType } from "zod";
 import { EngineeringOverviewSchema, EngineeringWriteSchema } from "./schemas";
 import type { FeedbackWorkAuthorization, FeedbackCapture, FeedbackCancellation, RequirementReviewConfiguration, RequirementReviewAcknowledgement, RequirementDeliveryConfiguration, EngineeringCheckpoint, RequirementConfiguration, EngineeringConfiguration, EngineeringOverview } from "../issues/engineering-schema";
+import { BusinessConfiguredSchema, type BusinessConfiguration } from "../issues/engineering-schema";
 import { AgentRuntimeSchema, EMPTY_RUNTIME } from "../runtimes/schema";
 import type { IssueWakeup, IssueWakeupInput, IssueWakeupSummaryRow, PausedWakeup, SystemWakeup, WakeupRun, WorkspaceSystemWakeup } from "../types/issue-wakeup";
 import type { WorkspaceWakeupPage, WorkspaceWakeupFilters } from "../types/issue-wakeup";
@@ -3029,6 +3030,11 @@ export class ApiClient {
 
   async configureRequirementEngineering(issueId:string,input:RequirementConfiguration):Promise<void>{
     await this.writeEngineering(issueId,"",{kind:"requirement",expected_revision:input.expectedRevision,agent_id:input.contextAgentId,planner_agent_id:input.plannerAgentId,reproduction_agent_id:input.reproductionAgentId,repository_path:input.repositoryPath,input:input.input,item_kind:input.kind,decision_mode:input.decisionMode,auto_continue:input.autoContinue});
+  }
+
+  async configureBusinessEngineering(issueId:string,input:BusinessConfiguration):Promise<void>{
+    const raw=await this.fetch<unknown>(`/api/issues/${issueId}/engineering/business-analysis`,{method:"POST",body:JSON.stringify({expected_revision:input.expectedRevision,repository_path:input.repositoryPath,input:input.input,roles:{intent:input.roles.intent,business_design:input.roles.businessDesign,specification:input.roles.specification,review:input.roles.review},decision_mode:input.decisionMode,auto_continue:input.autoContinue})});
+    if(!parseWithFallback(raw,BusinessConfiguredSchema,null,{endpoint:"POST /api/issues/:id/engineering/business-analysis"}))throw new Error("Invalid business configuration response");
   }
 
   async publishEngineeringUnits(issueId:string,input:EngineeringCheckpoint):Promise<void>{

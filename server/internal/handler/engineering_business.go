@@ -1,0 +1,113 @@
+package handler
+
+import (
+	"encoding/json"
+	"io"
+	"net/http"
+	"strings"
+
+	"github.com/multica-ai/multica/server/internal/engineering"
+	"github.com/multica-ai/multica/server/internal/issuestatus"
+	db "github.com/multica-ai/multica/server/pkg/db/generated"
+)
+
+func businessEngineeringChain(chain string) bool {
+	return chain == "idea-context" || chain == "business-design" || chain == "requirement-spec" || chain == "spec-review"
+}
+
+func requireEngineeringBusinessProject(issue db.Issue, data json.RawMessage) error {
+	var scope struct {
+		Chain     string  `json:"chain"`
+		ProjectID *string `json:"business_project_id"`
+	}
+	if json.Unmarshal(data, &scope) != nil {
+		return &engineering.Rejection{Message: "invalid business project scope", Conflict: true}
+	}
+	if scope.ProjectID != nil || businessEngineeringChain(scope.Chain) {
+		if scope.ProjectID == nil || !issue.ProjectID.Valid || *scope.ProjectID != uuidToString(issue.ProjectID) || issue.TriageState.Valid {
+			return &engineering.Rejection{Message: "business analysis must remain in its frozen accepted project", Conflict: true}
+		}
+	}
+	return nil
+}
+
+func (h *Handler) ConfigureEngineeringBusiness(w http.ResponseWriter, r *http.Request) {
+	issue, userID, ok := h.loadHumanEngineeringIssue(w, r)
+	if !ok {
+		return
+	}
+	if h.EngineeringWorker == nil {
+		writeError(w, http.StatusServiceUnavailable, "engineering is not enabled")
+		return
+	}
+	var input struct {
+		ExpectedRevision int    `json:"expected_revision"`
+		RepositoryPath   string `json:"repository_path"`
+		Input            string `json:"input"`
+		DecisionMode     string `json:"decision_mode"`
+		AutoContinue     bool   `json:"auto_continue"`
+		Roles            struct {
+			Intent         string `json:"intent"`
+			BusinessDesign string `json:"business_design"`
+			Specification  string `json:"specification"`
+			Review         string `json:"review"`
+		} `json:"roles"`
+	}
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(&input) != nil || decoder.Decode(new(any)) != io.EOF || input.ExpectedRevision != 0 || strings.TrimSpace(input.Input) == "" || strings.TrimSpace(input.RepositoryPath) == "" {
+		writeError(w, http.StatusBadRequest, "invalid business analysis configuration")
+		return
+	}
+	if input.DecisionMode != "conservative" && input.DecisionMode != "balanced" && input.DecisionMode != "autonomous" && input.DecisionMode != "fully_autonomous" {
+		writeError(w, http.StatusBadRequest, "invalid business decision mode")
+		return
+	}
+	category, err := issuestatus.CategoryWithError(r.Context(), h.Queries, issue.WorkspaceID, issue.Status)
+	if err != nil {
+		engineeringControlError(w, err)
+		return
+	}
+	if !issue.ProjectID.Valid || issue.TriageState.Valid || category == issuestatus.CategoryDone || category == issuestatus.CategoryClosed {
+		writeError(w, http.StatusConflict, "business analysis requires an open accepted project issue")
+		return
+	}
+	active, err := h.Queries.HasUnfinishedEngineeringIssueTask(r.Context(), issue.ID)
+	if err != nil {
+		engineeringControlError(w, err)
+		return
+	}
+	if active {
+		writeError(w, http.StatusConflict, "wait for the issue run to finish before configuring business analysis")
+		return
+	}
+	resolved := make(map[string]string)
+	resources := make([]map[string]string, 0, 4)
+	for _, role := range []struct{ key, id string }{{"intent", input.Roles.Intent}, {"business_design", input.Roles.BusinessDesign}, {"specification", input.Roles.Specification}, {"review", input.Roles.Review}} {
+		agent, ok := h.loadAgentForUser(w, r, role.id)
+		if !ok {
+			return
+		}
+		if !h.canInvokeAgent(r.Context(), agent, "member", userID, userID, uuidToString(issue.WorkspaceID)) {
+			writeError(w, http.StatusForbidden, "business role is not invocable")
+			return
+		}
+		mapping, err := h.engineeringExecutionResources(r.Context(), issue, agent)
+		if err != nil {
+			engineeringControlError(w, err)
+			return
+		}
+		resources = append(resources, mapping...)
+		resolved[role.key] = uuidToString(agent.ID)
+	}
+	_, err = h.EngineeringWorker.Call(r.Context(), map[string]any{
+		"action": "configure-business", "actor": map[string]string{"kind": "human", "userId": userID, "workspaceId": uuidToString(issue.WorkspaceID), "issueId": uuidToString(issue.ID)},
+		"payload": map[string]any{"expected_revision": input.ExpectedRevision, "project_id": uuidToString(issue.ProjectID), "repository_path": input.RepositoryPath, "input": input.Input, "roles": resolved,
+			"decision_mode": input.DecisionMode, "auto_continue": input.AutoContinue, "execution_resources": resources},
+	})
+	if err != nil {
+		engineeringControlError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"configured": true})
+}

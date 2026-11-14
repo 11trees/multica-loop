@@ -361,6 +361,13 @@ export class TestApiClient {
     return response.json();
   }
 
+  async configureBusinessEngineering(issueId: string, payload: unknown) {
+    if (!this.createdIssueIds.includes(issueId)) throw new Error("Not an owned business fixture issue");
+    const response = await this.authedFetch(`/api/issues/${issueId}/engineering/business-analysis`, { method: "POST", body: JSON.stringify(payload) });
+    if (!response.ok) throw new Error(`business configuration failed: ${response.status} ${await response.text()}`);
+    return response.json();
+  }
+
   async captureEngineeringReceipt(taskId: string, receipt: unknown) {
     return this.engineeringRuntimeRequest(taskId, "engineering-receipts", receipt);
   }
@@ -615,6 +622,10 @@ export class TestApiClient {
         if(database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='engineering_feedback_batch'").get())for(const issueId of this.createdIssueIds){
           for(const row of database.prepare("SELECT payload FROM engineering_feedback_batch WHERE workspace_id=? AND issue_id=?").all(this.workspaceId,issueId)){const batch=JSON.parse(String(row.payload));const ids=[batch.triageDraftId,...batch.groups.flatMap((group:{verifications:Record<string,{draftId:string}>})=>Object.values(group.verifications).map(item=>item.draftId))];for(const id of ids)database.prepare("DELETE FROM chain_drafts WHERE id=?").run(id);}
           for(const table of ["engineering_feedback_comment","engineering_feedback_batch"])database.prepare(`DELETE FROM ${table} WHERE workspace_id=? AND issue_id=?`).run(this.workspaceId,issueId);
+        }
+        if(database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='business_contract'").get())for(const issueId of this.createdIssueIds){
+          for(const row of database.prepare("SELECT payload FROM business_contract WHERE workspace_id=? AND issue_id=?").all(this.workspaceId,issueId)){const record=JSON.parse(String(row.payload));for(const entry of record.entries)database.prepare("DELETE FROM chain_drafts WHERE id=?").run(entry.draftId);}
+          for(const table of ["business_execution","business_contract"])database.prepare(`DELETE FROM ${table} WHERE workspace_id=? AND issue_id=?`).run(this.workspaceId,issueId);
         }
         if(database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='requirement_contract'").get())for(const issueId of this.createdIssueIds){
           const rows=database.prepare("SELECT payload FROM requirement_contract WHERE workspace_id=? AND issue_id=?").all(this.workspaceId,issueId);

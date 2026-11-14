@@ -18,7 +18,7 @@ const initial: EngineeringOverview = {
   phases: [{ id: "inputs", status: "completed" }, { id: "plan", status: "current" }],
   sources: [{ key: "ac1", kind: "acceptance", description: "Survives reload", oracle: "Title visible", sourceRef: "ISSUE:fixture" }],
   questions: [{ id: "q1", title: "Fixture entry", question: "Which entry should be verified?", why: "Need isolated data", recommendation: "Use the local fixture", options:[],recommendationOption:"", active: true, phase: "plan", answer: null }],
-  artifacts: [], result: null, rework: null, analysis:null, requirement:null, managedUnit:null, decisions:[],
+  artifacts: [], result: null, rework: null, analysis:null, requirement:null, business:null, managedUnit:null, decisions:[],
 };
 let state: EngineeringOverview;
 let client: QueryClient;

@@ -8,6 +8,8 @@ contracts and drafts in a local SQLite database. It receives no bearer credentia
 JWT signing key, or PostgreSQL credential. There is no additional HTTP listener.
 [Requirement context and planning](requirements.md) use the same host/CLI under
 a distinct frozen issue workflow. Their completed plan is not a delivery pass.
+[Business analysis](business-analysis.md) uses four readonly native roles and
+structured revision returns; specification approval alone cannot authorize Done.
 
 ## Start and configure
 
