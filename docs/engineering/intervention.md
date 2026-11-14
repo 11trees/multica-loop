@@ -15,7 +15,8 @@ rejects the old system-assistance credential for them. Recreating the earlier
 three-assistance-attempt loop would therefore route current faults incorrectly.
 
 The target implements the terminal handoff and immutable pending observation.
-The independent Admin controller, investigation/diagnosis, repair workspaces,
+[Independent Admin observation delivery and supervision](admin.md) now retain it
+in a separate management Case. Investigation/diagnosis, repair workspaces,
 separate verification, resource takeover, business recovery and runtime update
 are not yet connected. Pending handoffs intentionally remain blocked until that
 path is implemented. No text resolution or ordinary Continue action substitutes
@@ -53,7 +54,9 @@ The request freezes the raw checkpoint, definition, contract, draft sequence,
 phase and attempt together with the original reason/evidence and fingerprints.
 A private SQLite transaction rechecks the current draft sequence or Direct
 version and inserts the immutable terminal receipt. That same row is the durable
-pending Admin observation with a stable observation ID. Repeating the same
+pending Admin observation with a stable observation ID. Management ingestion is
+acknowledged separately, without changing the original receipt or releasing its
+workflow hold. Repeating the same
 request returns the same receipt; altered content is refused.
 
 Readonly repository drift remains reportable after the authenticated editable

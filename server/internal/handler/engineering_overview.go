@@ -58,6 +58,16 @@ func (h *Handler) GetEngineeringOverview(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusServiceUnavailable, "run status lookup is unavailable")
 		return
 	}
+	if h.EngineeringAdminWorker != nil && len(response["intervention"]) > 0 && string(response["intervention"]) != "null" {
+		data, adminErr := h.EngineeringAdminWorker.Call(r.Context(), map[string]string{"action": "issue", "workspace_id": uuidToString(issue.WorkspaceID), "issue_id": uuidToString(issue.ID)})
+		var repair map[string]json.RawMessage
+		if adminErr != nil || json.Unmarshal(data, &repair) != nil || repair == nil {
+			repair = map[string]json.RawMessage{"available": json.RawMessage(`false`)}
+		} else {
+			repair["available"] = json.RawMessage(`true`)
+		}
+		response["repair"], _ = json.Marshal(repair)
+	}
 	response["has_active_run"], _ = json.Marshal(active)
 	category, err := issuestatus.CategoryWithError(r.Context(), h.Queries, issue.WorkspaceID, issue.Status)
 	if err != nil {

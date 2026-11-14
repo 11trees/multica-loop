@@ -69,7 +69,7 @@ func (h *Handler) invokeEngineering(w http.ResponseWriter, r *http.Request, acti
 			}
 		}
 	}
-	result, err := h.EngineeringWorker.Call(r.Context(), map[string]any{"actor": actor, "action": action, "payload": payload})
+	result, err := h.EngineeringWorker.Call(r.Context(), map[string]any{"actor": actor, "action": action, "payload": payload, "host_version": h.EngineeringHostVersion})
 	if err != nil {
 		var rejected *engineering.Rejection
 		if errors.As(err, &rejected) {

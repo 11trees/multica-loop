@@ -213,3 +213,9 @@ it("requires an immutable terminal intervention projection for waiting work",asy
  respond({...body,status:"waiting_for_intervention",intervention});expect(await new ApiClient("https://api.example.test").getEngineeringOverview("issue")).toMatchObject({intervention:{summary:"Contract conflict"}});
  for(const invalid of [{...body,status:"waiting_for_intervention"},{...body,intervention},{...body,status:"waiting_for_intervention",intervention:{...intervention,snapshot_hash:"changed"}}]){respond(invalid);await expect(new ApiClient("https://api.example.test").getEngineeringOverview("issue")).rejects.toThrow(/Invalid engineering overview/);}
 });
+
+it("keeps independent repair visibility separate from business completion and availability",async()=>{
+ const repair={available:true,recorded:true,case_id:"REPAIR-original",status:"queued",original_version:"kernel:sha256:original;api:sha256:original",observation_count:1,supervision_active:true,desired_intent:"stopped",execution_connected:false};respond({...body,repair});expect(await new ApiClient("https://api.example.test").getEngineeringOverview("issue")).toMatchObject({repair:{recorded:true,execution_connected:false}});
+ respond({...body,repair:{available:false}});expect(await new ApiClient("https://api.example.test").getEngineeringOverview("issue")).toMatchObject({repair:{available:false},configured:true});
+ respond({...body,repair:{...repair,observation_count:0}});await expect(new ApiClient("https://api.example.test").getEngineeringOverview("issue")).rejects.toThrow(/Invalid engineering overview/);
+});

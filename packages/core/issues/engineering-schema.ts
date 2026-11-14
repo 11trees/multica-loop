@@ -31,7 +31,13 @@ const requirement=z.object({end_to_end:z.boolean().optional().default(false),bus
 const directResult=z.object({id:z.string().min(1),attemptId:z.string().min(1),summary:z.string().min(1).max(4000),content:z.string().min(1).max(100000),submittedAt:z.iso.datetime(),hash:z.string().regex(/^[a-f0-9]{64}$/)});
 const direct=z.object({input:z.string().min(1),project_id:z.string().min(1),contract_hash:z.string().regex(/^[a-f0-9]{64}$/),mode:z.string().transform(value=>value === "in_place" || value === "worktree" ? value : "unknown"),native_completed:z.boolean(),attempts:z.array(z.object({id:z.string().min(1),run_at:z.iso.datetime().nullable(),active:z.boolean()})),result:directResult.nullable()}).superRefine((value,ctx)=>{if(value.native_completed && !value.result || value.result && !value.attempts.some(attempt=>attempt.active && attempt.id === value.result!.attemptId && attempt.run_at))ctx.addIssue({code:"custom",message:"Invalid Direct submission receipt"});}).transform(value=>({input:value.input,projectId:value.project_id,contractHash:value.contract_hash,mode:value.mode,nativeCompleted:value.native_completed,attempts:value.attempts.map(attempt=>({id:attempt.id,runAt:attempt.run_at,active:attempt.active})),result:value.result}));
 const intervention=z.object({id:z.string().uuid(),status:z.string().min(1),chain:z.string().min(1),phase:z.string().min(1),draft_id:z.string().nullable(),revision:z.number().int().positive(),sequence:z.number().int().nonnegative(),attempt_id:z.string().min(1),agent_id:z.string().min(1),summary:z.string().min(1),reason:z.string().min(1),evidence:z.string().min(1),requested_at:z.iso.datetime(),observation_id:z.string().min(1),snapshot_hash:z.string().regex(/^[a-f0-9]{64}$/)});
+const repair=z.union([
+ z.object({available:z.literal(false)}),
+ z.object({available:z.literal(true),recorded:z.literal(false)}),
+ z.object({available:z.literal(true),recorded:z.literal(true),case_id:z.string().min(1),status:z.string().min(1),original_version:z.string().min(1),observation_count:z.number().int().positive(),supervision_active:z.boolean(),desired_intent:z.string().min(1),execution_connected:z.boolean()}),
+]);
 const state = z.object({
+  repair:repair.nullable().optional().default(null),
   intervention:intervention.nullable().optional().default(null),
   direct_enabled:z.boolean().optional().default(false),direct:direct.nullable().optional().default(null),
   business_enabled:z.boolean().optional().default(false),end_to_end_enabled:z.boolean().optional().default(false),
@@ -66,6 +72,7 @@ const state = z.object({
   if (value.configured && value.status === "waiting_for_answers" && !value.questions) ctx.addIssue({ code: "custom", message: "Missing human checkpoint questions" });
 });
 export const EngineeringOverviewSchema = state.transform(value => ({
+  repair:value.repair,
   intervention:value.intervention,
   directEnabled:value.direct_enabled,direct:value.direct,
   businessEnabled:value.business_enabled,endToEndEnabled:value.end_to_end_enabled,

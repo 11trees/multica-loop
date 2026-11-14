@@ -13,7 +13,7 @@ vi.mock("@multica/core/api", async importOriginal => ({ ...await importOriginal<
 vi.mock("@multica/core/hooks", async importOriginal => ({ ...await importOriginal<typeof import("@multica/core/hooks")>(), useWorkspaceId: () => "workspace" }));
 const issue = { id: "issue", title: "Fixture delivery", revision: 4 } as Issue;
 const initial: EngineeringOverview = {
-  intervention:null,directEnabled:false,direct:null,endToEndEnabled:false,businessEnabled:false,feedbackAllowed:false,autoContinue: false, enabled: true, configured: true, chain: "verification", agentId: "verifier", revision: 2, sequence: 7,
+  repair:null,intervention:null,directEnabled:false,direct:null,endToEndEnabled:false,businessEnabled:false,feedbackAllowed:false,autoContinue: false, enabled: true, configured: true, chain: "verification", agentId: "verifier", revision: 2, sequence: 7,
   codeVersion: "commit-fixture", repositoryPath: "/fixture", draftId: "draft", status: "waiting_for_answers", currentPhase: "plan", hasActiveRun: false,
   phases: [{ id: "inputs", status: "completed" }, { id: "plan", status: "current" }],
   sources: [{ key: "ac1", kind: "acceptance", description: "Survives reload", oracle: "Title visible", sourceRef: "ISSUE:fixture" }],
@@ -243,4 +243,10 @@ it("retains the frozen phase and original intervention evidence while refusing c
  const region=await screen.findByRole("region",{name:"Intervention"});expect(within(region).getByText(state.intervention.summary)).toBeVisible();
  await userEvent.click(within(region).getByText("Original investigation evidence"));expect(within(region).getByRole("heading",{name:"Original evidence"})).toBeVisible();
  expect(screen.queryByRole("button",{name:/Continue run|Start run/})).not.toBeInTheDocument();expect(screen.queryByRole("button",{name:"Abandon draft"})).not.toBeInTheDocument();
+});
+
+it("shows a recorded repair without claiming an investigation process is running",async()=>{
+ state.repair={available:true,recorded:true,case_id:"REPAIR-original",status:"queued",original_version:"kernel-and-host-version",observation_count:2,supervision_active:true,desired_intent:"stopped",execution_connected:false};
+ renderWithI18n(<QueryClientProvider client={client}><EngineeringPanel issue={issue} /></QueryClientProvider>);
+ const region=await screen.findByRole("region",{name:"Repair case"});expect(within(region).getByText("Waiting for repair setup")).toBeVisible();expect(within(region).getByText("Retained observations: 2")).toBeVisible();expect(within(region).getByText("REPAIR-original")).toBeVisible();
 });

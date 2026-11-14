@@ -131,6 +131,13 @@ export function EngineeringPanel({ issue, closed = false }: { issue: Issue; clos
         <p className="whitespace-pre-wrap break-words text-caption">{state.intervention.reason}</p>
         <details><summary className="cursor-pointer text-caption text-muted-foreground">{t($=>$.engineering.intervention_evidence)}</summary><Markdown mode="full" className="mt-2 min-w-0 break-words">{state.intervention.evidence}</Markdown></details>
       </section>}
+      {state.repair && !state.repair.available && <p role="status" className="text-caption text-muted-foreground">{t($=>$.engineering.repair_unavailable)}</p>}
+      {state.repair?.available && state.repair.recorded && <section aria-label={t($=>$.engineering.repair_case)} className="min-w-0 space-y-2 rounded-md border border-border p-3">
+        <h4 className="text-label font-medium">{t($=>$.engineering.repair_case)}</h4>
+        <p className="text-caption">{state.repair.execution_connected ? state.repair.status : t($=>$.engineering.repair_setup)}</p>
+        <p className="text-caption">{t($=>$.engineering.repair_observations,{count:state.repair.observation_count})}</p>
+        <p className="break-all font-mono text-micro text-muted-foreground">{state.repair.case_id}</p>
+      </section>}
       {state.direct && <DirectPanel direct={state.direct} />}
       {state.business && <BusinessAnalysisPanel business={state.business} pending={pending} disabled={query.isError || state.hasActiveRun !== false} closed={closed} onRead={input=>actions.readSpecification.mutateAsync(input)} onComment={input=>actions.commentSpecification.mutateAsync(input)} />}
       {state.requirement && <>

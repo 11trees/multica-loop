@@ -361,6 +361,13 @@ export class TestApiClient {
     return response.json();
   }
 
+  async engineeringRepairDelivered(issueId: string) {
+    if (!this.createdIssueIds.includes(issueId) || !process.env.MULTICA_ENGINEERING_DATABASE) throw new Error("Not an owned repair fixture");
+    const { DatabaseSync } = await import("node:sqlite"), db = new DatabaseSync(process.env.MULTICA_ENGINEERING_DATABASE, {readOnly:true});
+    try { return !!db.prepare("SELECT 1 FROM engineering_intervention source JOIN engineering_intervention_delivery delivery ON delivery.observation_id=json_extract(source.payload,'$.observationId') WHERE source.workspace_id=? AND source.issue_id=?").get(this.workspaceId,issueId); }
+    finally { db.close(); }
+  }
+
   async configureDirectEngineering(issueId: string, payload: unknown) {
     if (!this.createdIssueIds.includes(issueId)) throw new Error("Not an owned Direct fixture issue");
     const response = await this.authedFetch(`/api/issues/${issueId}/engineering/direct`, { method: "POST", body: JSON.stringify(payload) });
@@ -634,8 +641,16 @@ export class TestApiClient {
   async cleanup() {
     if (process.env.MULTICA_ENGINEERING_DATABASE && this.createdIssueIds.length && this.workspaceId) {
       const { DatabaseSync } = await import("node:sqlite");
+      const { existsSync } = await import("node:fs");
+      const adminPath=process.env.MULTICA_ENGINEERING_DATABASE+".admin.sqlite";
+      if(existsSync(adminPath)){
+        const admin=new DatabaseSync(adminPath);
+        try { for(const issueId of this.createdIssueIds){const cases=admin.prepare("SELECT DISTINCT case_id FROM admin_observation WHERE workspace_id=? AND issue_id=?").all(this.workspaceId,issueId);admin.prepare("DELETE FROM admin_observation WHERE workspace_id=? AND issue_id=?").run(this.workspaceId,issueId);for(const row of cases)admin.prepare("DELETE FROM admin_case WHERE case_id=? AND NOT EXISTS(SELECT 1 FROM admin_observation WHERE case_id=?)").run(String(row.case_id),String(row.case_id));} }
+        finally {admin.close();}
+      }
       const database = new DatabaseSync(process.env.MULTICA_ENGINEERING_DATABASE);
       try {
+        if(database.prepare("SELECT name FROM sqlite_master WHERE name='engineering_intervention_delivery'").get())for(const issueId of this.createdIssueIds)database.prepare("DELETE FROM engineering_intervention_delivery WHERE observation_id IN (SELECT json_extract(payload,'$.observationId') FROM engineering_intervention WHERE workspace_id=? AND issue_id=?)").run(this.workspaceId,issueId);
         for(const table of ["engineering_intervention", "engineering_intervention_view"])if(database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(table))for(const issueId of this.createdIssueIds)database.prepare(`DELETE FROM ${table} WHERE workspace_id=? AND issue_id=?`).run(this.workspaceId,issueId);
         if(database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='direct_contract'").get())for(const issueId of this.createdIssueIds)database.prepare("DELETE FROM direct_contract WHERE workspace_id=? AND issue_id=?").run(this.workspaceId,issueId);
         if(database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='engineering_feedback_batch'").get())for(const issueId of this.createdIssueIds){

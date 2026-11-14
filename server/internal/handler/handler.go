@@ -222,6 +222,10 @@ type RuntimeRecoveryNotifier interface {
 }
 
 type Handler struct {
+	EngineeringHostVersion string
+	EngineeringAdminWorker interface {
+		Call(context.Context, any) (json.RawMessage, error)
+	}
 	EngineeringWorker interface {
 		Call(context.Context, any) (json.RawMessage, error)
 	}
@@ -558,7 +562,9 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 	}
 	h.WebhookDeliveryWorker = NewWebhookDeliveryWorker(h)
 	if cfg.EngineeringWorkerPath != "" && cfg.EngineeringDatabasePath != "" {
+		h.EngineeringHostVersion = engineeringHostVersion()
 		h.EngineeringWorker = &engineering.Client{Worker: cfg.EngineeringWorkerPath, Database: cfg.EngineeringDatabasePath}
+		h.EngineeringAdminWorker = &engineering.Client{Worker: cfg.EngineeringWorkerPath, Database: cfg.EngineeringDatabasePath + ".admin.sqlite", Admin: true}
 	}
 	// The default passthrough scheduler reports sweeper-race recoveries so the
 	// daemon:register refresh fires even without the production batched wiring.
