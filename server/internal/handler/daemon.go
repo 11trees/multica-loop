@@ -3069,14 +3069,15 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 			"action": "selection",
 		})
 		var role struct {
-			ReportCorrection bool                    `json:"report_correction"`
-			FeedbackGroupID  string                  `json:"feedback_group_id"`
-			ParentID         string                  `json:"parent_issue_id"`
-			ReviewUnits      []engineeringReviewUnit `json:"review_units"`
-			Configured       *bool                   `json:"configured"`
-			Chain            string                  `json:"chain"`
-			Repository       string                  `json:"repository_path"`
-			Commit           string                  `json:"code_version"`
+			BusinessProjectID *string                 `json:"business_project_id"`
+			ReportCorrection  bool                    `json:"report_correction"`
+			FeedbackGroupID   string                  `json:"feedback_group_id"`
+			ParentID          string                  `json:"parent_issue_id"`
+			ReviewUnits       []engineeringReviewUnit `json:"review_units"`
+			Configured        *bool                   `json:"configured"`
+			Chain             string                  `json:"chain"`
+			Repository        string                  `json:"repository_path"`
+			Commit            string                  `json:"code_version"`
 		}
 		invalid := selectErr != nil || json.Unmarshal(selection, &role) != nil || role.Configured == nil
 		if !invalid && *role.Configured {
@@ -3086,13 +3087,13 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		if invalid {
 			return resp, nil, nil, 0, 0, h.failClaimedTaskBeforeLaunch(r.Context(), task, "Engineering role lookup is unavailable.", taskfailure.ReasonEnvironmentPrepareFailed, "engineering_unavailable", http.StatusServiceUnavailable, "engineering unavailable")
 		}
-		if *role.Configured && businessEngineeringChain(role.Chain) {
+		if *role.Configured && (businessEngineeringChain(role.Chain) || role.BusinessProjectID != nil) {
 			issue, err := h.Queries.GetIssueInWorkspace(r.Context(), db.GetIssueInWorkspaceParams{ID: task.IssueID, WorkspaceID: parseUUID(runtimeWorkspaceID)})
 			if err == nil {
 				err = requireEngineeringBusinessProject(issue, selection)
 			}
 			if err != nil {
-				return resp, nil, nil, 0, 0, h.failClaimedTaskBeforeLaunch(r.Context(), task, "Business analysis project changed.", taskfailure.ReasonEnvironmentPrepareFailed, "engineering_business", http.StatusConflict, "business scope unavailable")
+				return resp, nil, nil, 0, 0, h.failClaimedTaskBeforeLaunch(r.Context(), task, "Engineering workflow project changed.", taskfailure.ReasonEnvironmentPrepareFailed, "engineering_business", http.StatusConflict, "business scope unavailable")
 			}
 		}
 		if *role.Configured && (role.Chain == "review" || role.Chain == "feedback-triage" || role.FeedbackGroupID != "") {

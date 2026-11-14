@@ -52,6 +52,10 @@ func (h *Handler) ConfigureEngineeringBusiness(w http.ResponseWriter, r *http.Re
 			Specification  string `json:"specification"`
 			Review         string `json:"review"`
 		} `json:"roles"`
+		Delivery *struct {
+			Roles      map[string]string `json:"roles"`
+			MaxReworks int               `json:"max_reworks"`
+		} `json:"delivery,omitempty"`
 	}
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
 	decoder.DisallowUnknownFields()
@@ -83,7 +87,21 @@ func (h *Handler) ConfigureEngineeringBusiness(w http.ResponseWriter, r *http.Re
 	}
 	resolved := make(map[string]string)
 	resources := make([]map[string]string, 0, 4)
-	for _, role := range []struct{ key, id string }{{"intent", input.Roles.Intent}, {"business_design", input.Roles.BusinessDesign}, {"specification", input.Roles.Specification}, {"review", input.Roles.Review}} {
+	roleInputs := []struct{ key, id string }{{"intent", input.Roles.Intent}, {"business_design", input.Roles.BusinessDesign}, {"specification", input.Roles.Specification}, {"review", input.Roles.Review}}
+	if input.Delivery != nil {
+		if !input.AutoContinue || input.Delivery.MaxReworks < 0 || input.Delivery.MaxReworks > 10 || len(input.Delivery.Roles) != 6 {
+			writeError(w, http.StatusBadRequest, "End to End requires automatic continuation, six delivery roles and a bounded rework policy")
+			return
+		}
+		for _, key := range []string{"context", "planner", "analyst", "developer", "verifier", "reviewer"} {
+			if input.Delivery.Roles[key] == "" {
+				writeError(w, http.StatusBadRequest, "missing End to End role")
+				return
+			}
+			roleInputs = append(roleInputs, struct{ key, id string }{key, input.Delivery.Roles[key]})
+		}
+	}
+	for _, role := range roleInputs {
 		agent, ok := h.loadAgentForUser(w, r, role.id)
 		if !ok {
 			return
@@ -100,10 +118,23 @@ func (h *Handler) ConfigureEngineeringBusiness(w http.ResponseWriter, r *http.Re
 		resources = append(resources, mapping...)
 		resolved[role.key] = uuidToString(agent.ID)
 	}
+	payload := map[string]any{"expected_revision": input.ExpectedRevision, "project_id": uuidToString(issue.ProjectID), "repository_path": input.RepositoryPath, "input": input.Input,
+		"decision_mode": input.DecisionMode, "auto_continue": input.AutoContinue, "execution_resources": resources}
+	businessRoles := map[string]string{}
+	for _, key := range []string{"intent", "business_design", "specification", "review"} {
+		businessRoles[key] = resolved[key]
+	}
+	payload["roles"] = businessRoles
+	if input.Delivery != nil {
+		deliveryRoles := map[string]string{}
+		for _, key := range []string{"context", "planner", "analyst", "developer", "verifier", "reviewer"} {
+			deliveryRoles[key] = resolved[key]
+		}
+		payload["delivery"] = map[string]any{"roles": deliveryRoles, "maxReworks": input.Delivery.MaxReworks}
+	}
 	_, err = h.EngineeringWorker.Call(r.Context(), map[string]any{
 		"action": "configure-business", "actor": map[string]string{"kind": "human", "userId": userID, "workspaceId": uuidToString(issue.WorkspaceID), "issueId": uuidToString(issue.ID)},
-		"payload": map[string]any{"expected_revision": input.ExpectedRevision, "project_id": uuidToString(issue.ProjectID), "repository_path": input.RepositoryPath, "input": input.Input, "roles": resolved,
-			"decision_mode": input.DecisionMode, "auto_continue": input.AutoContinue, "execution_resources": resources},
+		"payload": payload,
 	})
 	if err != nil {
 		engineeringControlError(w, err)

@@ -8,7 +8,7 @@ export function engineeringOverviewOptions(workspaceId: string, issueId: string)
   return queryOptions({
     queryKey: ["engineering", workspaceId, issueId], queryFn: () => api.getEngineeringOverview(issueId),
     enabled: !!workspaceId && !!issueId, retry: false, staleTime: 5000,
-    refetchInterval: query => {const state=query.state.data,review=state?.requirement?.review;return state?.configured && (state.business?.comments.some(comment=>["publishing","resolving"].includes(comment.status)) || state.hasActiveRun === true || !["completed", "abandoned"].includes(state.status) || state.requirement?.feedback?.active === true || review?.result?.verdict === "closure_gap" || state.requirement?.delivery_policy && state.requirement.publication?.units.some(unit=>!state.requirement!.accepted[unit.unit.key])) ? 5000 : false;},
+    refetchInterval: query => {const state=query.state.data,review=state?.requirement?.review;return state?.configured && (state.business?.endToEnd === true || state.requirement?.end_to_end === true && !review?.acknowledgement || state.business?.comments.some(comment=>["publishing","resolving"].includes(comment.status)) || state.hasActiveRun === true || !["completed", "abandoned"].includes(state.status) || state.requirement?.feedback?.active === true || review?.result?.verdict === "closure_gap" || state.requirement?.delivery_policy && state.requirement.publication?.units.some(unit=>!state.requirement!.accepted[unit.unit.key])) ? 5000 : false;},
   });
 }
 

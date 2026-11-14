@@ -3033,7 +3033,7 @@ export class ApiClient {
   }
 
   async configureBusinessEngineering(issueId:string,input:BusinessConfiguration):Promise<void>{
-    const raw=await this.fetch<unknown>(`/api/issues/${issueId}/engineering/business-analysis`,{method:"POST",body:JSON.stringify({expected_revision:input.expectedRevision,repository_path:input.repositoryPath,input:input.input,roles:{intent:input.roles.intent,business_design:input.roles.businessDesign,specification:input.roles.specification,review:input.roles.review},decision_mode:input.decisionMode,auto_continue:input.autoContinue})});
+    const raw=await this.fetch<unknown>(`/api/issues/${issueId}/engineering/business-analysis`,{method:"POST",body:JSON.stringify({expected_revision:input.expectedRevision,repository_path:input.repositoryPath,input:input.input,roles:{intent:input.roles.intent,business_design:input.roles.businessDesign,specification:input.roles.specification,review:input.roles.review},...(input.delivery ? {delivery:{roles:input.delivery.roles,max_reworks:input.delivery.maxReworks}} : {}),decision_mode:input.decisionMode,auto_continue:input.autoContinue})});
     if(!parseWithFallback(raw,BusinessConfiguredSchema,null,{endpoint:"POST /api/issues/:id/engineering/business-analysis"}))throw new Error("Invalid business configuration response");
   }
 

@@ -31,11 +31,11 @@ function outputs(stage: BusinessStage): Outputs {
 }
 let directory: string, repository: string, database: string, app: EngineeringApplication, allSources: string[];
 const git = (args: string[]) => execFileSync("git", ["-C", repository, ...args], { encoding: "utf8" }).trim();
-function open() { return new EngineeringApplication(database, allSources[0]!, allSources[1], allSources[2], { context: allSources[3]!, planning: allSources[4]! }, { intent: allSources[5]!, business_design: allSources[6]!, specification: allSources[7]!, review: allSources[8]! }); }
+function open() { return new EngineeringApplication(database, allSources[0]!, allSources[1], allSources[2], { context: allSources[3]!, planning: allSources[4]!,review:allSources[9]! }, { intent: allSources[5]!, business_design: allSources[6]!, specification: allSources[7]!, review: allSources[8]! }); }
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), "multica-business-host-")); repository = join(directory, "repository"); database = join(directory, "engineering.sqlite");
   execFileSync("git", ["init", "-q", repository]); git(["config", "user.name", "Fixture"]); git(["config", "user.email", "fixture@example.test"]); await writeFile(join(repository, "README.md"), "Reader fixture\n"); git(["add", "README.md"]); git(["commit", "-qm", "Fixture"]);
-  allSources = await Promise.all(["verification", "development", "analysis", "context", "planning", "idea-context", "business-design", "requirement-spec", "spec-review"].map(name => readFile(new URL(`./definitions/${name}.yaml`, import.meta.url), "utf8")));
+  allSources = await Promise.all(["verification", "development", "analysis", "context", "planning", "idea-context", "business-design", "requirement-spec", "spec-review", "review"].map(name => readFile(new URL(`./definitions/${name}.yaml`, import.meta.url), "utf8")));
   app = open();
 });
 afterEach(async () => { app.close(); await rm(directory, { recursive: true, force: true }); });
@@ -171,3 +171,33 @@ it("persists native comment publication before revising only Spec and Review and
   await invoke(human,"business-read",{expected_version:revised.version,draft_id:revised.specification!.draft_id,specification_hash:revised.specification!.hash});expect(await invoke(host,"completion")).toMatchObject({allowed:true,business_scope:{comments:[{id:comment.comment_id,version,resolved:true}]}});
   expect(await invoke(host,"business-comment-protected",comment)).toEqual({protected:true});expect(await invoke(host,"business-comment-protected",{comment_id:randomUUID()})).toEqual({protected:false});
 },20000);
+
+const deliveryRoles={context:randomUUID(),planner:randomUUID(),analyst:randomUUID(),developer:randomUUID(),verifier:randomUUID(),reviewer:randomUUID()};
+const endToEndConfiguration=()=>({...configuration(),delivery:{roles:deliveryRoles,maxReworks:2},execution_resources:Array.from({length:10},()=>({path:repository,mode:"in_place"}))});
+const handoffPayload=(version:number)=>({expected_version:version,execution_resources:Array.from({length:6},()=>({path:repository,mode:"in_place"}))});
+it("hands approved specifications and all source versions atomically into the initially authorized delivery workflow",async()=>{
+  await invoke(human,"configure-business",endToEndConfiguration());
+  for(const stage of stageOrder){const session=await start(stage);await session.until(null);}
+  const before=await closure(),pending=await invoke({kind:"coordinator"},"continuations");expect(pending).toEqual([expect.objectContaining({reason:"business_handoff",agent_id:deliveryRoles.context,expected_sequence:before.version})]);
+  await expect(invoke(human,"business-read",{expected_version:before.version,draft_id:before.specification!.draft_id,specification_hash:before.specification!.hash})).rejects.toThrow(/does not stop/);
+  await expect(invoke(host,"completion")).rejects.toThrow(/End to End/);
+  await expect(invoke(human,"business-handoff",handoffPayload(before.version))).rejects.toThrow(/native host/);
+  await expect(invoke(host,"business-handoff",handoffPayload(before.version-1))).rejects.toThrow(/handoff changed/);
+  await writeFile(join(repository,"unreviewed.txt"),"Unreviewed edit");await expect(invoke(host,"business-handoff",handoffPayload(before.version))).rejects.toThrow(/uncommitted/);await rm(join(repository,"unreviewed.txt"));
+  const db=new DatabaseSync(database);db.exec("CREATE TRIGGER fail_business_handoff BEFORE UPDATE ON business_contract BEGIN SELECT RAISE(ABORT,'handoff failure'); END");
+  await expect(invoke(host,"business-handoff",handoffPayload(before.version))).rejects.toThrow(/handoff failure/);expect(db.prepare("SELECT count(*) AS count FROM requirement_contract").get()!.count).toBe(0);db.exec("DROP TRIGGER fail_business_handoff");db.close();
+  expect(await invoke(host,"business-handoff",handoffPayload(before.version))).toEqual({handed_off:true});app.close();app=open();expect(await invoke(host,"business-handoff",handoffPayload(before.version))).toEqual({handed_off:true});
+  expect(await invoke({kind:"coordinator"},"continuations")).toEqual([expect.objectContaining({reason:"business_ready",agent_id:deliveryRoles.context})]);
+  const state=z.object({chain:z.string(),requirement:z.object({end_to_end:z.boolean(),business_source:z.object({specification:z.string(),reviewHash:z.string(),stages:z.array(z.object({draftId:z.string(),hash:z.string(),conclusion:z.string()}))}),delivery_policy:z.object({analystId:z.string(),maxReworks:z.number()})})}).parse(await invoke(human,"overview"));expect(state.chain).toBe("context");expect(state.requirement.end_to_end).toBe(true);expect(state.requirement.business_source.specification).toBe(specification);expect(state.requirement.business_source.reviewHash).toBe(before.specification!.hash);expect(state.requirement.business_source.stages).toHaveLength(4);expect(state.requirement.delivery_policy).toMatchObject({analystId:deliveryRoles.analyst,maxReworks:2});
+  for(const item of state.requirement.business_source.stages)expect(createHash("sha256").update(item.conclusion).digest("hex")).toBe(item.hash);
+  const owner={...actor("intent"),agentId:deliveryRoles.context};expect(await invoke({...owner,projectId:undefined},"selection")).toMatchObject({configured:true,business_project_id:projectId,chain:"context"});await expect(invoke({...owner,kind:"daemon",projectId:randomUUID()},"bind",{work_dir:repository,mode:"in_place",overlays:[]})).rejects.toThrow(/project changed/);
+  await invoke({...owner,kind:"daemon"},"bind",{work_dir:repository,mode:"in_place",overlays:[]});const view=z.object({contract:z.object({businessSource:z.object({specification:z.string()})}),draft:draftSchema.nullable()}).parse(await invoke(owner,"start"));expect(view.contract.businessSource.specification).toBe(specification);
+  await expect(invoke(actor("review"),"start")).rejects.toThrow(/active requirement role/);
+  await expect(invoke(human,"configure",{kind:"requirement",expected_revision:1})).rejects.toThrow(/frozen End to End origin/);
+  const reopened=new DatabaseSync(database),row=reopened.prepare("SELECT payload FROM business_contract").get()!,record=JSON.parse(String(row.payload));record.entries.at(-1).settledHash="0".repeat(64);reopened.prepare("UPDATE business_contract SET payload=?").run(JSON.stringify(record));reopened.close();await expect(invoke(owner,"read")).rejects.toThrow(/conclusion changed/);
+},30000);
+
+it("requires the entire initial End to End authorization before any business record is created",async()=>{
+  for(const input of [{...endToEndConfiguration(),auto_continue:false},{...endToEndConfiguration(),delivery:{roles:{...deliveryRoles,reviewer:roles.review},maxReworks:2}},{...endToEndConfiguration(),execution_resources:configuration().execution_resources}])await expect(invoke(human,"configure-business",input)).rejects.toThrow(/End to End|every frozen/);
+  expect(await invoke(human,"overview")).toMatchObject({configured:false});
+});

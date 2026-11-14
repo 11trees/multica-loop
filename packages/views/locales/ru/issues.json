@@ -2322,6 +2322,12 @@
     "phase_spec_check": "Проверка спецификации",
     "phase_classification": "Классификация пробелов",
     "phase_verdict": "Результат проверки",
-    "business_refresh": "Обновить бизнес-анализ"
+    "business_refresh": "Обновить бизнес-анализ",
+    "end_to_end": "End to End",
+    "end_to_end_notice": "Разрешает работу всех десяти ролей и автоматическую поставку до чтения итогового отчёта.",
+    "end_to_end_roles_required": "Требуются десять разных агентов.",
+    "start_end_to_end": "Запустить End to End",
+    "specification_handoff": "Одобрено; автоматический переход к анализу требований.",
+    "approved_specification": "Одобренная спецификация"
   }
 }

@@ -4,8 +4,10 @@ import { applyDecisionCommand, decisionGraphErrors, decisionModeSchema, decision
 import { PhaseValidationError, draftSchema, type BuiltinHandlers, type ChainDraft, type ChainCommand } from "./runtime";
 import type { CommandChainProfile } from "./definition";
 
+import { businessSourceSchema } from "./end-to-end";
+
 const text=z.string().trim().min(1);
-export const contextContractSchema=z.strictObject({binding:draftSchema.shape.binding,input:text.max(40000),kind:z.enum(["requirement","bug"]),decisionMode:decisionModeSchema});
+export const contextContractSchema=z.strictObject({binding:draftSchema.shape.binding,input:text.max(40000),kind:z.enum(["requirement","bug"]),businessSource:businessSourceSchema.optional(),decisionMode:decisionModeSchema});
 export type ContextContract=z.infer<typeof contextContractSchema>;
 export const contextProfile:CommandChainProfile={id:"requirement-context",agent:"backlog-agent",requiredBuiltins:["decision-proposal","decision-resolution","decision-answer-review","acceptance-definition","requirement-context-finalize"],
   builtins:{"decision-proposal":{acceptsArtifacts:false},"decision-resolution":{acceptsArtifacts:false},"decision-answer-review":{acceptsArtifacts:true},"acceptance-definition":{acceptsArtifacts:true,allowsReadonlyArtifacts:true},"requirement-context-finalize":{acceptsArtifacts:false}},metadataKeys:[],repositoryAdapters:[]};
@@ -63,5 +65,5 @@ export function compileContextConclusion(draft:Readonly<ChainDraft>,input:Contex
   const contract=contextContractSchema.parse(input),errors=contextErrors(draft,contract);
   if(draft.definition.id !== contextProfile.id || draft.definition.agent !== contextProfile.agent || draft.status !== "completed" || draft.phase !== null || JSON.stringify(draft.completedPhases) !== JSON.stringify(Object.keys(draft.definition.phases)))errors.push("Requirement context is not completed");
   if(errors.length)throw new PhaseValidationError(errors);
-  return {kind:"requirement-context" as const,draftId:draft.id,attemptId:draft.attemptId,sequence:draft.sequence,binding:structuredClone(draft.binding),...contextState(draft),decisions:structuredClone(draft.decisions ?? [])};
+  return {kind:"requirement-context" as const,draftId:draft.id,attemptId:draft.attemptId,sequence:draft.sequence,binding:structuredClone(draft.binding),...(contract.businessSource ? {businessSource:structuredClone(contract.businessSource)} : {}),...contextState(draft),decisions:structuredClone(draft.decisions ?? [])};
 }

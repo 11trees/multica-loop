@@ -2091,6 +2091,12 @@
     "phase_spec_check": "規格校驗",
     "phase_classification": "缺口分類",
     "phase_verdict": "審查結論",
-    "business_refresh": "重新整理業務分析"
+    "business_refresh": "重新整理業務分析",
+    "end_to_end": "End to End",
+    "end_to_end_notice": "一次授權全部十個角色，自動推進交付，最後閱讀報告並確認關閉。",
+    "end_to_end_roles_required": "需要十個獨立的 Agent。",
+    "start_end_to_end": "啟動 End to End",
+    "specification_handoff": "審查已通過，將自動進入需求梳理。",
+    "approved_specification": "已審需求規格"
   }
 }

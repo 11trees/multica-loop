@@ -2091,6 +2091,12 @@
     "phase_spec_check": "仕様確認",
     "phase_classification": "不備の分類",
     "phase_verdict": "レビュー結果",
-    "business_refresh": "業務分析を更新"
+    "business_refresh": "業務分析を更新",
+    "end_to_end": "End to End",
+    "end_to_end_notice": "10 個の役割すべてを承認し、最終レポートの確認まで納品を自動で進めます。",
+    "end_to_end_roles_required": "10 個の異なるエージェントが必要です。",
+    "start_end_to_end": "End to End を開始",
+    "specification_handoff": "承認済み。要件整理に自動で進みます。",
+    "approved_specification": "承認済み仕様書"
   }
 }

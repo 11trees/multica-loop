@@ -12,7 +12,10 @@ bug reproduction, delivery analysis, development, independent verification and
 normal requirement review have host-owned handlers. Four business-analysis chains
 also have pure profiles, gates and conclusion compilers, with native readonly
 API/CLI checkpoints and return transitions, versioned specification comments and
-authenticated reading. End to End handoff remains incomplete. The remaining source chains and pipelines are
+authenticated reading. [End to End](../../docs/engineering/end-to-end.md) freezes
+all ten roles, hands approved specifications into context with exact source
+versions, and reuses native publication/delivery/final review; its full native
+acceptance passed with controlled native task fixtures. The remaining source chains and pipelines are
 tracked in the [migration coverage audit](../../docs/engineering/migration-status.md).
 
 The identifier grammar excludes numeric keys so YAML declaration order survives

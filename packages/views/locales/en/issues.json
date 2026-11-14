@@ -2166,6 +2166,12 @@
     "phase_spec_check": "Specification check",
     "phase_classification": "Gap classification",
     "phase_verdict": "Review verdict",
-    "business_refresh": "Refresh business analysis"
+    "business_refresh": "Refresh business analysis",
+    "end_to_end": "End to End",
+    "end_to_end_notice": "Authorizes all ten roles and automatic delivery through final report reading.",
+    "end_to_end_roles_required": "Ten separate agents are required.",
+    "start_end_to_end": "Start End to End",
+    "specification_handoff": "Approved; entering requirement context automatically.",
+    "approved_specification": "Approved specification"
   }
 }

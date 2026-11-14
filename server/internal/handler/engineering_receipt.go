@@ -9,6 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/multica-ai/multica/server/internal/middleware"
 	"github.com/multica-ai/multica/server/pkg/agent"
+	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/redact"
 )
 
@@ -47,8 +48,17 @@ func (h *Handler) CaptureEngineeringReceipt(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusServiceUnavailable, "engineering application is not enabled")
 		return
 	}
+	issue, err := h.Queries.GetIssueInWorkspace(r.Context(), db.GetIssueInWorkspaceParams{ID: task.IssueID, WorkspaceID: parseUUID(scope.WorkspaceID)})
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "native engineering project lookup is unavailable")
+		return
+	}
+	actor := map[string]string{"kind": "daemon", "workspaceId": scope.WorkspaceID, "issueId": uuidToString(task.IssueID), "agentId": uuidToString(task.AgentID), "attemptId": uuidToString(task.ID) + ":" + strconv.FormatInt(claim.UnixMicro(), 10)}
+	if issue.ProjectID.Valid {
+		actor["projectId"] = uuidToString(issue.ProjectID)
+	}
 	result, err := h.EngineeringWorker.Call(r.Context(), map[string]any{
-		"actor":  map[string]string{"kind": "daemon", "workspaceId": scope.WorkspaceID, "issueId": uuidToString(task.IssueID), "agentId": uuidToString(task.AgentID), "attemptId": uuidToString(task.ID) + ":" + strconv.FormatInt(claim.UnixMicro(), 10)},
+		"actor":  actor,
 		"action": "receipt", "payload": map[string]any{"id": request.ID, "sequence": request.Sequence, "command": redact.Text(request.Result.Command), "cwd": request.Result.Cwd, "status": request.Result.Status, "exit_code": request.Result.ExitCode},
 	})
 	if err != nil {

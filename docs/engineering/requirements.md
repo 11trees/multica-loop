@@ -161,7 +161,9 @@ policy: three distinct invocable analysis/development/verification agents, a
 rework limit of 0–10 for each unit, and their common registered repository and
 execution mode. Each role must map to exactly one matching native local project
 resource. The existing context/planning continuation switch does not authorize
-implementation; starting delivery is a separate human action.
+implementation; starting delivery is a separate human action for this standalone
+Develop path. [End to End](end-to-end.md) supplies all delivery and final-review
+authority at initial configuration and applies that frozen policy automatically.
 
 The management CLI exposes the same checkpoint:
 

@@ -2166,6 +2166,12 @@
     "phase_spec_check": "Comprobación de especificación",
     "phase_classification": "Clasificación de carencias",
     "phase_verdict": "Resultado de la revisión",
-    "business_refresh": "Actualizar análisis de negocio"
+    "business_refresh": "Actualizar análisis de negocio",
+    "end_to_end": "End to End",
+    "end_to_end_notice": "Autoriza los diez roles y la entrega automática hasta la lectura del informe final.",
+    "end_to_end_roles_required": "Se necesitan diez agentes diferentes.",
+    "start_end_to_end": "Iniciar End to End",
+    "specification_handoff": "Aprobada; pasa automáticamente al análisis de requisitos.",
+    "approved_specification": "Especificación aprobada"
   }
 }

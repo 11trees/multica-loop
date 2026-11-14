@@ -2166,6 +2166,12 @@
     "phase_spec_check": "Vérification de la spécification",
     "phase_classification": "Classification des lacunes",
     "phase_verdict": "Résultat de la revue",
-    "business_refresh": "Actualiser l’analyse métier"
+    "business_refresh": "Actualiser l’analyse métier",
+    "end_to_end": "End to End",
+    "end_to_end_notice": "Autorise les dix rôles et la livraison automatique jusqu’à la lecture du rapport final.",
+    "end_to_end_roles_required": "Dix agents distincts sont nécessaires.",
+    "start_end_to_end": "Démarrer End to End",
+    "specification_handoff": "Approuvée ; passage automatique au cadrage des exigences.",
+    "approved_specification": "Spécification approuvée"
   }
 }

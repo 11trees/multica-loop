@@ -2091,6 +2091,12 @@
     "phase_spec_check": "规格校验",
     "phase_classification": "缺口分类",
     "phase_verdict": "审查结论",
-    "business_refresh": "刷新业务分析"
+    "business_refresh": "刷新业务分析",
+    "end_to_end": "End to End",
+    "end_to_end_notice": "一次授权全部十个角色，自动推进交付，最后阅读报告并确认关闭。",
+    "end_to_end_roles_required": "需要十个独立的 Agent。",
+    "start_end_to_end": "启动 End to End",
+    "specification_handoff": "审查已通过，将自动进入需求梳理。",
+    "approved_specification": "已审需求规格"
   }
 }

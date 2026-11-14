@@ -14,6 +14,8 @@ import (
 
 func TestEngineeringReceiptCredentialBoundary(t *testing.T) {
 	_, agentToken, taskID, agentID, issueID := engineeringRunFixture(t)
+	projectID := dbfx.Project(t, "Receipt native project")
+	dbfx.Exec(t, "UPDATE issue SET project_id=$2 WHERE id=$1", issueID, projectID)
 	h := *testHandler
 	recorder := &engineeringRecorder{}
 	h.EngineeringWorker = recorder
@@ -43,7 +45,7 @@ func TestEngineeringReceiptCredentialBoundary(t *testing.T) {
 	}
 	testutil.Call(t, handler.ServeHTTP, request(token, body)).Want(http.StatusOK)
 	actor := recorder.inputs[0]["actor"].(map[string]any)
-	if actor["kind"] != "daemon" || actor["agentId"] != agentID || actor["issueId"] != issueID {
+	if actor["kind"] != "daemon" || actor["agentId"] != agentID || actor["issueId"] != issueID || actor["projectId"] != projectID {
 		t.Fatalf("receipt identity was not host-derived: %+v", actor)
 	}
 }

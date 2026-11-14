@@ -9,6 +9,8 @@ import { decisionModeSchema, decisionPolicies, decisionProposalSchema } from "./
 import { parseCommandChainDefinition } from "./definition";
 import { captureRepositoryOverlays, git, repositoryBranch, repositoryCommonDirectory, repositorySnapshot } from "./repository";
 import { CommandChainEngine, DraftConflictError, chainCommandSchema, draftSchema, type ChainDraft } from "./runtime";
+import { endToEndPolicySchema, type BusinessSource } from "./end-to-end";
+import type { RequirementDefinitions } from "./requirement-application";
 import type { SqliteDraftStore } from "./sqlite-store";
 
 const text = z.string().trim().min(1), sequence = z.number().int().nonnegative();
@@ -18,7 +20,7 @@ const sources = z.strictObject({ intent: text, business_design: text, specificat
 export type BusinessDefinitions = z.infer<typeof sources>;
 const resource = z.strictObject({ path: text, mode: z.enum(["in_place", "worktree"]) });
 const configuration = z.strictObject({ expected_revision: z.literal(0), project_id: z.uuid(), repository_path: text, input: text.max(40000),
-  roles, decision_mode: decisionModeSchema, auto_continue: z.boolean(), execution_resources: z.array(resource).length(4) });
+  roles, delivery: endToEndPolicySchema.optional(), decision_mode: decisionModeSchema, auto_continue: z.boolean(), execution_resources: z.array(resource).min(4).max(10) });
 const entrySchema = z.strictObject({ stage: businessStageSchema, generation: z.number().int().positive(), draftId: z.uuid(), contract: businessContractSchema,
   upstream: z.array(z.uuid()), previousDraftId: z.uuid().optional(), triggerDraftId: z.uuid().optional(), reason: text.optional(), settledHash: text.optional(), superseded: z.boolean(), commentIds:z.array(z.uuid()).default([]) });
 type Entry = z.infer<typeof entrySchema>;
@@ -26,7 +28,7 @@ const commentSchema=z.strictObject({id:z.uuid(),requestId:z.uuid(),userId:z.uuid
 const readingSchema=z.strictObject({userId:z.uuid(),draftId:z.uuid(),specificationHash:text,expectedVersion:sequence,acknowledgedAt:z.iso.datetime()});
 const recordSchema = z.strictObject({ workspaceId: z.uuid(), issueId: z.uuid(), projectId: z.uuid(), revision: z.literal(1), version: sequence,
   createdBy: z.uuid(), repositoryPath: text, codeVersion: text, input: text.max(40000), roles, sources, decisionMode: decisionModeSchema,
-  autoContinue: z.boolean(), mode: z.enum(["in_place", "worktree"]), entries: z.array(entrySchema).min(1), activeDraftId: z.uuid(),comments:z.array(commentSchema).default([]),readings:z.array(readingSchema).default([]) });
+  delivery:endToEndPolicySchema.extend({contextSource:text,planningSource:text,reviewSource:text,handedOff:z.boolean().default(false)}).optional(), autoContinue: z.boolean(), mode: z.enum(["in_place", "worktree"]), entries: z.array(entrySchema).min(1), activeDraftId: z.uuid(),comments:z.array(commentSchema).default([]),readings:z.array(readingSchema).default([]) });
 type Record = z.infer<typeof recordSchema>;
 const executionSchema = z.strictObject({ draftId: z.uuid(), repositoryPath: text, mode: z.enum(["in_place", "worktree"]), branchRef: text.nullable(),
   overlays: z.array(z.strictObject({ path: text, hash: text, executable: z.boolean(), originalHash: text.nullable(), originalExecutable: z.boolean() })) });
@@ -37,7 +39,8 @@ function stableId(value: string) { const hash = fingerprint(value); return `${ha
 /** Native business checkpoints; session/task authentication remains in Go. */
 export class BusinessApplication {
   get enabled(){return !!this.definitions;}
-  constructor(private readonly db: DatabaseSync, private readonly drafts: SqliteDraftStore, private readonly definitions?: BusinessDefinitions) {
+  get endToEndEnabled(){return !!this.definitions && !!this.requirementDefinitions?.review;}
+  constructor(private readonly db: DatabaseSync, private readonly drafts: SqliteDraftStore, private readonly definitions?: BusinessDefinitions,private readonly requirementDefinitions?:RequirementDefinitions) {
     db.exec("CREATE TABLE IF NOT EXISTS business_contract (workspace_id TEXT NOT NULL,issue_id TEXT NOT NULL,revision INTEGER NOT NULL,version INTEGER NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(workspace_id,issue_id,revision))");
     db.exec("CREATE TABLE IF NOT EXISTS business_execution (workspace_id TEXT NOT NULL,issue_id TEXT NOT NULL,revision INTEGER NOT NULL,agent_id TEXT NOT NULL,attempt_id TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(workspace_id,issue_id,revision,agent_id,attempt_id))");
     if (definitions) for (const stage of stages) parseCommandChainDefinition(definitions[stage], businessProfiles[stage]);
@@ -114,11 +117,13 @@ export class BusinessApplication {
     const actor = request.actor;
     if (actor.kind !== "human" || !this.definitions) throw new Error("Only a human can configure business analysis with registered definitions");
     const input = configuration.parse(request.payload), code = repositorySnapshot(input.repository_path), mode = input.execution_resources[0]!.mode;
+    if(input.execution_resources.length !== (input.delivery ? 10 : 4))throw new Error("Bind every frozen workflow role to exactly one resource");
+    if(input.delivery && (!input.auto_continue || !this.requirementDefinitions?.review || new Set([...Object.values(input.roles),...Object.values(input.delivery.roles)]).size !== 10))throw new Error("End to End requires automatic continuation, ten distinct roles and final review definitions");
     if (new Set(Object.values(input.roles)).size !== 4) throw new Error("Business analysis requires four separate native role agents");
     if (input.execution_resources.some(resource => resource.mode !== mode || repositorySnapshot(resource.path, false).repositoryPath !== code.repositoryPath)) throw new Error("All business roles must use one registered project repository and execution mode");
     const base = { workspaceId: actor.workspaceId, issueId: actor.issueId, projectId: input.project_id, revision: 1 as const, version: 0, createdBy: actor.userId,
       repositoryPath: code.repositoryPath, codeVersion: code.codeVersion, input: input.input, roles: input.roles, sources: structuredClone(this.definitions), decisionMode: input.decision_mode,
-      autoContinue: input.auto_continue, mode, entries: [] as Entry[] };
+      ...(input.delivery ? {delivery:{...input.delivery,contextSource:this.requirementDefinitions!.context,planningSource:this.requirementDefinitions!.planning,reviewSource:this.requirementDefinitions!.review!,handedOff:false}} : {}),autoContinue: input.auto_continue, mode, entries: [] as Entry[] };
     const entry = this.entry(base, "intent"), record = recordSchema.parse({ ...base, entries: [entry], activeDraftId: entry.draftId });
     const changed = this.db.prepare(`INSERT INTO business_contract(workspace_id,issue_id,revision,version,payload)
       SELECT ?,?,?,?,? WHERE NOT EXISTS(SELECT 1 FROM requirement_contract WHERE workspace_id=? AND issue_id=?)
@@ -131,10 +136,11 @@ export class BusinessApplication {
   async continuations() {
     const pending = [];
     for (const row of this.db.prepare("SELECT payload FROM business_contract").all()) {
-      const record = recordSchema.parse(JSON.parse(String(row.payload))); let entry = this.active(record), draft = await this.drafts.read(entry.draftId);
+      const record = recordSchema.parse(JSON.parse(String(row.payload))); if(record.delivery?.handedOff)continue;let entry = this.active(record), draft = await this.drafts.read(entry.draftId);
       if (draft?.status === "completed" && !entry.settledHash) { this.settle(record, entry, draft); entry = this.active(record); draft = await this.drafts.read(entry.draftId); }
       const comment=record.comments.find(item=>!item.version || item.reviewedBy && !item.nativeResolved);
       if(comment){pending.push({workspace_id:record.workspaceId,issue_id:record.issueId,agent_id:record.roles.review,user_id:comment.userId,task_id:comment.id,comment_id:comment.id,expected_revision:record.revision,expected_sequence:record.version,reason:comment.version ? "business_comment_resolve" : "business_comment_publish"});continue;}
+      if(record.delivery && entry.stage === "review" && entry.settledHash && this.approved(record)){pending.push({workspace_id:record.workspaceId,issue_id:record.issueId,agent_id:record.delivery.roles.context,user_id:record.createdBy,task_id:stableId(`multica:business-handoff:${entry.draftId}`),expected_revision:record.revision,expected_sequence:record.version,reason:"business_handoff"});continue;}
       if (!record.autoContinue || draft?.status === "abandoned" || draft?.status === "completed") continue;
       const reason = !draft ? "business_ready" : draft.status === "waiting_for_answers" && draft.runtimeInputs.some(input => input.active) && draft.runtimeInputs.every(input => !input.active || input.answer) ? "human_answers" : null;
       if (reason) pending.push({ workspace_id: record.workspaceId, issue_id: record.issueId, agent_id: record.roles[entry.stage], user_id: record.createdBy,
@@ -150,11 +156,13 @@ export class BusinessApplication {
     const entry = this.active(record), agentId = record.roles[entry.stage]; let draft = await this.drafts.read(entry.draftId);
     if (action === "configure") throw new Error("This issue owns business analysis; reconcile its inputs before replacing the workflow");
     if(action === "business-scope"){if(actor.kind !== "host")throw new Error("Only the host can inspect native business scope");return this.nativeScope(record);}
+    if(action === "business-comment" && record.delivery)throw new DraftConflictError("End to End specifications advance directly into requirement context");
     if(action === "business-comment")return this.prepareComment(record,request);
     if(action === "business-comment-intent" || action === "business-comment-ack" || action === "business-comment-resolved")return this.nativeComment(record,request);
     if(action === "business-read")return this.acknowledge(record,request);
     if(action === "verified-binding")throw new DraftConflictError("A business specification is not independent delivered-code verification");
     if(action === "completion"){
+      if(record.delivery)throw new DraftConflictError("End to End must complete delivered requirement review and report reading");
       if(actor.kind !== "host")throw new Error("Only the host can authorize business completion");
       const specification=this.approved(record),reading=record.readings.findLast(item=>item.draftId === specification.entry.draftId && item.specificationHash === specification.hash);
       if(!reading || !this.commentsComplete(record))throw new DraftConflictError("Read and acknowledge the current specification after its versioned comments are reviewed");
@@ -241,13 +249,36 @@ export class BusinessApplication {
       phases: Object.keys(parseCommandChainDefinition(record.sources[entry.stage], businessProfiles[entry.stage]).definition.phases).map(id => ({ id, status: draft?.completedPhases.includes(id) ? "completed" : id === draft?.phase ? "current" : "pending" })),
       sources: [], decisions: draft?.decisions ?? [], artifacts: draft?.artifacts.map(item => ({ ...item, title: artifactBlock(draft.definition, item.ref).title })) ?? [],
       questions: (draft?.runtimeInputs ?? []).map(input => ({ ...input, decision_key: input.decisionKey, recommendation_option: input.recommendationOption, answer: input.answer ? { text: input.answer.text, user_id: input.answer.userId, sequence: input.answer.sequence, selected_option: input.answer.selectedOption } : null })),
-      business: { input: record.input, project_id: record.projectId, stage: entry.stage, generation: entry.generation,version:record.version,reading_enabled:true,
+      business: { input: record.input, project_id: record.projectId, stage: entry.stage, generation: entry.generation,version:record.version,end_to_end:!!record.delivery,reading_enabled:!record.delivery,
         specification:approved ? {draft_id:approved.entry.draftId,hash:approved.hash,generation:approved.entry.generation,title:approved.result.artifact.title,content:approved.result.artifact.content,acknowledgement:reading ?? null,ready:this.commentsComplete(record)} : null,
         comments:record.comments.map(comment=>({...comment,status:!comment.version ? "publishing" : comment.reviewedBy ? comment.nativeResolved ? "resolved" : "resolving" : "in_progress"})),readings:record.readings,
         history: record.entries.map(item => ({ stage: item.stage, generation: item.generation, draft_id: item.draftId, superseded: item.superseded, settled: !!item.settledHash,
           result: item.settledHash ? this.conclusion(record, item) : null })) }, result: null };
   }
 
+  handoff(workspaceId:string,issueId:string,expectedVersion:number,resources:{path:string;mode:"in_place"|"worktree"}[],importRequirement:(input:{record:Record;source:BusinessSource})=>void){
+    this.db.exec("BEGIN IMMEDIATE");
+    try{
+      const record=this.current(workspaceId,issueId);if(!record?.delivery)throw new Error("End to End is not configured");
+      const approved=this.approved(record);
+      if(resources.length !== 6 || resources.some(item=>item.mode !== record.mode || repositorySnapshot(item.path,false).repositoryPath !== record.repositoryPath))throw new DraftConflictError("End to End execution resources changed");
+      if(!record.delivery.handedOff){
+        if(record.version !== expectedVersion || !this.commentsComplete(record))throw new DraftConflictError("Business handoff changed");
+        if(repositorySnapshot(record.repositoryPath).codeVersion !== record.codeVersion)throw new DraftConflictError("Business handoff repository changed");
+        const source:BusinessSource={projectId:record.projectId,reviewDraftId:approved.entry.draftId,reviewHash:approved.hash,specification:approved.result.artifact.content,
+          stages:stages.map(stage=>{const entry=record.entries.findLast(item=>item.stage === stage && !item.superseded && item.settledHash)!;const conclusion=this.conclusion(record,entry);return {stage,draftId:entry.draftId,hash:fingerprint(conclusion),binding:conclusion.binding,conclusion:JSON.stringify(conclusion)};})};
+        importRequirement({record,source});record.delivery.handedOff=true;this.save(record);
+      }
+      this.db.exec("COMMIT");return {handed_off:true};
+    }catch(error){this.db.exec("ROLLBACK");throw error;}
+  }
+  validateHandoff(workspaceId:string,issueId:string,source:BusinessSource){
+    const record=this.current(workspaceId,issueId);if(!record?.delivery?.handedOff)throw new DraftConflictError("End to End business source is unavailable");
+    const approved=this.approved(record);
+    if(approved.entry.draftId !== source.reviewDraftId || approved.hash !== source.reviewHash || approved.result.artifact.content !== source.specification || record.projectId !== source.projectId)throw new DraftConflictError("End to End approved specification changed");
+    for(const stage of stages){const entry=record.entries.findLast(item=>item.stage === stage && !item.superseded && item.settledHash),saved=source.stages.find(item=>item.stage === stage);if(!entry || !saved || entry.draftId !== saved.draftId || JSON.stringify(this.conclusion(record,entry)) !== saved.conclusion || fingerprint(this.conclusion(record,entry)) !== saved.hash)throw new DraftConflictError("End to End business provenance changed");}
+  }
+  handoffScope(workspaceId:string,issueId:string,resources?:{path:string;mode:"in_place"|"worktree"}[]){const record=this.current(workspaceId,issueId);if(!record?.delivery)throw new Error("End to End is not configured");if(resources && (resources.length !== 6 || resources.some(item=>item.mode !== record.mode || repositorySnapshot(item.path,false).repositoryPath !== record.repositoryPath)))throw new DraftConflictError("End to End execution resources changed");return {project_id:record.projectId,user_id:record.createdBy,roles:record.delivery.roles,repository_path:record.repositoryPath,mode:record.mode,handed_off:record.delivery.handedOff};}
   protectedComment(workspaceId:string,issueId:string,commentId:string){return !!this.current(workspaceId,issueId)?.comments.some(comment=>comment.id === commentId);}
   private approved(record:Record){
     const entry=this.active(record);
@@ -259,6 +290,7 @@ export class BusinessApplication {
   private nativeScope(record:Record){return {project_id:record.projectId,comments:record.comments.map(comment=>({id:comment.id,user_id:comment.userId,content:comment.nativeContent,version:comment.version ?? null,resolved:comment.nativeResolved,reviewer_id:record.roles.review}))};}
   private acknowledge(record:Record,request:ApplicationRequest){
     const actor=request.actor;if(actor.kind !== "human")throw new Error("Only a human can acknowledge specification reading");
+    if(record.delivery)throw new DraftConflictError("End to End does not stop for specification reading");
     const input=z.strictObject({expected_version:sequence,draft_id:z.uuid(),specification_hash:text.regex(/^[a-f0-9]{64}$/)}).parse(request.payload),current=this.approved(record);
     if(input.draft_id !== current.entry.draftId || input.specification_hash !== current.hash || !this.commentsComplete(record))throw new DraftConflictError("Read the exact current specification after all versioned comments are reviewed");
     const existing=record.readings.findLast(item=>item.draftId === input.draft_id && item.specificationHash === input.specification_hash);

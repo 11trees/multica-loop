@@ -26,7 +26,7 @@ const coordinator = z.strictObject({ kind: z.literal("coordinator") });
 const actor = z.discriminatedUnion("kind", [human, task, daemon, host, coordinator]);
 export const applicationRequestSchema = z.strictObject({
   actor,
-  action: z.enum(["business-scope","business-read","business-comment","business-comment-intent","business-comment-ack","business-comment-resolved","business-comment-protected","configure-business", "configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations", "verified-binding", "publication", "publication-ack", "delivery-policy", "activate-unit", "accept-unit", "parent-scope", "review-inputs", "configure-review", "review-ack", "begin-feedback", "cancel-feedback", "feedback-restored", "authorize-feedback-work", "prepare-feedback-verification", "prepare-feedback-report"]),
+  action: z.enum(["business-handoff","end-to-end-scope","business-scope","business-read","business-comment","business-comment-intent","business-comment-ack","business-comment-resolved","business-comment-protected","configure-business", "configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations", "verified-binding", "publication", "publication-ack", "delivery-policy", "activate-unit", "accept-unit", "parent-scope", "review-inputs", "configure-review", "review-ack", "begin-feedback", "cancel-feedback", "feedback-restored", "authorize-feedback-work", "prepare-feedback-verification", "prepare-feedback-report"]),
   payload: z.unknown().optional(),
 });
 export type ApplicationRequest = z.infer<typeof applicationRequestSchema>;
@@ -106,7 +106,7 @@ export class EngineeringApplication {
       if(!record?.analysis?.handoff)throw new Error("Requirement review needs a resolved delivery specification");
       return {binding:verified.binding,analysis:compileAnalysisConclusion(this.storedDraft(record.analysis.draftId),record.analysis.contract),verification:compileVerificationConclusion(this.storedDraft(record.draftId),record.contract)};
     });
-    this.business=new BusinessApplication(this.db,this.drafts,businessDefinitions);
+    this.business=new BusinessApplication(this.db,this.drafts,businessDefinitions,requirementDefinitions);
     this.db.exec("CREATE TABLE IF NOT EXISTS engineering_execution (workspace_id TEXT NOT NULL, issue_id TEXT NOT NULL, revision INTEGER NOT NULL, agent_id TEXT NOT NULL, attempt_id TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY (workspace_id, issue_id, revision, agent_id, attempt_id))");
   }
 
@@ -321,7 +321,7 @@ export class EngineeringApplication {
   }
 
   private async overview(record: Record | undefined) {
-    if (!record) return { enabled: true, configured: false,business_enabled:this.business.enabled };
+    if (!record) return { enabled: true, configured: false,business_enabled:this.business.enabled,end_to_end_enabled:this.business.endToEndEnabled };
     const role=this.activeRole(record),development=role.chain === "development",analysis=role.chain === "analysis";
     const draft=await this.drafts.read(role.draftId);
     const definition=draft?.definition ?? parseCommandChainDefinition(role.definitionSource,analysis ? analysisProfile : development ? developmentProfile : profile).definition;
@@ -471,14 +471,27 @@ export class EngineeringApplication {
       const input=z.strictObject({comment_id:z.uuid()}).parse(request.payload);
       return {protected:this.business.protectedComment(actor.workspaceId,actor.issueId,input.comment_id)};
     }
+    if(action === "end-to-end-scope"){
+      if(actor.kind !== "host")throw new Error("Only the native host can inspect End to End authority");
+      const input=z.strictObject({execution_resources:z.array(z.strictObject({path:z.string().min(1),mode:z.enum(["in_place","worktree"])})).length(6)}).optional().parse(request.payload);
+      return this.business.handoffScope(actor.workspaceId,actor.issueId,input?.execution_resources);
+    }
+    if(action === "business-handoff"){
+      if(actor.kind !== "host")throw new Error("Only the native host can hand off approved specifications");
+      const input=z.strictObject({expected_version:z.number().int().nonnegative(),execution_resources:z.array(z.strictObject({path:z.string().min(1),mode:z.enum(["in_place","worktree"])})).length(6)}).parse(request.payload);
+      return this.business.handoff(actor.workspaceId,actor.issueId,input.expected_version,input.execution_resources,({record,source})=>this.requirements.importBusiness({workspaceId:record.workspaceId,issueId:record.issueId,userId:record.createdBy,repositoryPath:record.repositoryPath,codeVersion:record.codeVersion,input:record.input,decisionMode:record.decisionMode,mode:record.mode,policy:{roles:record.delivery!.roles,maxReworks:record.delivery!.maxReworks},source,definitions:{context:record.delivery!.contextSource,planning:record.delivery!.planningSource,review:record.delivery!.reviewSource}}));
+    }
     if(action === "configure-business")return this.business.invoke(request);
-    if(this.business.current(actor.workspaceId,actor.issueId) && action !== "parent-scope")return this.business.invoke(request);
+    const business=this.business.current(actor.workspaceId,actor.issueId);
+    if(business && (!business.delivery?.handedOff || action.startsWith("business-")) && action !== "parent-scope")return this.business.invoke(request);
     const managedUnit=this.requirements.managedUnit(actor.workspaceId,actor.issueId);
+    const managedOrigin=managedUnit ? this.requirements.current(actor.workspaceId,managedUnit.parentIssueId)?.contextContract.businessSource : undefined;
+    if(managedOrigin)this.business.validateHandoff(actor.workspaceId,managedUnit!.parentIssueId,managedOrigin);
     if(action === "parent-scope"){
       if(actor.kind !== "host")throw new Error("Only the host can inspect managed execution scope");
       const requirement=this.requirements.current(actor.workspaceId,actor.issueId);
-      if(requirement?.reviews.length)return {managed:false,review_units:this.requirements.nativeRunUnits(requirement)};
-      return managedUnit ? {managed:true,parent_issue_id:managedUnit.parentIssueId,contract_hash:managedUnit.contractHash,plan_draft_id:managedUnit.planDraftId,unit_issue_ids:this.requirements.executionContext(actor.workspaceId,actor.issueId)!.units.map(unit=>unit.issueId)} : {managed:false};
+      if(requirement?.reviews.length)return {...(requirement.contextContract.businessSource ? {business_project_id:requirement.contextContract.businessSource.projectId} : {}),managed:false,review_units:this.requirements.nativeRunUnits(requirement)};
+      return managedUnit ? {...(managedOrigin ? {business_project_id:managedOrigin.projectId} : {}),managed:true,parent_issue_id:managedUnit.parentIssueId,contract_hash:managedUnit.contractHash,plan_draft_id:managedUnit.planDraftId,unit_issue_ids:this.requirements.executionContext(actor.workspaceId,actor.issueId)!.units.map(unit=>unit.issueId)} : {...(requirement?.contextContract.businessSource ? {business_project_id:requirement.contextContract.businessSource.projectId} : {}),managed:false};
     }
     if(action === "delivery-policy")return this.requirements.deliveryPolicy(request);
     if(action === "activate-unit")return this.activateManaged(request);
@@ -486,7 +499,9 @@ export class EngineeringApplication {
       if(actor.kind !== "host")throw new Error("Only the host can accept verified native delivery");
       const result=await this.verifiedBinding(this.current(actor.workspaceId,actor.issueId));const expected=z.strictObject({binding:verificationContractSchema.shape.binding}).parse(request.payload);if(JSON.stringify(expected.binding) !== JSON.stringify(result.binding))throw new DraftConflictError("Verified delivery changed before native acceptance");return this.requirements.acceptUnit(request,result.binding);
     }
+    // Selection precedes binding; Go checks its returned original project before native launch.
     if(managedUnit){
+      if(action !== "selection" && managedOrigin && (actor.kind === "task" || actor.kind === "daemon") && actor.projectId !== managedOrigin.projectId)throw new DraftConflictError("Native End to End child project changed");
       if(action === "configure")throw new Error("Managed unit scope is frozen by its requirement plan");
       const managedRecord=this.current(actor.workspaceId,actor.issueId);
       if(!managedRecord){
@@ -506,6 +521,10 @@ export class EngineeringApplication {
     }
     if(requirement){
       if(action === "configure")throw new Error("This issue owns a requirement workflow; configure a requirement revision");
+      if(requirement.contextContract.businessSource){
+        this.business.validateHandoff(actor.workspaceId,actor.issueId,requirement.contextContract.businessSource);
+        if(action !== "selection" && (actor.kind === "task" || actor.kind === "daemon") && actor.projectId !== requirement.contextContract.businessSource.projectId)throw new DraftConflictError("Native End to End project changed");
+      }
       if(action === "overview"){
         if(actor.kind !== "human")throw new Error("A human actor is required");
         const result=await this.requirements.overview(requirement);
@@ -536,7 +555,7 @@ export class EngineeringApplication {
         if(record.managedBy && resource.mode !== record.managedBy.mode)throw new Error("Managed execution mode differs from its frozen policy");
         if (repositoryCommonDirectory(root) !== repositoryCommonDirectory(record.repositoryPath) || resource.mode === "in_place" && root !== record.repositoryPath) throw new Error("The project directory does not match the registered engineering repository");
       }
-      return { ...(record.managedBy ? {parent_issue_id:record.managedBy.parentIssueId} : {}),agent_id: state.agent_id, revision: state.revision, sequence: state.sequence };
+      return { ...(managedOrigin ? {business_project_id:managedOrigin.projectId} : {}),...(record.managedBy ? {parent_issue_id:record.managedBy.parentIssueId} : {}),agent_id: state.agent_id, revision: state.revision, sequence: state.sequence };
     }
     if(action === "verified-binding"){if(actor.kind !== "host")throw new Error("Only the host can read verified dependency bindings");return this.verifiedBinding(record);}
     if (action === "completion") {
@@ -560,13 +579,13 @@ export class EngineeringApplication {
         const code = snapshot(record.repositoryPath, true, record.verificationExecution.mode === "in_place" ? record.verificationExecution.overlays : []);
         if (code.codeVersion !== record.contract.binding.codeVersion) throw new DraftConflictError("Repository commit changed after verification; freeze and verify a new revision");
       }
-      return { configured: true, allowed: true, binding: conclusion.binding };
+      return {...(managedOrigin ? {business_project_id:managedOrigin.projectId} : {}), configured: true, allowed: true, binding: conclusion.binding };
     }
     if (actor.kind === "host") throw new Error("Host completion credentials cannot edit chain state");
     if(action === "selection"){
       const role=record && this.activeRole(record);
       if(record && actor.kind === "task" && role?.agentId === actor.agentId)await this.validateDependencies(record);
-      return {configured:actor.kind === "task" && role?.agentId === actor.agentId,chain:role?.chain ?? "verification",
+      return {...(managedOrigin ? {business_project_id:managedOrigin.projectId} : {}),configured:actor.kind === "task" && role?.agentId === actor.agentId,chain:role?.chain ?? "verification",
         ...(record ? {...(record.managedBy ? {parent_issue_id:record.managedBy.parentIssueId} : {}),repository_path:record.repositoryPath,code_version:role?.chain === "analysis" ? record.analysis!.contract.binding.codeVersion : this.selectionCommit(record)} : {})};
     }
     if (action === "configure") {if(actor.kind !== "human")throw new Error("Only a human can freeze verification contracts");return this.configureDelivery(actor,request.payload);}

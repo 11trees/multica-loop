@@ -56,6 +56,9 @@ func (h *Handler) ReconcileEngineering(ctx context.Context) error {
 }
 
 func (h *Handler) dispatchEngineeringContinuation(ctx context.Context, item engineeringContinuation) error {
+	if item.Reason == "business_handoff" || item.Reason == "end_to_end_publish" || item.Reason == "end_to_end_review" {
+		return h.dispatchEndToEnd(ctx, item)
+	}
 	if item.Reason == "business_comment_publish" || item.Reason == "business_comment_resolve" {
 		return h.dispatchSpecificationComment(ctx, item)
 	}
