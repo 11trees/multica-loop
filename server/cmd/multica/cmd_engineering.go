@@ -21,6 +21,7 @@ func init() {
 		{"configure <issue-id>", "configure", "Freeze a delivery contract and clean repository commit (human only)"},
 		{"acknowledge-specification <issue-id>", "acknowledge-specification", "Confirm reading the exact current business specification (human only)"},
 		{"comment-specification <issue-id>", "comment-specification", "Submit feedback on an exact approved specification version (human only)"},
+		{"configure-direct <issue-id>", "configure-direct", "Freeze a Direct input and native agent (human only)"},
 		{"configure-business <issue-id>", "configure-business", "Freeze business analysis or authorize ten-role End to End delivery (human only)"},
 		{"publish-units <issue-id>", "publish-units", "Publish a frozen requirement plan as native child issues (human only)"},
 		{"start-deliveries <issue-id>", "start-deliveries", "Authorize frozen roles and bounded serial delivery for a published plan (human only)"},
@@ -58,6 +59,9 @@ func init() {
 				}
 				if op.path == "comment-specification" {
 					path = "/api/issues/" + url.PathEscape(args[0]) + "/engineering/business-analysis/comments"
+				}
+				if op.path == "configure-direct" {
+					path = "/api/issues/" + url.PathEscape(args[0]) + "/engineering/direct"
 				}
 				if op.path == "configure-business" {
 					path = "/api/issues/" + url.PathEscape(args[0]) + "/engineering/business-analysis"

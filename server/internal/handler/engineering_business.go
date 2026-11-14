@@ -15,13 +15,19 @@ func businessEngineeringChain(chain string) bool {
 	return chain == "idea-context" || chain == "business-design" || chain == "requirement-spec" || chain == "spec-review"
 }
 
-func requireEngineeringBusinessProject(issue db.Issue, data json.RawMessage) error {
+func requireEngineeringProject(issue db.Issue, data json.RawMessage) error {
 	var scope struct {
-		Chain     string  `json:"chain"`
-		ProjectID *string `json:"business_project_id"`
+		Chain           string  `json:"chain"`
+		ProjectID       *string `json:"business_project_id"`
+		DirectProjectID *string `json:"direct_project_id"`
 	}
 	if json.Unmarshal(data, &scope) != nil {
 		return &engineering.Rejection{Message: "invalid business project scope", Conflict: true}
+	}
+	if scope.Chain == "direct" || scope.DirectProjectID != nil {
+		if scope.DirectProjectID == nil || !issue.ProjectID.Valid || *scope.DirectProjectID != uuidToString(issue.ProjectID) || issue.TriageState.Valid {
+			return &engineering.Rejection{Message: "Direct must remain in its frozen accepted project", Conflict: true}
+		}
 	}
 	if scope.ProjectID != nil || businessEngineeringChain(scope.Chain) {
 		if scope.ProjectID == nil || !issue.ProjectID.Valid || *scope.ProjectID != uuidToString(issue.ProjectID) || issue.TriageState.Valid {

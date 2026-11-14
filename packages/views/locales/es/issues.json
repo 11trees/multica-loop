@@ -2172,6 +2172,15 @@
     "end_to_end_roles_required": "Se necesitan diez agentes diferentes.",
     "start_end_to_end": "Iniciar End to End",
     "specification_handoff": "Aprobada; pasa automáticamente al análisis de requisitos.",
-    "approved_specification": "Especificación aprobada"
+    "approved_specification": "Especificación aprobada",
+    "direct": "Direct",
+    "direct_notice": "Autoriza a un agente a ejecutar este trabajo; su resultado enviado explícitamente completa la tarea automáticamente.",
+    "direct_input": "Trabajo por ejecutar",
+    "direct_agent": "Agente ejecutor",
+    "start_direct": "Iniciar Direct",
+    "direct_result": "Resultado Direct",
+    "direct_completed": "Resultado enviado guardado; Direct ha terminado.",
+    "direct_submitted": "Resultado enviado; esperando a que termine el proceso.",
+    "direct_refresh": "Actualizar Direct"
   }
 }

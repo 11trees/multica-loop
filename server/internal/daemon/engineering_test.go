@@ -69,8 +69,12 @@ func TestEngineeringRunTaskBindsBeforeProviderLaunch(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("USERPROFILE", t.TempDir())
 	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
-	for _, mode := range []string{localDirectoryModeInPlace, localDirectoryModeWorktree} {
+	for _, mode := range []string{localDirectoryModeInPlace, localDirectoryModeWorktree, "direct_plain"} {
 		for _, acknowledge := range []bool{true, false} {
+			executionMode := mode
+			if mode == "direct_plain" {
+				executionMode = localDirectoryModeInPlace
+			}
 			name := mode + "/acknowledged"
 			if !acknowledge {
 				name = mode + "/rejected"
@@ -82,6 +86,14 @@ func TestEngineeringRunTaskBindsBeforeProviderLaunch(t *testing.T) {
 					t.Fatal(err)
 				}
 				commit := strings.TrimSpace(string(commitBytes))
+				chain := "verification"
+				if mode == "direct_plain" {
+					if err := os.RemoveAll(filepath.Join(repo, ".git")); err != nil {
+						t.Fatal(err)
+					}
+					commit = ""
+					chain = "direct"
+				}
 				capture := filepath.Join(t.TempDir(), "provider-cwd")
 				marker := filepath.Join(t.TempDir(), "binding-acknowledged")
 				fake := filepath.Join(t.TempDir(), "claude-fixture")
@@ -110,7 +122,7 @@ printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"session_id
 						if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 							t.Error(err)
 						}
-						if !started || input.Mode != mode || input.Claim != "2026-11-13T00:00:00Z" || len(input.Overlays) == 0 {
+						if !started || input.Mode != executionMode || input.Claim != "2026-11-13T00:00:00Z" || len(input.Overlays) == 0 {
 							t.Errorf("binding was not prepared for current claim: %+v", input)
 						}
 						var pathErr error
@@ -134,9 +146,9 @@ printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"session_id
 				d := &Daemon{client: NewClient(server.URL), logger: logger, localPathLocks: NewLocalPathLocker(), workspaces: make(map[string]*workspaceState), activeEnvRoots: make(map[string]int),
 					cfg: Config{DaemonID: "engineering-daemon", WorkspacesRoot: t.TempDir(), AgentTimeout: 5 * time.Second, ServerBaseURL: server.URL, Agents: map[string]AgentEntry{"claude": {Path: fake}}},
 				}
-				resource, _ := json.Marshal(localDirectoryRef{LocalPath: repo, DaemonID: d.cfg.DaemonID, ExecutionMode: mode})
+				resource, _ := json.Marshal(localDirectoryRef{LocalPath: repo, DaemonID: d.cfg.DaemonID, ExecutionMode: executionMode})
 				task := Task{ID: "11112222-3333-4444-5555-666677778888", WorkspaceID: "engineering-workspace", IssueID: "engineering-issue", RuntimeID: "engineering-runtime", AgentID: "engineering-agent", AuthToken: "mat_fixture",
-					EngineeringChain: "verification", EngineeringRepository: repo, EngineeringCommit: commit, DispatchedAt: "2026-11-13T00:00:00Z",
+					EngineeringChain: chain, EngineeringRepository: repo, EngineeringCommit: commit, DispatchedAt: "2026-11-13T00:00:00Z",
 					Agent:            &AgentData{ID: "engineering-agent", Name: "Verifier", CustomEnv: map[string]string{"CAPTURE_CWD": capture, "BINDING_ACK": marker}},
 					ProjectResources: []ProjectResourceData{{ID: "engineering-resource", ResourceType: localDirectoryResourceType, ResourceRef: resource}},
 				}

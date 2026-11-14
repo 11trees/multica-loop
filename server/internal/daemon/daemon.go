@@ -8126,7 +8126,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// LocalWorkDir into execenv. handleTask already validated + locked the
 	// path for worker tasks; leader tasks intentionally skip the assignment.
 	localAssignment, _ := localDirectoryAssignmentForTask(task, d.cfg.DaemonID)
-	if task.EngineeringChain != "" && (localAssignment == nil || task.EngineeringRepository == "" || task.EngineeringCommit == "") {
+	if task.EngineeringChain != "" && (localAssignment == nil || task.EngineeringRepository == "" || task.EngineeringCommit == "" && (task.EngineeringChain != "direct" || localAssignment.UsesWorktree())) {
 		return TaskResult{}, asEnvironmentSetupFailure(errors.New("engineering requires a mapped local_directory resource and frozen repository commit"))
 	}
 	// Reuse intentionally skipped for local_directory tasks: the prior

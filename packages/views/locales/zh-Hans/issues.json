@@ -2097,6 +2097,15 @@
     "end_to_end_roles_required": "需要十个独立的 Agent。",
     "start_end_to_end": "启动 End to End",
     "specification_handoff": "审查已通过，将自动进入需求梳理。",
-    "approved_specification": "已审需求规格"
+    "approved_specification": "已审需求规格",
+    "direct": "Direct",
+    "direct_notice": "授权一个 Agent 执行本次工作；明确提交结果后自动完成任务。",
+    "direct_input": "待执行工作",
+    "direct_agent": "执行 Agent",
+    "start_direct": "启动 Direct",
+    "direct_result": "Direct 执行结果",
+    "direct_completed": "提交结果已保存，Direct 已完成。",
+    "direct_submitted": "结果已提交，等待执行进程结束。",
+    "direct_refresh": "刷新 Direct"
   }
 }

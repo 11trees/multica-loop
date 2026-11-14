@@ -1,6 +1,6 @@
 # Synchronous issue completion checks
 
-With `MULTICA_ENGINEERING_ENABLED=true`, an issue with a registered engineering
+With `MULTICA_ENGINEERING_ENABLED=true`, an issue with a registered delivery
 contract can enter a built-in or custom `done` category only after the latest
 revision's independent verification has completed with a passed verdict. A
 development-enabled contract also requires its committed handoff. The current
@@ -29,6 +29,12 @@ A [requirement workflow](requirements.md) cannot complete from a finished contex
 or plan. [Managed-unit execution and final review](requirement-review.md) are connected;
 the parent completion call requires the current report reading acknowledgement
 and native delivered-child proofs in addition to the frozen protocol gates.
+
+[Direct](direct.md) has a separate explicit-result completion contract. It requires
+the current native attempt's RUN and immutable SUBMIT receipt, its original project
+and agent, and idle native runs. It does not claim independent verification or
+require report reading. The common synchronous status boundary dispatches to the
+registered workflow's own completion proof.
 
 ## Covered writers
 

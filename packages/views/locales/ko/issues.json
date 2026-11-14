@@ -2097,6 +2097,15 @@
     "end_to_end_roles_required": "서로 다른 에이전트 열 개가 필요합니다.",
     "start_end_to_end": "End to End 시작",
     "specification_handoff": "승인되었습니다. 요구 사항 정리로 자동 진행합니다.",
-    "approved_specification": "승인된 명세서"
+    "approved_specification": "승인된 명세서",
+    "direct": "Direct",
+    "direct_notice": "에이전트 하나가 이 작업을 실행하도록 승인합니다. 결과를 명시적으로 제출하면 작업이 자동 완료됩니다.",
+    "direct_input": "실행할 작업",
+    "direct_agent": "실행 에이전트",
+    "start_direct": "Direct 시작",
+    "direct_result": "Direct 결과",
+    "direct_completed": "제출된 결과가 저장되었으며 Direct가 완료되었습니다.",
+    "direct_submitted": "결과가 제출되었습니다. 실행 프로세스가 끝나기를 기다립니다.",
+    "direct_refresh": "Direct 새로 고침"
   }
 }

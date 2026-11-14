@@ -2097,6 +2097,15 @@
     "end_to_end_roles_required": "10 個の異なるエージェントが必要です。",
     "start_end_to_end": "End to End を開始",
     "specification_handoff": "承認済み。要件整理に自動で進みます。",
-    "approved_specification": "承認済み仕様書"
+    "approved_specification": "承認済み仕様書",
+    "direct": "Direct",
+    "direct_notice": "1 つのエージェントに作業を許可します。結果を明示的に提出するとタスクが自動で完了します。",
+    "direct_input": "実行する作業",
+    "direct_agent": "実行エージェント",
+    "start_direct": "Direct を開始",
+    "direct_result": "Direct の結果",
+    "direct_completed": "提出された結果を保存し、Direct が完了しました。",
+    "direct_submitted": "結果を提出済みです。実行プロセスの終了を待っています。",
+    "direct_refresh": "Direct を更新"
   }
 }

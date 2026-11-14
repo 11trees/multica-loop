@@ -2328,6 +2328,15 @@
     "end_to_end_roles_required": "Требуются десять разных агентов.",
     "start_end_to_end": "Запустить End to End",
     "specification_handoff": "Одобрено; автоматический переход к анализу требований.",
-    "approved_specification": "Одобренная спецификация"
+    "approved_specification": "Одобренная спецификация",
+    "direct": "Direct",
+    "direct_notice": "Разрешает одному агенту выполнить работу; явная отправка результата автоматически завершает задачу.",
+    "direct_input": "Работа для выполнения",
+    "direct_agent": "Исполняющий агент",
+    "start_direct": "Запустить Direct",
+    "direct_result": "Результат Direct",
+    "direct_completed": "Отправленный результат сохранён; Direct завершён.",
+    "direct_submitted": "Результат отправлен; ожидается завершение процесса.",
+    "direct_refresh": "Обновить Direct"
   }
 }

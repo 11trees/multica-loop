@@ -84,6 +84,11 @@ must be designed together rather than assuming a per-issue workflow choice.
 
 ## Current implementation
 
+[Direct](direct.md) connects its own RUN/SUBMIT lifecycle with one native agent,
+first-result-wins persistence, native completion and shared Markdown results.
+Controlled browser acceptance covers Git and plain local directories. Generic
+terminal intervention and host arbitration remain separate migration work.
+
 The standalone kernel and imported delivery-analysis/development/verification YAML definitions are in
 `packages/command-chain`. The loader validates authoring structure. The engine
 supports scoped artifact and metadata edits, field validation, phase completion,

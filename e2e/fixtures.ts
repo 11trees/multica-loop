@@ -314,10 +314,10 @@ export class TestApiClient {
     } finally { await client.end(); }
   }
 
-  async finishEngineeringRun(taskId: string) {
+  async finishEngineeringRun(taskId: string,status: "completed"|"failed" = "completed") {
     if (!this.engineeringRuns.some(run => run.taskId === taskId)) throw new Error("Not an owned engineering fixture");
     const client = new pg.Client(DATABASE_URL); await client.connect();
-    try { await client.query("UPDATE agent_task_queue SET status = 'completed', completed_at = now() WHERE id = $1", [taskId]); }
+    try { await client.query("UPDATE agent_task_queue SET status = $2, completed_at = now() WHERE id = $1", [taskId,status]); }
     finally { await client.end(); }
   }
 
@@ -629,6 +629,7 @@ export class TestApiClient {
       const { DatabaseSync } = await import("node:sqlite");
       const database = new DatabaseSync(process.env.MULTICA_ENGINEERING_DATABASE);
       try {
+        if(database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='direct_contract'").get())for(const issueId of this.createdIssueIds)database.prepare("DELETE FROM direct_contract WHERE workspace_id=? AND issue_id=?").run(this.workspaceId,issueId);
         if(database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='engineering_feedback_batch'").get())for(const issueId of this.createdIssueIds){
           for(const row of database.prepare("SELECT payload FROM engineering_feedback_batch WHERE workspace_id=? AND issue_id=?").all(this.workspaceId,issueId)){const batch=JSON.parse(String(row.payload));const ids=[batch.triageDraftId,...batch.groups.flatMap((group:{verifications:Record<string,{draftId:string}>})=>Object.values(group.verifications).map(item=>item.draftId))];for(const id of ids)database.prepare("DELETE FROM chain_drafts WHERE id=?").run(id);}
           for(const table of ["engineering_feedback_comment","engineering_feedback_batch"])database.prepare(`DELETE FROM ${table} WHERE workspace_id=? AND issue_id=?`).run(this.workspaceId,issueId);

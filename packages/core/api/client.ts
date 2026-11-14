@@ -2,7 +2,7 @@ import { FeedbackCaptureSchema, FeedbackCancelledSchema, RequirementReviewConfig
 import type { ZodType } from "zod";
 import { EngineeringOverviewSchema, EngineeringWriteSchema } from "./schemas";
 import type { FeedbackWorkAuthorization, FeedbackCapture, FeedbackCancellation, RequirementReviewConfiguration, RequirementReviewAcknowledgement, RequirementDeliveryConfiguration, EngineeringCheckpoint, RequirementConfiguration, EngineeringConfiguration, EngineeringOverview } from "../issues/engineering-schema";
-import { SpecificationReadSchema, SpecificationCommentSubmittedSchema, type SpecificationReading, type SpecificationComment, BusinessConfiguredSchema, type BusinessConfiguration } from "../issues/engineering-schema";
+import { DirectConfiguredSchema, type DirectConfiguration, SpecificationReadSchema, SpecificationCommentSubmittedSchema, type SpecificationReading, type SpecificationComment, BusinessConfiguredSchema, type BusinessConfiguration } from "../issues/engineering-schema";
 import { AgentRuntimeSchema, EMPTY_RUNTIME } from "../runtimes/schema";
 import type { IssueWakeup, IssueWakeupInput, IssueWakeupSummaryRow, PausedWakeup, SystemWakeup, WakeupRun, WorkspaceSystemWakeup } from "../types/issue-wakeup";
 import type { WorkspaceWakeupPage, WorkspaceWakeupFilters } from "../types/issue-wakeup";
@@ -3030,6 +3030,11 @@ export class ApiClient {
 
   async configureRequirementEngineering(issueId:string,input:RequirementConfiguration):Promise<void>{
     await this.writeEngineering(issueId,"",{kind:"requirement",expected_revision:input.expectedRevision,agent_id:input.contextAgentId,planner_agent_id:input.plannerAgentId,reproduction_agent_id:input.reproductionAgentId,repository_path:input.repositoryPath,input:input.input,item_kind:input.kind,decision_mode:input.decisionMode,auto_continue:input.autoContinue});
+  }
+
+  async configureDirectEngineering(issueId:string,input:DirectConfiguration):Promise<void>{
+    const raw=await this.fetch<unknown>(`/api/issues/${issueId}/engineering/direct`,{method:"POST",body:JSON.stringify({expected_revision:input.expectedRevision,agent_id:input.agentId,repository_path:input.repositoryPath,input:input.input})});
+    if(!parseWithFallback(raw,DirectConfiguredSchema,null,{endpoint:"POST /api/issues/:id/engineering/direct"}))throw new Error("Invalid Direct configuration response");
   }
 
   async configureBusinessEngineering(issueId:string,input:BusinessConfiguration):Promise<void>{

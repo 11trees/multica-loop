@@ -3069,6 +3069,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 			"action": "selection",
 		})
 		var role struct {
+			DirectProjectID   *string                 `json:"direct_project_id"`
 			BusinessProjectID *string                 `json:"business_project_id"`
 			ReportCorrection  bool                    `json:"report_correction"`
 			FeedbackGroupID   string                  `json:"feedback_group_id"`
@@ -3082,15 +3083,15 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		invalid := selectErr != nil || json.Unmarshal(selection, &role) != nil || role.Configured == nil
 		if !invalid && *role.Configured {
 			commit, err := hex.DecodeString(role.Commit)
-			invalid = err != nil || (len(commit) != 20 && len(commit) != 32) || role.Repository == "" || (!businessEngineeringChain(role.Chain) && role.Chain != "feedback-verify" && role.Chain != "feedback-triage" && role.Chain != "reproduction" && role.Chain != "review" && role.Chain != "context" && role.Chain != "planning" && role.Chain != "analysis" && role.Chain != "development" && role.Chain != "verification")
+			invalid = err != nil || (len(commit) != 20 && len(commit) != 32 && !(role.Chain == "direct" && role.Commit == "")) || role.Repository == "" || (!businessEngineeringChain(role.Chain) && role.Chain != "direct" && role.Chain != "feedback-verify" && role.Chain != "feedback-triage" && role.Chain != "reproduction" && role.Chain != "review" && role.Chain != "context" && role.Chain != "planning" && role.Chain != "analysis" && role.Chain != "development" && role.Chain != "verification")
 		}
 		if invalid {
 			return resp, nil, nil, 0, 0, h.failClaimedTaskBeforeLaunch(r.Context(), task, "Engineering role lookup is unavailable.", taskfailure.ReasonEnvironmentPrepareFailed, "engineering_unavailable", http.StatusServiceUnavailable, "engineering unavailable")
 		}
-		if *role.Configured && (businessEngineeringChain(role.Chain) || role.BusinessProjectID != nil) {
+		if *role.Configured && (businessEngineeringChain(role.Chain) || role.BusinessProjectID != nil || role.DirectProjectID != nil || role.Chain == "direct") {
 			issue, err := h.Queries.GetIssueInWorkspace(r.Context(), db.GetIssueInWorkspaceParams{ID: task.IssueID, WorkspaceID: parseUUID(runtimeWorkspaceID)})
 			if err == nil {
-				err = requireEngineeringBusinessProject(issue, selection)
+				err = requireEngineeringProject(issue, selection)
 			}
 			if err != nil {
 				return resp, nil, nil, 0, 0, h.failClaimedTaskBeforeLaunch(r.Context(), task, "Engineering workflow project changed.", taskfailure.ReasonEnvironmentPrepareFailed, "engineering_business", http.StatusConflict, "business scope unavailable")
@@ -3118,7 +3119,11 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 			resp.EngineeringChain = role.Chain
 			resp.EngineeringRepository = role.Repository
 			resp.EngineeringCommit = role.Commit
-			resp.Agent.Instructions += "\n\nThis issue uses the engineering command chain. First run `multica engineering start`, then read the returned draft phase, sequence, inputs, and instructions. Submit edits with `multica engineering command --payload '<JSON>'` where JSON contains expected_sequence and command. Use phase.complete only after the phase gates pass. If waiting_for_answers, stop and return control to the host; do not answer your own questions or mark delivery complete through issue status. Your task token and claim determine identity."
+			if role.Chain == "direct" {
+				resp.Agent.Instructions += "\n\n" + directRunInstruction
+			} else {
+				resp.Agent.Instructions += "\n\nThis issue uses the engineering command chain. First run `multica engineering start`, then read the returned draft phase, sequence, inputs, and instructions. Submit edits with `multica engineering command --payload '<JSON>'` where JSON contains expected_sequence and command. Use phase.complete only after the phase gates pass. If waiting_for_answers, stop and return control to the host; do not answer your own questions or mark delivery complete through issue status. Your task token and claim determine identity."
+			}
 			if businessEngineeringChain(role.Chain) {
 				resp.Agent.Instructions += "\nYour role is readonly business analysis. Read the original idea, exact upstream versions, prior human choices and structured return gaps. Preserve sources and do not change repository files. Completing this stage only publishes its protocol artifact; the host owns stage transitions. Specification approval is not software delivery. Standalone specification reading and End to End delivery handoff are separate boundaries."
 			}

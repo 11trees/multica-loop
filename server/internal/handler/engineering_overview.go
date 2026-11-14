@@ -101,13 +101,14 @@ func (h *Handler) RunEngineering(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var selection struct {
+		Chain   string `json:"chain"`
 		AgentID string `json:"agent_id"`
 	}
 	if json.Unmarshal(result, &selection) != nil {
 		writeError(w, http.StatusServiceUnavailable, "invalid engineering run selection")
 		return
 	}
-	if err := requireEngineeringBusinessProject(issue, result); err != nil {
+	if err := requireEngineeringProject(issue, result); err != nil {
 		engineeringControlError(w, err)
 		return
 	}
@@ -158,11 +159,15 @@ func (h *Handler) RunEngineering(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "engineering role changed while preparing the run")
 		return
 	}
-	if err := requireEngineeringBusinessProject(issue, checked); err != nil {
+	if err := requireEngineeringProject(issue, checked); err != nil {
 		engineeringControlError(w, err)
 		return
 	}
-	task, err := h.TaskService.EnqueueEngineeringRun(r.Context(), issue, agent.ID, parseUUID(userID), "Continue the configured engineering chain with multica engineering start. Preserve its frozen inputs and current phase.")
+	instruction := "Continue the configured engineering chain with multica engineering start. Preserve its frozen inputs and current phase."
+	if selection.Chain == "direct" {
+		instruction = directRunInstruction
+	}
+	task, err := h.TaskService.EnqueueEngineeringRun(r.Context(), issue, agent.ID, parseUUID(userID), instruction)
 	if err != nil {
 		writeError(w, http.StatusConflict, err.Error())
 		return

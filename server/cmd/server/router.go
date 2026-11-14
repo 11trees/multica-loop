@@ -2101,6 +2101,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			// Assignee frequency
 			r.Get("/api/assignee-frequency", h.GetAssigneeFrequency)
 			r.Get("/api/engineering/run", h.GetEngineeringRunContext)
+			r.Post("/api/engineering/direct/run", h.RunEngineeringDirect)
+			r.Post("/api/engineering/direct/submit", h.SubmitEngineeringDirect)
 			r.Post("/api/engineering/verification/start", h.StartEngineeringVerification)
 			r.Get("/api/engineering/verification", h.GetEngineeringVerification)
 			r.Get("/api/issues/{id}/engineering", h.GetEngineeringOverview)
@@ -2108,6 +2110,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			r.Post("/api/issues/{id}/engineering/publication", h.PublishEngineeringUnits)
 			r.Post("/api/issues/{id}/engineering/delivery", h.AuthorizeEngineeringDelivery)
 			r.Post("/api/issues/{id}/engineering/feedback", h.BeginEngineeringFeedback)
+			r.Post("/api/issues/{id}/engineering/direct", h.ConfigureEngineeringDirect)
 			r.Post("/api/issues/{id}/engineering/business-analysis", h.ConfigureEngineeringBusiness)
 			r.Post("/api/issues/{id}/engineering/business-analysis/acknowledge", h.AcknowledgeEngineeringSpecification)
 			r.Post("/api/issues/{id}/engineering/business-analysis/comments", h.CreateEngineeringSpecificationComment)

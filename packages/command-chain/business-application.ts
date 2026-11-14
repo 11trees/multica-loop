@@ -128,8 +128,9 @@ export class BusinessApplication {
     const changed = this.db.prepare(`INSERT INTO business_contract(workspace_id,issue_id,revision,version,payload)
       SELECT ?,?,?,?,? WHERE NOT EXISTS(SELECT 1 FROM requirement_contract WHERE workspace_id=? AND issue_id=?)
       AND NOT EXISTS(SELECT 1 FROM engineering_contract WHERE workspace_id=? AND issue_id=?)
-      AND NOT EXISTS(SELECT 1 FROM requirement_unit WHERE workspace_id=? AND issue_id=?) ON CONFLICT DO NOTHING`)
-      .run(record.workspaceId, record.issueId, 1, 0, JSON.stringify(record), record.workspaceId, record.issueId, record.workspaceId, record.issueId, record.workspaceId, record.issueId);
+      AND NOT EXISTS(SELECT 1 FROM requirement_unit WHERE workspace_id=? AND issue_id=?)
+      AND NOT EXISTS(SELECT 1 FROM direct_contract WHERE workspace_id=? AND issue_id=?) ON CONFLICT DO NOTHING`)
+      .run(record.workspaceId, record.issueId, 1, 0, JSON.stringify(record), record.workspaceId, record.issueId, record.workspaceId, record.issueId, record.workspaceId, record.issueId, record.workspaceId, record.issueId);
     if (changed.changes !== 1) throw new DraftConflictError("This issue already owns an engineering workflow; reconcile it before replacement");
     return this.view(record, entry);
   }

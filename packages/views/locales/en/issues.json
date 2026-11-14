@@ -2172,6 +2172,15 @@
     "end_to_end_roles_required": "Ten separate agents are required.",
     "start_end_to_end": "Start End to End",
     "specification_handoff": "Approved; entering requirement context automatically.",
-    "approved_specification": "Approved specification"
+    "approved_specification": "Approved specification",
+    "direct": "Direct",
+    "direct_notice": "Authorizes one agent to execute this work; its explicit submitted result completes the task automatically.",
+    "direct_input": "Work to execute",
+    "direct_agent": "Executing agent",
+    "start_direct": "Start Direct",
+    "direct_result": "Direct result",
+    "direct_completed": "Submitted result saved; Direct is complete.",
+    "direct_submitted": "Result submitted; waiting for native run completion.",
+    "direct_refresh": "Refresh Direct"
   }
 }

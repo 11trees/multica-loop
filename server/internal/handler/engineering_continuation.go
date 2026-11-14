@@ -56,6 +56,9 @@ func (h *Handler) ReconcileEngineering(ctx context.Context) error {
 }
 
 func (h *Handler) dispatchEngineeringContinuation(ctx context.Context, item engineeringContinuation) error {
+	if item.Reason == "direct_ready" || item.Reason == "direct_submitted" {
+		return h.dispatchDirect(ctx, item)
+	}
 	if item.Reason == "business_handoff" || item.Reason == "end_to_end_publish" || item.Reason == "end_to_end_review" {
 		return h.dispatchEndToEnd(ctx, item)
 	}
@@ -165,7 +168,7 @@ func (h *Handler) dispatchEngineeringContinuation(ctx context.Context, item engi
 	if json.Unmarshal(selected, &selection) != nil || selection.AgentID != item.AgentID {
 		return fmt.Errorf("engineering role changed before continuation")
 	}
-	if err := requireEngineeringBusinessProject(issue, selected); err != nil {
+	if err := requireEngineeringProject(issue, selected); err != nil {
 		return err
 	}
 	if selection.ReviewUnits != nil {
