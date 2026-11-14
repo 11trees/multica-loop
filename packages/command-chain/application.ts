@@ -26,7 +26,7 @@ const coordinator = z.strictObject({ kind: z.literal("coordinator") });
 const actor = z.discriminatedUnion("kind", [human, task, daemon, host, coordinator]);
 export const applicationRequestSchema = z.strictObject({
   actor,
-  action: z.enum(["configure-business", "configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations", "verified-binding", "publication", "publication-ack", "delivery-policy", "activate-unit", "accept-unit", "parent-scope", "review-inputs", "configure-review", "review-ack", "begin-feedback", "cancel-feedback", "feedback-restored", "authorize-feedback-work", "prepare-feedback-verification", "prepare-feedback-report"]),
+  action: z.enum(["business-scope","business-read","business-comment","business-comment-intent","business-comment-ack","business-comment-resolved","business-comment-protected","configure-business", "configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations", "verified-binding", "publication", "publication-ack", "delivery-policy", "activate-unit", "accept-unit", "parent-scope", "review-inputs", "configure-review", "review-ack", "begin-feedback", "cancel-feedback", "feedback-restored", "authorize-feedback-work", "prepare-feedback-verification", "prepare-feedback-report"]),
   payload: z.unknown().optional(),
 });
 export type ApplicationRequest = z.infer<typeof applicationRequestSchema>;
@@ -321,7 +321,7 @@ export class EngineeringApplication {
   }
 
   private async overview(record: Record | undefined) {
-    if (!record) return { enabled: true, configured: false };
+    if (!record) return { enabled: true, configured: false,business_enabled:this.business.enabled };
     const role=this.activeRole(record),development=role.chain === "development",analysis=role.chain === "analysis";
     const draft=await this.drafts.read(role.draftId);
     const definition=draft?.definition ?? parseCommandChainDefinition(role.definitionSource,analysis ? analysisProfile : development ? developmentProfile : profile).definition;
@@ -466,6 +466,11 @@ export class EngineeringApplication {
       return [...await this.business.continuations(),...await this.requirements.continuations(),...await this.managedProgress(),...await this.continuations()];
     }
     if (action === "continuations") throw new Error("Only the host coordinator can list continuations");
+    if(action === "business-comment-protected"){
+      if(actor.kind !== "host")throw new Error("Only the host can inspect specification comment ownership");
+      const input=z.strictObject({comment_id:z.uuid()}).parse(request.payload);
+      return {protected:this.business.protectedComment(actor.workspaceId,actor.issueId,input.comment_id)};
+    }
     if(action === "configure-business")return this.business.invoke(request);
     if(this.business.current(actor.workspaceId,actor.issueId) && action !== "parent-scope")return this.business.invoke(request);
     const managedUnit=this.requirements.managedUnit(actor.workspaceId,actor.issueId);

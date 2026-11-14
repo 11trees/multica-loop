@@ -19,6 +19,8 @@ func init() {
 		{"status", "/api/engineering/verification", "Read this run's engineering checkpoint"},
 		{"command", "/api/engineering/verification/commands", "Execute a JSON phase/artifact/runtime-input command"},
 		{"configure <issue-id>", "configure", "Freeze a delivery contract and clean repository commit (human only)"},
+		{"acknowledge-specification <issue-id>", "acknowledge-specification", "Confirm reading the exact current business specification (human only)"},
+		{"comment-specification <issue-id>", "comment-specification", "Submit feedback on an exact approved specification version (human only)"},
 		{"configure-business <issue-id>", "configure-business", "Freeze four business analysis roles and the original idea (human only)"},
 		{"publish-units <issue-id>", "publish-units", "Publish a frozen requirement plan as native child issues (human only)"},
 		{"start-deliveries <issue-id>", "start-deliveries", "Authorize frozen roles and bounded serial delivery for a published plan (human only)"},
@@ -50,6 +52,12 @@ func init() {
 				path = "/api/issues/" + url.PathEscape(args[0]) + "/engineering/verification/"
 				if op.path == "publish-units" {
 					path = "/api/issues/" + url.PathEscape(args[0]) + "/engineering/publication"
+				}
+				if op.path == "acknowledge-specification" {
+					path = "/api/issues/" + url.PathEscape(args[0]) + "/engineering/business-analysis/acknowledge"
+				}
+				if op.path == "comment-specification" {
+					path = "/api/issues/" + url.PathEscape(args[0]) + "/engineering/business-analysis/comments"
 				}
 				if op.path == "configure-business" {
 					path = "/api/issues/" + url.PathEscape(args[0]) + "/engineering/business-analysis"

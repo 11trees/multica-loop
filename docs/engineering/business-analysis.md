@@ -4,8 +4,8 @@ The four authoring definitions are imported from the read-only LoopWork baseline
 `17982f2b93100b42d65ed650869c9cc97ff92b5a`. YAML comments were removed; parsed
 definitions, declared fields, instructions, phase order and rendering flags match
 the source. The native API/CLI and coordinator execute these checkpoints;
-standalone reading, document comments, End to End handoff and shared UI selection
-remain incomplete.
+standalone reading, version-bound native comments and shared Web/Desktop controls
+are connected. End to End handoff remains incomplete.
 
 | Stage | Definition | Completion or return |
 | --- | --- | --- |
@@ -102,26 +102,84 @@ choice and resumed task, intent return and preserved old drafts, inherited choic
 in revision two, readonly and changed-project refusal, all four source roles,
 exact approved specification publication and native Done refusal. The repository
 remained clean at its original commit. This accepts the native in-place checkpoint
-path, not real-model review quality, worktree-native acceptance or final closure.
+path. Exact standalone closure and its additional acceptance are described below;
+real-model review quality and worktree-native acceptance remain unverified.
+
+## Specification reading and versioned comments
+
+The shared Business analysis panel configures the four frozen roles, displays
+human decision options, current specification, readonly analysis versions and
+comment progress. The same view is wired into Web and Desktop's issue panel.
+A missing backend business capability hides configuration; older servers that
+lack reading support remain readonly. Reading and feedback actions also require
+an idle, open native issue and the exact current published specification.
+
+`POST /api/issues/{id}/engineering/business-analysis/acknowledge` (CLI:
+`multica engineering acknowledge-specification`) accepts `expected_version`,
+`draft_id` and `specification_hash`. The authenticated human is supplied by Go.
+The kernel recompiles the exact approved review, matches its fingerprint and
+records the acknowledgement without overwriting earlier readings. A retried
+identical reading is idempotent. Go rechecks the frozen project, unfinished runs
+and actual native comment versions, then writes Done through the ordinary
+synchronous completion boundary. This closes the analysis. `verified-binding`
+still refuses to use a business specification as independent code verification.
+A task credential cannot acknowledge reading or post human feedback.
+
+`POST /api/issues/{id}/engineering/business-analysis/comments` (CLI:
+`multica engineering comment-specification`) binds `request_id`, `draft_id`,
+`specification_hash`, `content`, optional `anchor_type` / `quoted_text` /
+`start_offset` / `end_offset`, and `intent` (`note`, `question`, `change_request`).
+The current unread specification is the review target. A selection needs quoted
+text. The native comment carries that quote and the human's text; protocol
+history retains its source document/hash, anchor and intent.
+
+Before writing the native comment, the kernel persists a stable publication
+intent and blocks reading. Go publishes it as a native member comment under the
+actual issue/project and acknowledges its body fingerprint. Only then does the
+kernel create a new Spec generation and supersede old Spec/Review, preserving
+Intent/Design and all old drafts. The new contracts expose exact comment IDs,
+versions, quoted text and source references. Independent review approval marks
+those frozen comments reviewed; the host resolves their native threads and
+acknowledges that outcome. Current reading stays blocked until this completes.
+
+Pending publication/resolution is reconciled by the native coordinator. A retry
+reuses the same native comment ID and cannot replace the original request's
+payload. The kernel and PostgreSQL do not share a transaction: durable intents,
+scoped native lookups and idempotent acknowledgement support those specific retry
+boundaries; they are not a universal exactly-once claim. Membership, project and
+lifecycle are rechecked when publishing or resolving. No agent mention in this
+artifact feedback starts an unrelated agent run.
+
+Submitted specification feedback is immutable through native comment edit/delete
+handlers. New feedback belongs to the current unread specification. Native
+completion rechecks the actual comment author, text fingerprint, resolution and
+absence of added attachments; a chat thread's resolution alone is not protocol
+review. These are text/quote comments, matching the source document-comment
+schema; attachment-based document feedback is not supplied here.
+
+Local host tests cover exact reading, pending comment recovery after restart,
+quoted feedback, idempotent publication, scoped Spec/Review revision, independent
+review/resolution, old-version refusal and new reading. Go tests use real native
+comments, project/identity/idle checks, guarded Done and immutable comment writes.
+Shared API tests reject malformed reading/publication/comment state; component
+tests cover configuration failure, unchanged-request retry and disabled reading.
+The browser scenario now exercises configuration, authenticated choices, source
+returns, quoted native feedback, revision two, old reading refusal and final
+reading through the shared UI. It passed in 4.8 minutes against the managed local
+Go service with controlled native task fixtures and no provider process. The
+fixture repository stayed clean, and its owned records were removed on teardown.
+
+Inspected UI evidence:
+
+- [Four-role configuration](assets/business-analysis-configure.png)
+- Quoted feedback: [wide](assets/business-specification-feedback-1280.png), [narrow](assets/business-specification-feedback-390.png)
+- Confirmed current reading: [wide](assets/business-specification-read-1280.png), [narrow](assets/business-specification-read-390.png)
 
 ## Remaining pipeline boundaries
 
-Business checkpoints currently stop at the approved specification. The native
-Done guard rejects this workflow even after approval. `reading_enabled: false`
-records that versioned specification reading is unavailable; there is no action
-that treats the approval as delivered software. Shared Web/Desktop configuration
-and business-specific artifact/history views are not connected yet.
-
-The following remain required before calling this a migrated Business Analysis
-or End to End pipeline:
-
-- In standalone analysis, require authenticated reading of the exact current
-  approved specification. Native specification comments must bind that version
-  and automatically revise Spec/Review without replacing Intent/Design.
-- In End to End, automatically hand the exact approved specification and its
-  provenance to requirement context using the initially authorized roles. This
-  must not introduce an extra manual approval or claim delivered code.
-- Complete native current-comment/run checks, shared Web/Desktop controls and
-  actual native browser acceptance of those final boundaries.
-
-See the [coverage audit](migration-status.md) for the remaining migration scope.
+End to End must automatically hand the exact approved specification and its
+provenance to requirement context using the initially authorized roles, without
+an extra manual approval or a delivered-code claim. That handoff is not connected.
+Input replacement/reconciliation, real-model specification quality, native
+worktree acceptance, packaged Desktop and historical-data cutover remain separate
+acceptance boundaries. See the [coverage audit](migration-status.md).

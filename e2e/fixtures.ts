@@ -368,6 +368,16 @@ export class TestApiClient {
     return response.json();
   }
 
+  async acknowledgeBusinessSpecification(issueId:string,payload:unknown){
+    if(!this.createdIssueIds.includes(issueId))throw new Error("Not an owned business fixture issue");
+    const response=await this.authedFetch(`/api/issues/${issueId}/engineering/business-analysis/acknowledge`,{method:"POST",body:JSON.stringify(payload)});
+    if(!response.ok)throw new Error(`Specification reading failed: ${response.status} ${await response.text()}`);return response.json();
+  }
+  async ownedEngineeringComments(issueId:string){
+    if(!this.createdIssueIds.includes(issueId))throw new Error("Not an owned engineering fixture issue");
+    const response=await this.authedFetch(`/api/issues/${issueId}/comments`);if(!response.ok)throw new Error("Unable to read native fixture comments");return response.json();
+  }
+
   async captureEngineeringReceipt(taskId: string, receipt: unknown) {
     return this.engineeringRuntimeRequest(taskId, "engineering-receipts", receipt);
   }

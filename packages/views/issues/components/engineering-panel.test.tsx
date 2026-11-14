@@ -13,7 +13,7 @@ vi.mock("@multica/core/api", async importOriginal => ({ ...await importOriginal<
 vi.mock("@multica/core/hooks", async importOriginal => ({ ...await importOriginal<typeof import("@multica/core/hooks")>(), useWorkspaceId: () => "workspace" }));
 const issue = { id: "issue", title: "Fixture delivery", revision: 4 } as Issue;
 const initial: EngineeringOverview = {
-  feedbackAllowed:false,autoContinue: false, enabled: true, configured: true, chain: "verification", agentId: "verifier", revision: 2, sequence: 7,
+  businessEnabled:false,feedbackAllowed:false,autoContinue: false, enabled: true, configured: true, chain: "verification", agentId: "verifier", revision: 2, sequence: 7,
   codeVersion: "commit-fixture", repositoryPath: "/fixture", draftId: "draft", status: "waiting_for_answers", currentPhase: "plan", hasActiveRun: false,
   phases: [{ id: "inputs", status: "completed" }, { id: "plan", status: "current" }],
   sources: [{ key: "ac1", kind: "acceptance", description: "Survives reload", oracle: "Title visible", sourceRef: "ISSUE:fixture" }],
