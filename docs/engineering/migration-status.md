@@ -40,7 +40,7 @@ scenario. See
 
 | Source pipeline | Migration status | Required remaining work |
 | --- | --- | --- |
-| Direct | Controlled normal lifecycle connected | [Direct](direct.md): dedicated RUN/SUBMIT, first-result-wins persistence, native attempt/project fencing, Git/plain-directory binding, guarded automatic Done and Markdown UI; both controlled browser scenarios passed. Generic terminal intervention/host arbitration, real-provider and packaged acceptance remain |
+| Direct | Controlled normal lifecycle connected | [Direct](direct.md): dedicated RUN/SUBMIT, first-result-wins persistence, native attempt/project fencing, Git/plain-directory binding, guarded automatic Done and Markdown UI; both controlled browser scenarios passed. Terminal intervention handoff is connected; independent Admin repair/arbitration, real-provider and packaged acceptance remain |
 | Business Analysis | Standalone closure connected | Real-model review quality, native worktree and packaged acceptance before cutover |
 | End to End | Controlled local path connected | Ten initial roles, exact source handoff, authenticated context, two native dependent deliveries, automatic publication/review, a third forward unit and exact report reading passed; real-provider and native worktree/packaged acceptance remain |
 | Develop | Controlled local path connected | Real-provider acceptance, remaining recovery and resource-ownership boundaries before cutover |
@@ -57,7 +57,8 @@ The generic loader is not evidence that the OpenSpec behavior is connected.
 | --- | --- | --- |
 | Confirmed local single-user no-login deployment | Implemented | [Local access](local-access.md): direct-loopback bootstrap, explicit local identity, fresh-browser entry and shared development CLI profile |
 | Human questions, choices and current report reading | Connected for migrated chains | [Human controls](human-controls.md), [analysis](analysis.md), [final review](requirement-review.md); task credentials cannot answer or acknowledge reading |
-| Terminal intervention and host arbitration | Not migrated | Source Direct and other pipelines can surrender an execution with reason/evidence for host arbitration; normal submission and manual continuation do not establish this path |
+| Terminal intervention and host arbitration | Terminal handoff connected; Admin repair remains incomplete | [Immutable handoff](intervention.md) retains the editable checkpoint, native attempt and original evidence; current agent faults route to independent Admin observations. The retired assistance loop does not establish current source parity |
+| Independent Admin repair | Not migrated beyond pending observations | Source `admin-command.ts`, `admin-management-store.ts` and `admin-controller.ts`: process/authority fencing, immutable original observations, investigation and diagnosis, controlled workspace takeover, repair workspaces/builds, separate verification, external dependency probes, verified business handoff and runtime updates require their own acceptance |
 | Native queue/run identity and interruption recovery | Partial overall | Stable checkpoint task IDs, attempt fencing and saved-result settlement are covered; this is not a universal external-side-effect deduplication guarantee |
 | Immutable contracts, scoped evidence and completion | Connected for migrated chains | Exact source/code bindings, synchronous Done guards and review/native child proofs; unported chains cannot inherit these claims automatically |
 | Shared-repository ownership and parallel work | Incomplete | One requirement is serialized; cross-parent repository leases/admission, global arbitration and parallel analysis are not established |

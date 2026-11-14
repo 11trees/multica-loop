@@ -1,3 +1,4 @@
+import { initializeInterventions } from "./intervention-store";
 import { DatabaseSync } from "node:sqlite";
 import { draftSchema, DraftConflictError, type ChainDraft, type DraftStore } from "./runtime";
 
@@ -7,6 +8,7 @@ export class SqliteDraftStore implements DraftStore {
 
   constructor(path: string) {
     this.db = new DatabaseSync(path);
+    initializeInterventions(this.db);
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS chain_drafts (
         id TEXT PRIMARY KEY,
@@ -31,8 +33,8 @@ export class SqliteDraftStore implements DraftStore {
   async save(draft: ChainDraft, expectedSequence: number): Promise<void> {
     const value = draftSchema.parse(draft);
     if (value.sequence !== expectedSequence + 1) throw new DraftConflictError("Invalid draft sequence");
-    const result = this.db.prepare("UPDATE chain_drafts SET sequence = ?, payload = ? WHERE id = ? AND sequence = ?")
-      .run(value.sequence, JSON.stringify(value), value.id, expectedSequence);
+    const result = this.db.prepare("UPDATE chain_drafts SET sequence = ?, payload = ? WHERE id = ? AND sequence = ? AND NOT EXISTS (SELECT 1 FROM engineering_intervention WHERE workspace_id=? AND issue_id=?)")
+      .run(value.sequence, JSON.stringify(value), value.id, expectedSequence, value.binding.workspaceId, value.binding.issueId);
     if (result.changes !== 1) throw new DraftConflictError("Draft changed; reload before saving");
   }
 

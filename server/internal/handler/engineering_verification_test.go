@@ -143,6 +143,11 @@ func TestEngineeringApplicationActorBoundaries(t *testing.T) {
 	if actor["kind"] != "task" || actor["agentId"] != agentID || actor["issueId"] != issueID || actor["attemptId"] == "" {
 		t.Fatalf("task identity not derived from credential: %+v", actor)
 	}
+	testutil.Call(t, auth(h.RequestEngineeringIntervention), request(session, `{}`)).Want(http.StatusForbidden)
+	testutil.Call(t, auth(h.RequestEngineeringIntervention), request(token, `{"summary":"Original conflict","reason":"Frozen oracle","evidence":"Original observation"}`)).Want(http.StatusOK)
+	if recorder.inputs[2]["action"] != "intervention-request" {
+		t.Fatal("terminal intervention did not use the native task boundary")
+	}
 	testutil.Call(t, auth(h.ConfigureEngineeringVerification), request(session, `{"agent_id":"not-a-uuid"}`)).Want(http.StatusBadRequest)
 	if len(recorder.inputs) != 2 {
 		t.Fatal("invalid agent selection reached worker")

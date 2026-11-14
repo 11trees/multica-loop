@@ -54,8 +54,8 @@ export class DirectApplication {
   private save(record: Record) {
     const expected = record.version;
     record.version++;
-    const changed = this.db.prepare("UPDATE direct_contract SET version=?,payload=? WHERE workspace_id=? AND issue_id=? AND version=?")
-      .run(record.version, JSON.stringify(record), record.workspaceId, record.issueId, expected);
+    const changed = this.db.prepare("UPDATE direct_contract SET version=?,payload=? WHERE workspace_id=? AND issue_id=? AND version=? AND NOT EXISTS (SELECT 1 FROM engineering_intervention WHERE workspace_id=? AND issue_id=?)")
+      .run(record.version, JSON.stringify(record), record.workspaceId, record.issueId, expected, record.workspaceId, record.issueId);
     if (changed.changes !== 1) throw new DraftConflictError("Direct checkpoint changed; reload its current state");
   }
   private result(record: Record) {
@@ -72,7 +72,7 @@ export class DirectApplication {
   }
   continuations() {
     const pending = [];
-    for (const row of this.db.prepare("SELECT payload FROM direct_contract").all()) {
+    for (const row of this.db.prepare("SELECT payload FROM direct_contract root WHERE NOT EXISTS (SELECT 1 FROM engineering_intervention held WHERE held.workspace_id=root.workspace_id AND held.issue_id=root.issue_id)").all()) {
       const record = recordSchema.parse(JSON.parse(String(row.payload)));
       if (record.nativeCompleted || !record.result && record.attempts.length) continue;
       if (record.result) this.result(record);

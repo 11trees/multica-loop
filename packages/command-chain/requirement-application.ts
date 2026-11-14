@@ -94,7 +94,7 @@ export class RequirementApplication {
     const existing=context.parent.accepted[context.unit.unit.key];if(existing && JSON.stringify(existing) !== JSON.stringify(value))throw new DraftConflictError("Accepted delivery version changed");
     context.parent.accepted[context.unit.unit.key]=value;this.save(context.parent);return {accepted:true};
   }
-  executionPlans(){return this.db.prepare("SELECT r.payload FROM requirement_contract r WHERE revision=(SELECT MAX(v.revision) FROM requirement_contract v WHERE v.workspace_id=r.workspace_id AND v.issue_id=r.issue_id)").all().map(row=>recordSchema.parse(JSON.parse(String(row.payload)))).filter(record=>record.deliveryPolicy).map(parent=>({parent,units:this.publication(parent).units}));}
+  executionPlans(){return this.db.prepare("SELECT r.payload FROM requirement_contract r WHERE NOT EXISTS (SELECT 1 FROM engineering_intervention held WHERE held.workspace_id=r.workspace_id AND held.issue_id=r.issue_id) AND revision=(SELECT MAX(v.revision) FROM requirement_contract v WHERE v.workspace_id=r.workspace_id AND v.issue_id=r.issue_id)").all().map(row=>recordSchema.parse(JSON.parse(String(row.payload)))).filter(record=>record.deliveryPolicy).map(parent=>({parent,units:this.publication(parent).units}));}
   reviewUnits(record:Record){return this.publication(record).units.map(item=>({issue_id:item.issueId,contract_hash:item.contractHash,plan_draft_id:item.planDraftId,parent_revision:item.parentRevision,unit_key:item.unit.key}));}
   nativeRunUnits(record:Record){return this.role(record).chain === "feedback-verify" ? this.reviewUnits(record) : record.reviews.at(-1)?.units;}
   private async deliverySnapshot(record:Record,units:ReturnType<RequirementApplication["publication"]>["units"]){
@@ -330,7 +330,7 @@ export class RequirementApplication {
     }catch(error){this.db.exec("ROLLBACK");throw error;}
     return this.publication(record);
   }
-  private save(record:Record){this.db.prepare("UPDATE requirement_contract SET payload=? WHERE workspace_id=? AND issue_id=? AND revision=?").run(JSON.stringify(record),record.workspaceId,record.issueId,record.contextContract.binding.revision);}
+  private save(record:Record){const changed=this.db.prepare("UPDATE requirement_contract SET payload=? WHERE workspace_id=? AND issue_id=? AND revision=? AND NOT EXISTS (SELECT 1 FROM engineering_intervention WHERE workspace_id=? AND issue_id=?)").run(JSON.stringify(record),record.workspaceId,record.issueId,record.contextContract.binding.revision,record.workspaceId,record.issueId);if(changed.changes !== 1)throw new DraftConflictError("Requirement checkpoint changed or surrendered execution");}
   private role(record:Record){
     const feedback=this.activeFeedback(record);if(feedback?.policy){
       const verification=this.feedbackVerification(feedback);if(verification)return {chain:"feedback-verify",agentId:feedback.policy.verifierId,draftId:verification.entry.draftId,contract:verification.entry.contract,source:feedback.definitions.verify,profile:feedbackVerifyProfile,feedbackGroupId:verification.group.id,feedbackCommentId:verification.commentId};
@@ -507,7 +507,7 @@ export class RequirementApplication {
     };
   }
   async continuations(){
-    const rows=this.db.prepare("SELECT r.payload FROM requirement_contract r WHERE revision=(SELECT MAX(v.revision) FROM requirement_contract v WHERE v.workspace_id=r.workspace_id AND v.issue_id=r.issue_id)").all(),pending=[];
+    const rows=this.db.prepare("SELECT r.payload FROM requirement_contract r WHERE NOT EXISTS (SELECT 1 FROM engineering_intervention held WHERE held.workspace_id=r.workspace_id AND held.issue_id=r.issue_id) AND revision=(SELECT MAX(v.revision) FROM requirement_contract v WHERE v.workspace_id=r.workspace_id AND v.issue_id=r.issue_id)").all(),pending=[];
     for(const row of rows){const record=recordSchema.parse(JSON.parse(String(row.payload)));
       if(!record.contextHandoff){const draft=await this.drafts.read(record.contextDraftId);if(draft?.status === "completed")await this.settleContext(record,draft);}
       if(record.reproduction?.contract && !record.reproduction.handoff){const reproductionDraft=await this.drafts.read(record.reproduction.draftId);if(reproductionDraft?.status === "completed")await this.settleReproduction(record,reproductionDraft);}
