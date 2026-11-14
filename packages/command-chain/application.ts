@@ -1,3 +1,4 @@
+import { DirectApplication } from "./direct-application";
 import { RequirementApplication, type RequirementDefinitions } from "./requirement-application";
 import { BusinessApplication, type BusinessDefinitions } from "./business-application";
 import { createHash, randomUUID } from "node:crypto";
@@ -26,7 +27,7 @@ const coordinator = z.strictObject({ kind: z.literal("coordinator") });
 const actor = z.discriminatedUnion("kind", [human, task, daemon, host, coordinator]);
 export const applicationRequestSchema = z.strictObject({
   actor,
-  action: z.enum(["business-handoff","end-to-end-scope","business-scope","business-read","business-comment","business-comment-intent","business-comment-ack","business-comment-resolved","business-comment-protected","configure-business", "configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations", "verified-binding", "publication", "publication-ack", "delivery-policy", "activate-unit", "accept-unit", "parent-scope", "review-inputs", "configure-review", "review-ack", "begin-feedback", "cancel-feedback", "feedback-restored", "authorize-feedback-work", "prepare-feedback-verification", "prepare-feedback-report"]),
+  action: z.enum(["configure-direct","direct-run","direct-submit","direct-scope","direct-completed","business-handoff","end-to-end-scope","business-scope","business-read","business-comment","business-comment-intent","business-comment-ack","business-comment-resolved","business-comment-protected","configure-business", "configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations", "verified-binding", "publication", "publication-ack", "delivery-policy", "activate-unit", "accept-unit", "parent-scope", "review-inputs", "configure-review", "review-ack", "begin-feedback", "cancel-feedback", "feedback-restored", "authorize-feedback-work", "prepare-feedback-verification", "prepare-feedback-report"]),
   payload: z.unknown().optional(),
 });
 export type ApplicationRequest = z.infer<typeof applicationRequestSchema>;
@@ -91,6 +92,7 @@ export class EngineeringApplication {
   private readonly drafts: SqliteDraftStore;
   private readonly requirements:RequirementApplication;
   private readonly business:BusinessApplication;
+  private readonly direct:DirectApplication;
 
   constructor(database: string, private readonly definitionSource: string, private readonly developmentSource?: string, private readonly analysisSource?: string,requirementDefinitions?:RequirementDefinitions,businessDefinitions?:BusinessDefinitions) {
     parseCommandChainDefinition(definitionSource, profile);
@@ -100,6 +102,7 @@ export class EngineeringApplication {
       PRIMARY KEY (workspace_id, issue_id, revision)
     )`);
     this.drafts = new SqliteDraftStore(database);
+    this.direct=new DirectApplication(this.db);
     this.db.exec("CREATE TABLE IF NOT EXISTS engineering_receipt (draft_id TEXT NOT NULL, receipt_id TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY (draft_id, receipt_id))");
     this.requirements=new RequirementApplication(this.db,this.drafts,requirementDefinitions,async(workspaceId,issueId)=>{
       const record=this.current(workspaceId,issueId),verified=await this.verifiedBinding(record);
@@ -321,7 +324,7 @@ export class EngineeringApplication {
   }
 
   private async overview(record: Record | undefined) {
-    if (!record) return { enabled: true, configured: false,business_enabled:this.business.enabled,end_to_end_enabled:this.business.endToEndEnabled };
+    if (!record) return { enabled: true, configured: false,direct_enabled:true,business_enabled:this.business.enabled,end_to_end_enabled:this.business.endToEndEnabled };
     const role=this.activeRole(record),development=role.chain === "development",analysis=role.chain === "analysis";
     const draft=await this.drafts.read(role.draftId);
     const definition=draft?.definition ?? parseCommandChainDefinition(role.definitionSource,analysis ? analysisProfile : development ? developmentProfile : profile).definition;
@@ -409,8 +412,8 @@ export class EngineeringApplication {
       ...(config.analyst_agent_id ? {analysis:{agentId:config.analyst_agent_id,draftId:randomUUID(),definitionSource:this.analysisSource,contract:{...contract,unit:config.unit,decisionMode:config.decision_mode ?? "balanced",dependencies},handoff:false}} : {}),
       ...(config.developer_agent_id ? { development: { agentId: config.developer_agent_id, draftId: randomUUID(), definitionSource: this.developmentSource, baseCodeVersion: code.codeVersion, implementationGuidance: config.implementation_guidance, handoff: false } } : {}),
     });
-    const inserted = this.db.prepare("INSERT INTO engineering_contract (workspace_id, issue_id, revision, payload) SELECT ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM business_contract WHERE workspace_id=? AND issue_id=?) ON CONFLICT DO NOTHING")
-      .run(actor.workspaceId, actor.issueId, revision, JSON.stringify(record),actor.workspaceId,actor.issueId);
+    const inserted = this.db.prepare("INSERT INTO engineering_contract (workspace_id, issue_id, revision, payload) SELECT ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM business_contract WHERE workspace_id=? AND issue_id=?) AND NOT EXISTS (SELECT 1 FROM direct_contract WHERE workspace_id=? AND issue_id=?) ON CONFLICT DO NOTHING")
+      .run(actor.workspaceId, actor.issueId, revision, JSON.stringify(record),actor.workspaceId,actor.issueId,actor.workspaceId,actor.issueId);
     if (inserted.changes !== 1) throw new DraftConflictError("Contract revision changed");
     return record.analysis ? this.invokeAnalysis(record,actor,"read",undefined) : this.view(record, undefined, Boolean(record.development));
   }
@@ -463,9 +466,10 @@ export class EngineeringApplication {
     const { actor, action } = request;
     if (actor.kind === "coordinator") {
       if (action !== "continuations") throw new Error("Coordinator credentials cannot edit engineering state");
-      return [...await this.business.continuations(),...await this.requirements.continuations(),...await this.managedProgress(),...await this.continuations()];
+      return [...this.direct.continuations(),...await this.business.continuations(),...await this.requirements.continuations(),...await this.managedProgress(),...await this.continuations()];
     }
     if (action === "continuations") throw new Error("Only the host coordinator can list continuations");
+    if(action === "configure-direct" || action !== "business-comment-protected" && this.direct.current(actor.workspaceId,actor.issueId))return this.direct.invoke(request);
     if(action === "business-comment-protected"){
       if(actor.kind !== "host")throw new Error("Only the host can inspect specification comment ownership");
       const input=z.strictObject({comment_id:z.uuid()}).parse(request.payload);

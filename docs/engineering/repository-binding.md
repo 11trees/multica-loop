@@ -1,6 +1,9 @@
 # Local runtime repository binding
 
-The engineering contract registers a clean repository and freezes its commit.
+Delivery and readonly analysis contracts register a clean repository and freeze
+its commit. [Direct](direct.md) instead permits existing user changes and ordinary
+local directories in in-place mode; it binds the exact registered directory and
+requires Git only for worktree mode.
 The runtime must separately bind the directory it actually prepared. An issue's
 project needs a native `local_directory` resource for its daemon, pointing into
 that registered repository. Both `in_place` and `worktree` execution modes are

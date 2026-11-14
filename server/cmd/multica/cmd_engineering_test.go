@@ -111,6 +111,7 @@ func TestEngineeringRequirementReviewCommandsUseHumanEndpoints(t *testing.T) {
 	for _, operation := range []struct{ name, path, payload string }{
 		{"acknowledge-specification", "/api/issues/parent/engineering/business-analysis/acknowledge", `{"expected_version":8,"draft_id":"review","specification_hash":"frozen"}`},
 		{"comment-specification", "/api/issues/parent/engineering/business-analysis/comments", `{"request_id":"request","draft_id":"review","content":"Clarify"}`},
+		{"configure-direct", "/api/issues/parent/engineering/direct", `{"expected_revision":0,"agent_id":"direct-agent","input":"Write the requested summary"}`},
 		{"configure-business", "/api/issues/parent/engineering/business-analysis", `{"expected_revision":0,"input":"Reader continues","roles":{"intent":"intent","business_design":"design","specification":"spec","review":"review"}}`},
 		{"start-feedback", "/api/issues/parent/engineering/feedback", `{"expected_revision":1,"comment_ids":["comment"]}`},
 		{"start-feedback-deliveries", "/api/issues/parent/engineering/feedback/work", `{"batch_id":"batch","expected_version":1,"planner_agent_id":"planner"}`},

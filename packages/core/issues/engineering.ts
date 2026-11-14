@@ -1,14 +1,14 @@
 import { queryOptions, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { issueKeys } from "./queries";
-import type { BusinessConfiguration, SpecificationReading, SpecificationComment, FeedbackWorkAuthorization, FeedbackCapture, FeedbackCancellation, RequirementReviewConfiguration, RequirementReviewAcknowledgement, RequirementDeliveryConfiguration, EngineeringCheckpoint, RequirementConfiguration, EngineeringConfiguration } from "./engineering-schema";
-export type { BusinessConfiguration, SpecificationReading, SpecificationComment, FeedbackWorkAuthorization, FeedbackCapture, FeedbackCancellation, EngineeringOverview, RequirementReviewConfiguration, RequirementReviewAcknowledgement, RequirementDeliveryConfiguration, RequirementConfiguration, EngineeringCheckpoint, EngineeringConfiguration, EngineeringDeliveryUnit } from "./engineering-schema";
+import type { DirectConfiguration, BusinessConfiguration, SpecificationReading, SpecificationComment, FeedbackWorkAuthorization, FeedbackCapture, FeedbackCancellation, RequirementReviewConfiguration, RequirementReviewAcknowledgement, RequirementDeliveryConfiguration, EngineeringCheckpoint, RequirementConfiguration, EngineeringConfiguration } from "./engineering-schema";
+export type { DirectConfiguration, BusinessConfiguration, SpecificationReading, SpecificationComment, FeedbackWorkAuthorization, FeedbackCapture, FeedbackCancellation, EngineeringOverview, RequirementReviewConfiguration, RequirementReviewAcknowledgement, RequirementDeliveryConfiguration, RequirementConfiguration, EngineeringCheckpoint, EngineeringConfiguration, EngineeringDeliveryUnit } from "./engineering-schema";
 
 export function engineeringOverviewOptions(workspaceId: string, issueId: string) {
   return queryOptions({
     queryKey: ["engineering", workspaceId, issueId], queryFn: () => api.getEngineeringOverview(issueId),
     enabled: !!workspaceId && !!issueId, retry: false, staleTime: 5000,
-    refetchInterval: query => {const state=query.state.data,review=state?.requirement?.review;return state?.configured && (state.business?.endToEnd === true || state.requirement?.end_to_end === true && !review?.acknowledgement || state.business?.comments.some(comment=>["publishing","resolving"].includes(comment.status)) || state.hasActiveRun === true || !["completed", "abandoned"].includes(state.status) || state.requirement?.feedback?.active === true || review?.result?.verdict === "closure_gap" || state.requirement?.delivery_policy && state.requirement.publication?.units.some(unit=>!state.requirement!.accepted[unit.unit.key])) ? 5000 : false;},
+    refetchInterval: query => {const state=query.state.data,review=state?.requirement?.review;return state?.configured && (state.direct && !state.direct.nativeCompleted || state.business?.endToEnd === true || state.requirement?.end_to_end === true && !review?.acknowledgement || state.business?.comments.some(comment=>["publishing","resolving"].includes(comment.status)) || state.hasActiveRun === true || !["completed", "abandoned"].includes(state.status) || state.requirement?.feedback?.active === true || review?.result?.verdict === "closure_gap" || state.requirement?.delivery_policy && state.requirement.publication?.units.some(unit=>!state.requirement!.accepted[unit.unit.key])) ? 5000 : false;},
   });
 }
 
@@ -18,6 +18,7 @@ export function useEngineeringActions(workspaceId: string, issueId: string) {
     client.invalidateQueries({ queryKey: engineeringOverviewOptions(workspaceId, issueId).queryKey }),
     client.invalidateQueries({ queryKey: issueKeys.tasks(issueId) }),
   ]);
+  const configureDirect=useMutation({mutationFn:(input:DirectConfiguration)=>api.configureDirectEngineering(issueId,input),onSettled:refresh});
   const configureBusiness=useMutation({mutationFn:(input:BusinessConfiguration)=>api.configureBusinessEngineering(issueId,input),onSettled:refresh});
   const readSpecification=useMutation({mutationFn:(input:SpecificationReading)=>api.acknowledgeBusinessSpecification(issueId,input),onSettled:()=>Promise.all([refresh(),client.invalidateQueries({queryKey:issueKeys.all(workspaceId)})])});
   const commentSpecification=useMutation({mutationFn:(input:SpecificationComment)=>api.commentBusinessSpecification(issueId,input),onSettled:()=>Promise.all([refresh(),client.invalidateQueries({queryKey:issueKeys.all(workspaceId)})])});
@@ -33,7 +34,7 @@ export function useEngineeringActions(workspaceId: string, issueId: string) {
   const answer = useMutation({ mutationFn: (input: { expectedSequence: number; requestId: string; answer: string; selectedOption?:string }) => api.answerEngineering(issueId, input), onSettled: refresh });
   const abandon = useMutation({ mutationFn: (input: { expectedSequence: number; reason: string }) => api.abandonEngineering(issueId, input), onSettled: refresh });
   const run = useMutation({ mutationFn: (input: EngineeringCheckpoint) => api.runEngineering(issueId, input), onSettled: refresh });
-  return { configureBusiness,readSpecification,commentSpecification,authorizeFeedbackWork,beginFeedback,cancelFeedback,configure, configureRequirement, publish, deliver, review, acknowledge, answer, abandon, run };
+  return { configureDirect,configureBusiness,readSpecification,commentSpecification,authorizeFeedbackWork,beginFeedback,cancelFeedback,configure, configureRequirement, publish, deliver, review, acknowledge, answer, abandon, run };
 }
 
 export function feedbackCommentsOptions(workspaceId:string,issueId:string){return queryOptions({queryKey:["engineering-feedback-comments",workspaceId,issueId],queryFn:()=>api.listComments(issueId),enabled:!!workspaceId && !!issueId,staleTime:0});}

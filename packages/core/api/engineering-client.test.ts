@@ -197,3 +197,13 @@ it("preserves initial End to End roles and budget and rejects missing or inconsi
  expect(EngineeringOverviewSchema.parse({...base,requirement:{...base.requirement,business_source:source}}).requirement?.business_source?.specification).toBe(source.specification);
  expect(EngineeringOverviewSchema.safeParse({...base,requirement:{...base.requirement,business_source:{...source,reviewHash:"b".repeat(64)}}}).success).toBe(false);
 });
+
+it("keeps Direct configuration scoped and refuses malformed submitted-result receipts",async()=>{
+ const client=new ApiClient("https://api.example.test"),input={expectedRevision:0,agentId:"direct-agent",repositoryPath:"/project",input:"Write a faithful summary"};
+ respond({configured:true});await client.configureDirectEngineering("direct-issue",input);expect(vi.mocked(fetch).mock.calls[0]![0]).toBe("https://api.example.test/api/issues/direct-issue/engineering/direct");expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]![1]?.body))).toEqual({expected_revision:0,agent_id:"direct-agent",repository_path:"/project",input:"Write a faithful summary"});
+ respond({configured:"true"});await expect(client.configureDirectEngineering("direct-issue",input)).rejects.toThrow(/Invalid Direct/);
+ const direct={input:input.input,project_id:"project",contract_hash:"a".repeat(64),mode:"in_place",native_completed:false,attempts:[{id:"attempt",run_at:"2026-11-14T00:00:00.000Z",active:true}],result:{id:"result",attemptId:"attempt",summary:"Summary ready",content:"# Faithful summary",submittedAt:"2026-11-14T00:00:00.000Z",hash:"b".repeat(64)}};
+ respond({...body,chain:"direct",status:"completed",direct});expect(await client.getEngineeringOverview("direct-issue")).toMatchObject({direct:{nativeCompleted:false,result:{content:"# Faithful summary"}}});
+ for(const value of [{...direct,result:null},{...direct,attempts:[]},{...direct,result:{...direct.result,hash:"invalid"}},{...direct,native_completed:true,result:null}]){respond({...body,chain:"direct",status:"completed",direct:value});await expect(client.getEngineeringOverview("direct-issue")).rejects.toThrow(/Invalid engineering overview/);}
+ respond({...body,chain:"direct",status:"completed",direct:{...direct,mode:"future-mode"}});expect((await client.getEngineeringOverview("direct-issue")).direct?.mode).toBe("unknown");
+});

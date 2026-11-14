@@ -51,6 +51,7 @@ func (h *Handler) requireEngineeringCompletionWithCatalog(ctx context.Context, c
 		Allowed           *bool                     `json:"allowed"`
 		ReviewUnits       *[]engineeringReviewUnit  `json:"review_units"`
 		BusinessProjectID *string                   `json:"business_project_id"`
+		Direct            *engineeringDirectScope   `json:"direct_scope"`
 		Business          *engineeringBusinessScope `json:"business_scope"`
 	}
 	if json.Unmarshal(result, &permission) != nil || permission.Configured == nil || permission.Allowed == nil {
@@ -58,6 +59,18 @@ func (h *Handler) requireEngineeringCompletionWithCatalog(ctx context.Context, c
 	}
 	if !*permission.Allowed {
 		return &engineeringCompletionError{message: "independent verification has not authorized issue completion"}
+	}
+	if permission.Direct != nil {
+		issue, err := h.Queries.GetIssueInWorkspace(ctx, db.GetIssueInWorkspaceParams{ID: params.ID, WorkspaceID: workspaceID})
+		if err != nil {
+			return &engineeringCompletionError{message: "Direct native scope unavailable", unavailable: true}
+		}
+		if params.ProjectID != issue.ProjectID {
+			return &engineeringCompletionError{message: "Direct project must remain unchanged"}
+		}
+		if err = h.directNativeScope(ctx, issue, *permission.Direct); err != nil {
+			return &engineeringCompletionError{message: err.Error()}
+		}
 	}
 	if permission.BusinessProjectID != nil {
 		issue, err := h.Queries.GetIssueInWorkspace(ctx, db.GetIssueInWorkspaceParams{ID: params.ID, WorkspaceID: workspaceID})
@@ -67,7 +80,7 @@ func (h *Handler) requireEngineeringCompletionWithCatalog(ctx context.Context, c
 		if params.ProjectID != issue.ProjectID {
 			return &engineeringCompletionError{message: "End to End native project must remain unchanged"}
 		}
-		if err = requireEngineeringBusinessProject(issue, result); err != nil {
+		if err = requireEngineeringProject(issue, result); err != nil {
 			return &engineeringCompletionError{message: err.Error()}
 		}
 	}
