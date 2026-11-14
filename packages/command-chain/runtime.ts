@@ -186,6 +186,7 @@ export class CommandChainEngine {
     attemptId: string;
     inputs?: Record<string, string>;
     readonlyArtifacts?: readonly ArtifactWrite[];
+    inheritedChoices?: Pick<ChainDraft, "decisions" | "runtimeInputs">;
   }): Promise<ChainDraft> {
     const order = Object.keys(input.chain.definition.phases);
     if (!order.length || JSON.stringify(order) !== JSON.stringify(input.chain.phaseOrder)) throw new Error("Invalid phase order");
@@ -199,7 +200,9 @@ export class CommandChainEngine {
     const draft = draftSchema.parse({
       schemaVersion: 1, id: input.id, binding: input.binding, definition: input.chain.definition,
       sequence: 0, attemptId: input.attemptId, status: "editing", phase: order[0],
-      inputs, artifacts: [], frozen: [], writeRules: [], runtimeInputs: [], completedPhases: [], events: [],
+      inputs, artifacts: [], frozen: [], writeRules: [],
+      ...(input.inheritedChoices ? { decisions: structuredClone(input.inheritedChoices.decisions) } : {}),
+      runtimeInputs: structuredClone(input.inheritedChoices?.runtimeInputs ?? []).map(request => ({ ...request, active: false })), completedPhases: [], events: [],
     });
     for (const write of input.readonlyArtifacts ?? []) {
       if (artifactBlock(draft.definition, write.ref).writable) throw new Error(`Initial artifact ${write.ref} must be readonly`);

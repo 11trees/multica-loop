@@ -533,7 +533,7 @@ export class RequirementApplication {
       const code=repositorySnapshot(config.repository_path),revision=config.expected_revision+1;
       record=recordSchema.parse({workspaceId:actor.workspaceId,issueId:actor.issueId,createdBy:actor.userId,repositoryPath:code.repositoryPath,agentId:config.agent_id,plannerAgentId:config.planner_agent_id,autoContinue:config.auto_continue,contextDraftId:randomUUID(),planDraftId:randomUUID(),contextSource:this.definitions.context,planningSource:this.definitions.planning,contextHandoff:false,...(config.reproduction_agent_id ? {reproduction:{agentId:config.reproduction_agent_id,draftId:randomUUID(),source:this.definitions.reproduction!,handoff:false}} : {}),
         contextContract:{input:config.input,kind:config.item_kind,decisionMode:config.decision_mode,binding:{workspaceId:actor.workspaceId,issueId:actor.issueId,revision,codeVersion:code.codeVersion,contractVersion:createHash("sha256").update(JSON.stringify(config)).digest("hex")}}});
-      const inserted=this.db.prepare("INSERT INTO requirement_contract(workspace_id,issue_id,revision,payload) VALUES(?,?,?,?) ON CONFLICT DO NOTHING").run(record.workspaceId,record.issueId,revision,JSON.stringify(record));
+      const inserted=this.db.prepare("INSERT INTO requirement_contract(workspace_id,issue_id,revision,payload) SELECT ?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM business_contract WHERE workspace_id=? AND issue_id=?) ON CONFLICT DO NOTHING").run(record.workspaceId,record.issueId,revision,JSON.stringify(record),record.workspaceId,record.issueId);
       if(inserted.changes !== 1)throw new DraftConflictError("Requirement revision changed");
       return this.view(record);
     }

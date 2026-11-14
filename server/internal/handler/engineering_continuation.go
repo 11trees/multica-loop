@@ -84,7 +84,7 @@ func (h *Handler) dispatchEngineeringContinuation(ctx context.Context, item engi
 	if err != nil {
 		return err
 	}
-	if item.ExpectedRevision < 1 || item.ExpectedSequence < 0 || (item.Reason != "feedback_verify_ready" && item.Reason != "feedback_work_ready" && item.Reason != "feedback_ready" && item.Reason != "reproduction_handoff" && item.Reason != "review_ready" && item.Reason != "unit_ready" && item.Reason != "context_handoff" && item.Reason != "human_answers" && item.Reason != "development_handoff" && item.Reason != "verification_rework" && item.Reason != "analysis_handoff" && item.Reason != "verification_reanalysis") {
+	if item.ExpectedRevision < 1 || item.ExpectedSequence < 0 || (item.Reason != "business_ready" && item.Reason != "feedback_verify_ready" && item.Reason != "feedback_work_ready" && item.Reason != "feedback_ready" && item.Reason != "reproduction_handoff" && item.Reason != "review_ready" && item.Reason != "unit_ready" && item.Reason != "context_handoff" && item.Reason != "human_answers" && item.Reason != "development_handoff" && item.Reason != "verification_rework" && item.Reason != "analysis_handoff" && item.Reason != "verification_reanalysis") {
 		return fmt.Errorf("invalid engineering continuation checkpoint")
 	}
 	if existing, err := h.Queries.GetAgentTask(ctx, taskID); err == nil {
@@ -157,6 +157,9 @@ func (h *Handler) dispatchEngineeringContinuation(ctx context.Context, item engi
 	}
 	if json.Unmarshal(selected, &selection) != nil || selection.AgentID != item.AgentID {
 		return fmt.Errorf("engineering role changed before continuation")
+	}
+	if err := requireEngineeringBusinessProject(issue, selected); err != nil {
+		return err
 	}
 	if selection.ReviewUnits != nil {
 		if err := h.reviewNativeUnits(ctx, issue, *selection.ReviewUnits, true); err != nil {

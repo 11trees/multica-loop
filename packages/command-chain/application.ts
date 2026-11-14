@@ -1,4 +1,5 @@
 import { RequirementApplication, type RequirementDefinitions } from "./requirement-application";
+import { BusinessApplication, type BusinessDefinitions } from "./business-application";
 import { createHash, randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { existsSync } from "node:fs";
@@ -18,14 +19,14 @@ const text = z.string().trim().min(1);
 const sequence = z.number().int().nonnegative();
 const scope = { workspaceId: z.uuid(), issueId: z.uuid() };
 const human = z.strictObject({ kind: z.literal("human"), userId: z.uuid(), ...scope });
-const task = z.strictObject({ kind: z.literal("task"), agentId: z.uuid(), attemptId: text, ...scope });
+const task = z.strictObject({ kind: z.literal("task"), agentId: z.uuid(), attemptId: text, projectId:z.uuid().optional(), ...scope });
 const daemon = task.extend({ kind: z.literal("daemon") });
 const host = z.strictObject({ kind: z.literal("host"), ...scope });
 const coordinator = z.strictObject({ kind: z.literal("coordinator") });
 const actor = z.discriminatedUnion("kind", [human, task, daemon, host, coordinator]);
 export const applicationRequestSchema = z.strictObject({
   actor,
-  action: z.enum(["configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations", "verified-binding", "publication", "publication-ack", "delivery-policy", "activate-unit", "accept-unit", "parent-scope", "review-inputs", "configure-review", "review-ack", "begin-feedback", "cancel-feedback", "feedback-restored", "authorize-feedback-work", "prepare-feedback-verification", "prepare-feedback-report"]),
+  action: z.enum(["configure-business", "configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations", "verified-binding", "publication", "publication-ack", "delivery-policy", "activate-unit", "accept-unit", "parent-scope", "review-inputs", "configure-review", "review-ack", "begin-feedback", "cancel-feedback", "feedback-restored", "authorize-feedback-work", "prepare-feedback-verification", "prepare-feedback-report"]),
   payload: z.unknown().optional(),
 });
 export type ApplicationRequest = z.infer<typeof applicationRequestSchema>;
@@ -89,8 +90,9 @@ export class EngineeringApplication {
   private readonly db: DatabaseSync;
   private readonly drafts: SqliteDraftStore;
   private readonly requirements:RequirementApplication;
+  private readonly business:BusinessApplication;
 
-  constructor(database: string, private readonly definitionSource: string, private readonly developmentSource?: string, private readonly analysisSource?: string,requirementDefinitions?:RequirementDefinitions) {
+  constructor(database: string, private readonly definitionSource: string, private readonly developmentSource?: string, private readonly analysisSource?: string,requirementDefinitions?:RequirementDefinitions,businessDefinitions?:BusinessDefinitions) {
     parseCommandChainDefinition(definitionSource, profile);
     this.db = new DatabaseSync(database);
     this.db.exec(`CREATE TABLE IF NOT EXISTS engineering_contract (
@@ -104,6 +106,7 @@ export class EngineeringApplication {
       if(!record?.analysis?.handoff)throw new Error("Requirement review needs a resolved delivery specification");
       return {binding:verified.binding,analysis:compileAnalysisConclusion(this.storedDraft(record.analysis.draftId),record.analysis.contract),verification:compileVerificationConclusion(this.storedDraft(record.draftId),record.contract)};
     });
+    this.business=new BusinessApplication(this.db,this.drafts,businessDefinitions);
     this.db.exec("CREATE TABLE IF NOT EXISTS engineering_execution (workspace_id TEXT NOT NULL, issue_id TEXT NOT NULL, revision INTEGER NOT NULL, agent_id TEXT NOT NULL, attempt_id TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY (workspace_id, issue_id, revision, agent_id, attempt_id))");
   }
 
@@ -406,8 +409,8 @@ export class EngineeringApplication {
       ...(config.analyst_agent_id ? {analysis:{agentId:config.analyst_agent_id,draftId:randomUUID(),definitionSource:this.analysisSource,contract:{...contract,unit:config.unit,decisionMode:config.decision_mode ?? "balanced",dependencies},handoff:false}} : {}),
       ...(config.developer_agent_id ? { development: { agentId: config.developer_agent_id, draftId: randomUUID(), definitionSource: this.developmentSource, baseCodeVersion: code.codeVersion, implementationGuidance: config.implementation_guidance, handoff: false } } : {}),
     });
-    const inserted = this.db.prepare("INSERT INTO engineering_contract (workspace_id, issue_id, revision, payload) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING")
-      .run(actor.workspaceId, actor.issueId, revision, JSON.stringify(record));
+    const inserted = this.db.prepare("INSERT INTO engineering_contract (workspace_id, issue_id, revision, payload) SELECT ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM business_contract WHERE workspace_id=? AND issue_id=?) ON CONFLICT DO NOTHING")
+      .run(actor.workspaceId, actor.issueId, revision, JSON.stringify(record),actor.workspaceId,actor.issueId);
     if (inserted.changes !== 1) throw new DraftConflictError("Contract revision changed");
     return record.analysis ? this.invokeAnalysis(record,actor,"read",undefined) : this.view(record, undefined, Boolean(record.development));
   }
@@ -460,9 +463,11 @@ export class EngineeringApplication {
     const { actor, action } = request;
     if (actor.kind === "coordinator") {
       if (action !== "continuations") throw new Error("Coordinator credentials cannot edit engineering state");
-      return [...await this.requirements.continuations(),...await this.managedProgress(),...await this.continuations()];
+      return [...await this.business.continuations(),...await this.requirements.continuations(),...await this.managedProgress(),...await this.continuations()];
     }
     if (action === "continuations") throw new Error("Only the host coordinator can list continuations");
+    if(action === "configure-business")return this.business.invoke(request);
+    if(this.business.current(actor.workspaceId,actor.issueId) && action !== "parent-scope")return this.business.invoke(request);
     const managedUnit=this.requirements.managedUnit(actor.workspaceId,actor.issueId);
     if(action === "parent-scope"){
       if(actor.kind !== "host")throw new Error("Only the host can inspect managed execution scope");

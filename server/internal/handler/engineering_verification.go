@@ -119,7 +119,11 @@ func (h *Handler) taskEngineering(w http.ResponseWriter, r *http.Request, action
 	if !ok {
 		return
 	}
-	h.invokeEngineering(w, r, action, map[string]string{"kind": "task", "agentId": run.AgentID, "attemptId": run.AttemptID, "workspaceId": run.WorkspaceID, "issueId": run.IssueID})
+	actor := map[string]string{"kind": "task", "agentId": run.AgentID, "attemptId": run.AttemptID, "workspaceId": run.WorkspaceID, "issueId": run.IssueID}
+	if run.ProjectID != "" {
+		actor["projectId"] = run.ProjectID
+	}
+	h.invokeEngineering(w, r, action, actor)
 }
 
 func (h *Handler) ConfigureEngineeringVerification(w http.ResponseWriter, r *http.Request) {

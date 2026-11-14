@@ -9,6 +9,17 @@ const body = { enabled: true, configured: true, chain: "verification", agent_id:
 const respond = (value: unknown) => vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(value), { headers: { "Content-Type": "application/json" } })));
 afterEach(() => vi.unstubAllGlobals());
 
+it("freezes business roles through the dedicated human endpoint and rejects malformed confirmation",async()=>{
+  const client=new ApiClient("https://api.example.test"),input={expectedRevision:0,repositoryPath:"/project",input:"Reader continues",roles:{intent:"intent",businessDesign:"design",specification:"spec",review:"review"},decisionMode:"balanced" as const,autoContinue:true};
+  respond({configured:true});await client.configureBusinessEngineering("parent",input);expect(vi.mocked(fetch).mock.calls[0]![0]).toBe("https://api.example.test/api/issues/parent/engineering/business-analysis");expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]![1]?.body))).toMatchObject({roles:{intent:"intent",business_design:"design",specification:"spec",review:"review"},input:"Reader continues"});
+  respond({configured:"true"});await expect(client.configureBusinessEngineering("parent",input)).rejects.toThrow(/Invalid business configuration/);
+});
+it("validates business history and keeps protocol approval separate from native completion",async()=>{
+  const client=new ApiClient("https://api.example.test"),business={input:"Original idea",project_id:"project",stage:"intent",generation:1,reading_enabled:false,history:[{stage:"intent",generation:1,draft_id:"draft",superseded:false,settled:false,result:null}]};
+  respond({...body,chain:"idea-context",business});expect(await client.getEngineeringOverview("parent")).toMatchObject({business:{input:"Original idea",projectId:"project",readingEnabled:false,history:[{draftId:"draft"}]}});
+  for(const invalid of [null,{...business,input:""},{...business,history:[]},{...business,reading_enabled:"true"},{...business,history:[{...business.history[0],settled:true}]},{...business,generation:2}]){respond({...body,chain:"idea-context",business:invalid});await expect(client.getEngineeringOverview("parent")).rejects.toThrow(/Invalid engineering overview/);}
+});
+
 it("keeps requirement reviewer selection and exact report reading identity at the human API boundary",async()=>{
   const client=new ApiClient("https://api.example.test");
   respond({configured:true});await client.configureRequirementReview("parent",{expectedRevision:1,expectedSequence:17,reviewerId:"reviewer"});expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]![1]?.body))).toEqual({expected_revision:1,expected_sequence:17,agent_id:"reviewer"});

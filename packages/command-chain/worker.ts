@@ -12,10 +12,14 @@ declare const DEFAULT_REVIEW_SOURCE:string;
 declare const DEFAULT_REPRODUCTION_SOURCE:string;
 declare const DEFAULT_FEEDBACK_TRIAGE_SOURCE:string;
 declare const DEFAULT_FEEDBACK_VERIFY_SOURCE:string;
+declare const DEFAULT_IDEA_CONTEXT_SOURCE:string;
+declare const DEFAULT_BUSINESS_DESIGN_SOURCE:string;
+declare const DEFAULT_REQUIREMENT_SPEC_SOURCE:string;
+declare const DEFAULT_SPEC_REVIEW_SOURCE:string;
 const database = process.argv[2];
 if (!database) throw new Error("Engineering database path is required");
 mkdirSync(dirname(database), { recursive: true, mode: 0o700 });
-const app = new EngineeringApplication(database, DEFAULT_VERIFICATION_SOURCE, DEFAULT_DEVELOPMENT_SOURCE, DEFAULT_ANALYSIS_SOURCE,{context:DEFAULT_CONTEXT_SOURCE,planning:DEFAULT_PLANNING_SOURCE,review:DEFAULT_REVIEW_SOURCE,reproduction:DEFAULT_REPRODUCTION_SOURCE,feedback:{triage:DEFAULT_FEEDBACK_TRIAGE_SOURCE,verify:DEFAULT_FEEDBACK_VERIFY_SOURCE}});
+const app = new EngineeringApplication(database, DEFAULT_VERIFICATION_SOURCE, DEFAULT_DEVELOPMENT_SOURCE, DEFAULT_ANALYSIS_SOURCE,{context:DEFAULT_CONTEXT_SOURCE,planning:DEFAULT_PLANNING_SOURCE,review:DEFAULT_REVIEW_SOURCE,reproduction:DEFAULT_REPRODUCTION_SOURCE,feedback:{triage:DEFAULT_FEEDBACK_TRIAGE_SOURCE,verify:DEFAULT_FEEDBACK_VERIFY_SOURCE}},{intent:DEFAULT_IDEA_CONTEXT_SOURCE,business_design:DEFAULT_BUSINESS_DESIGN_SOURCE,specification:DEFAULT_REQUIREMENT_SPEC_SOURCE,review:DEFAULT_SPEC_REVIEW_SOURCE});
 try {
   const request = applicationRequestSchema.parse(JSON.parse(readFileSync(0, "utf8")));
   const result = await app.invoke(request);

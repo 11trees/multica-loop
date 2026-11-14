@@ -109,6 +109,7 @@ func TestEngineeringDeliveryAuthorizationUsesHumanEndpoint(t *testing.T) {
 
 func TestEngineeringRequirementReviewCommandsUseHumanEndpoints(t *testing.T) {
 	for _, operation := range []struct{ name, path, payload string }{
+		{"configure-business", "/api/issues/parent/engineering/business-analysis", `{"expected_revision":0,"input":"Reader continues","roles":{"intent":"intent","business_design":"design","specification":"spec","review":"review"}}`},
 		{"start-feedback", "/api/issues/parent/engineering/feedback", `{"expected_revision":1,"comment_ids":["comment"]}`},
 		{"start-feedback-deliveries", "/api/issues/parent/engineering/feedback/work", `{"batch_id":"batch","expected_version":1,"planner_agent_id":"planner"}`},
 		{"cancel-feedback", "/api/issues/parent/engineering/feedback/cancel", `{"expected_revision":1,"batch_id":"batch","expected_version":1,"reason":"Stop"}`},

@@ -10,8 +10,9 @@ mandatory builtin sequence. `CommandChainEngine` adds phase execution and
 durable drafts through an injected `DraftStore`. Requirement context, planning,
 bug reproduction, delivery analysis, development, independent verification and
 normal requirement review have host-owned handlers. Four business-analysis chains
-also have pure profiles, gates and conclusion compilers; their native orchestration
-is not connected yet. The remaining source chains and pipelines are
+also have pure profiles, gates and conclusion compilers, with native readonly
+API/CLI checkpoints and return transitions. Specification reading/comments and
+End to End handoff remain incomplete. The remaining source chains and pipelines are
 tracked in the [migration coverage audit](../../docs/engineering/migration-status.md).
 
 The identifier grammar excludes numeric keys so YAML declaration order survives
