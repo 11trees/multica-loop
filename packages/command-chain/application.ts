@@ -1,3 +1,4 @@
+import { InterventionStore, interventionInstructions } from "./intervention-store";
 import { DirectApplication } from "./direct-application";
 import { RequirementApplication, type RequirementDefinitions } from "./requirement-application";
 import { BusinessApplication, type BusinessDefinitions } from "./business-application";
@@ -27,7 +28,7 @@ const coordinator = z.strictObject({ kind: z.literal("coordinator") });
 const actor = z.discriminatedUnion("kind", [human, task, daemon, host, coordinator]);
 export const applicationRequestSchema = z.strictObject({
   actor,
-  action: z.enum(["configure-direct","direct-run","direct-submit","direct-scope","direct-completed","business-handoff","end-to-end-scope","business-scope","business-read","business-comment","business-comment-intent","business-comment-ack","business-comment-resolved","business-comment-protected","configure-business", "configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations", "verified-binding", "publication", "publication-ack", "delivery-policy", "activate-unit", "accept-unit", "parent-scope", "review-inputs", "configure-review", "review-ack", "begin-feedback", "cancel-feedback", "feedback-restored", "authorize-feedback-work", "prepare-feedback-verification", "prepare-feedback-report"]),
+  action: z.enum(["intervention-request", "repair-observations", "configure-direct","direct-run","direct-submit","direct-scope","direct-completed","business-handoff","end-to-end-scope","business-scope","business-read","business-comment","business-comment-intent","business-comment-ack","business-comment-resolved","business-comment-protected","configure-business", "configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations", "verified-binding", "publication", "publication-ack", "delivery-policy", "activate-unit", "accept-unit", "parent-scope", "review-inputs", "configure-review", "review-ack", "begin-feedback", "cancel-feedback", "feedback-restored", "authorize-feedback-work", "prepare-feedback-verification", "prepare-feedback-report"]),
   payload: z.unknown().optional(),
 });
 export type ApplicationRequest = z.infer<typeof applicationRequestSchema>;
@@ -93,6 +94,7 @@ export class EngineeringApplication {
   private readonly requirements:RequirementApplication;
   private readonly business:BusinessApplication;
   private readonly direct:DirectApplication;
+  private readonly interventions:InterventionStore;
 
   constructor(database: string, private readonly definitionSource: string, private readonly developmentSource?: string, private readonly analysisSource?: string,requirementDefinitions?:RequirementDefinitions,businessDefinitions?:BusinessDefinitions) {
     parseCommandChainDefinition(definitionSource, profile);
@@ -101,6 +103,7 @@ export class EngineeringApplication {
       workspace_id TEXT NOT NULL, issue_id TEXT NOT NULL, revision INTEGER NOT NULL, payload TEXT NOT NULL,
       PRIMARY KEY (workspace_id, issue_id, revision)
     )`);
+    this.interventions = new InterventionStore(this.db);
     this.drafts = new SqliteDraftStore(database);
     this.direct=new DirectApplication(this.db);
     this.db.exec("CREATE TABLE IF NOT EXISTS engineering_receipt (draft_id TEXT NOT NULL, receipt_id TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY (draft_id, receipt_id))");
@@ -296,8 +299,9 @@ export class EngineeringApplication {
   }
 
   private save(record: Record) {
-    this.db.prepare("UPDATE engineering_contract SET payload = ? WHERE workspace_id = ? AND issue_id = ? AND revision = ?")
-      .run(JSON.stringify(record), record.workspaceId, record.issueId, record.contract.binding.revision);
+    const changed = this.db.prepare("UPDATE engineering_contract SET payload = ? WHERE workspace_id = ? AND issue_id = ? AND revision = ? AND NOT EXISTS (SELECT 1 FROM engineering_intervention WHERE workspace_id=? AND issue_id=?)")
+      .run(JSON.stringify(record), record.workspaceId, record.issueId, record.contract.binding.revision, record.workspaceId, record.issueId);
+    if (changed.changes !== 1) throw new DraftConflictError("Engineering checkpoint changed or surrendered execution");
   }
 
   private runtime(record: Record, execution?: Execution) {
@@ -347,7 +351,7 @@ export class EngineeringApplication {
 
   private async continuations() {
     const rows = this.db.prepare(`SELECT c.payload FROM engineering_contract c
-      WHERE c.revision = (SELECT MAX(latest.revision) FROM engineering_contract latest WHERE latest.workspace_id = c.workspace_id AND latest.issue_id = c.issue_id)`).all();
+      WHERE NOT EXISTS (SELECT 1 FROM engineering_intervention held WHERE held.workspace_id=c.workspace_id AND held.issue_id=c.issue_id) AND c.revision = (SELECT MAX(latest.revision) FROM engineering_contract latest WHERE latest.workspace_id = c.workspace_id AND latest.issue_id = c.issue_id)`).all();
     const pending = [];
     for (const row of rows) {
       let record = recordSchema.parse(JSON.parse(String(row.payload)));
@@ -462,6 +466,39 @@ export class EngineeringApplication {
   }
 
   async invoke(input: ApplicationRequest) {
+    const request = applicationRequestSchema.parse(input), { actor, action } = request;
+    if (action === "repair-observations") {
+      if (actor.kind !== "coordinator") throw new Error("Only the host can read pending Admin observations");
+      return this.interventions.observations();
+    }
+    if (actor.kind === "coordinator") {
+      const pending = await this.invokeWorkflow(request);
+      if (!Array.isArray(pending)) throw new Error("Invalid workflow continuations");
+      return pending.filter(item => !this.interventions.pending(item.workspace_id, item.issue_id));
+    }
+    const pending = this.interventions.pending(actor.workspaceId, actor.issueId);
+    if (action === "intervention-request") {
+      if (pending) return this.interventions.request(actor, request.payload, null);
+      if (actor.kind !== "task") throw new Error("Only the current native task can request intervention");
+      const snapshot = this.direct.current(actor.workspaceId, actor.issueId) ? this.direct.invoke({ actor, action: "read" }) : this.interventions.snapshot(actor);
+      return this.interventions.request(actor, request.payload, snapshot);
+    }
+    if (pending && !["read", "overview", "parent-scope", "business-comment-protected"].includes(action)) {
+      throw new DraftConflictError("Execution surrendered to Admin; preserve the checkpoint and end execution");
+    }
+    if (action === "read" && pending) {
+      if (actor.kind === "task" && actor.agentId !== pending.agentId) throw new DraftConflictError("Only the surrendered role can read its execution receipt");
+      const frozen = pending.snapshot as Awaited<ReturnType<EngineeringApplication["invokeWorkflow"]>>;
+      return { ...frozen, intervention: this.interventions.view(pending), agent_action: "end_execution" };
+    }
+    const result = await this.invokeWorkflow(request);
+    if (actor.kind === "task" && ["read", "start", "direct-run"].includes(action)) this.interventions.viewed(actor, result);
+    if (action === "overview" && pending) return { ...result, status: "waiting_for_intervention", intervention: this.interventions.view(pending) };
+    if (actor.kind === "task" && ["read", "start", "direct-run"].includes(action)) return { ...result, intervention_instructions: interventionInstructions };
+    return result;
+  }
+
+  private async invokeWorkflow(input: ApplicationRequest) {
     const request = applicationRequestSchema.parse(input);
     const { actor, action } = request;
     if (actor.kind === "coordinator") {

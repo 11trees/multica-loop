@@ -52,8 +52,8 @@ export class BusinessApplication {
   private active(record: Record) { const entry = record.entries.find(item => item.draftId === record.activeDraftId && !item.superseded); if (!entry) throw new Error("Business checkpoint is unavailable"); return entry; }
   private save(record: Record) {
     const expected = record.version; record.version++;
-    const changed = this.db.prepare("UPDATE business_contract SET version=?,payload=? WHERE workspace_id=? AND issue_id=? AND revision=? AND version=?")
-      .run(record.version, JSON.stringify(record), record.workspaceId, record.issueId, record.revision, expected);
+    const changed = this.db.prepare("UPDATE business_contract SET version=?,payload=? WHERE workspace_id=? AND issue_id=? AND revision=? AND version=? AND NOT EXISTS (SELECT 1 FROM engineering_intervention WHERE workspace_id=? AND issue_id=?)")
+      .run(record.version, JSON.stringify(record), record.workspaceId, record.issueId, record.revision, expected, record.workspaceId, record.issueId);
     if (changed.changes !== 1) throw new DraftConflictError("Business workflow changed; reload the current checkpoint");
   }
   private stored(entry: Entry) {
@@ -136,7 +136,7 @@ export class BusinessApplication {
   }
   async continuations() {
     const pending = [];
-    for (const row of this.db.prepare("SELECT payload FROM business_contract").all()) {
+    for (const row of this.db.prepare("SELECT payload FROM business_contract root WHERE NOT EXISTS (SELECT 1 FROM engineering_intervention held WHERE held.workspace_id=root.workspace_id AND held.issue_id=root.issue_id)").all()) {
       const record = recordSchema.parse(JSON.parse(String(row.payload))); if(record.delivery?.handedOff)continue;let entry = this.active(record), draft = await this.drafts.read(entry.draftId);
       if (draft?.status === "completed" && !entry.settledHash) { this.settle(record, entry, draft); entry = this.active(record); draft = await this.drafts.read(entry.draftId); }
       const comment=record.comments.find(item=>!item.version || item.reviewedBy && !item.nativeResolved);

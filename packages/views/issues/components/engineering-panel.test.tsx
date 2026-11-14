@@ -13,7 +13,7 @@ vi.mock("@multica/core/api", async importOriginal => ({ ...await importOriginal<
 vi.mock("@multica/core/hooks", async importOriginal => ({ ...await importOriginal<typeof import("@multica/core/hooks")>(), useWorkspaceId: () => "workspace" }));
 const issue = { id: "issue", title: "Fixture delivery", revision: 4 } as Issue;
 const initial: EngineeringOverview = {
-  directEnabled:false,direct:null,endToEndEnabled:false,businessEnabled:false,feedbackAllowed:false,autoContinue: false, enabled: true, configured: true, chain: "verification", agentId: "verifier", revision: 2, sequence: 7,
+  intervention:null,directEnabled:false,direct:null,endToEndEnabled:false,businessEnabled:false,feedbackAllowed:false,autoContinue: false, enabled: true, configured: true, chain: "verification", agentId: "verifier", revision: 2, sequence: 7,
   codeVersion: "commit-fixture", repositoryPath: "/fixture", draftId: "draft", status: "waiting_for_answers", currentPhase: "plan", hasActiveRun: false,
   phases: [{ id: "inputs", status: "completed" }, { id: "plan", status: "current" }],
   sources: [{ key: "ac1", kind: "acceptance", description: "Survives reload", oracle: "Title visible", sourceRef: "ISSUE:fixture" }],
@@ -235,4 +235,12 @@ it("keeps initially authorized End to End input frozen while its context is unst
  state.chain="context";state.status="unstarted";state.questions=[];
  state.requirement={end_to_end:true,business_source:{projectId:"project",reviewDraftId:"approved",reviewHash:"a".repeat(64),specification:"# Approved reader specification",stages:(["intent","business_design","specification","review"] as const).map(stage=>({stage,draftId:stage === "review" ? "approved" : stage,hash:"a".repeat(64),conclusion:"Frozen accepted source"}))},feedback:null,reproduction:null,review_enabled:true,review:null,delivery_units:[],delivery_policy:{analystId:"analyst",developerId:"developer",verifierId:"verifier",maxReworks:1,mode:"in_place",userId:"human"},accepted:{},progress:[],publication:null,kind:"requirement",input:"Original idea",context:null,plan:null};
  renderPanel();await screen.findByText("Approved specification");expect(screen.queryByRole("button",{name:"New revision"})).not.toBeInTheDocument();expect(screen.queryByText("Delivery authorized. Open a unit to review progress or answer questions.")).not.toBeInTheDocument();
+});
+
+it("retains the frozen phase and original intervention evidence while refusing continuation", async () => {
+ state.status="waiting_for_intervention";state.questions=[];state.intervention={id:"019a0000-0000-7000-8000-000000000001",status:"pending_admin",chain:"verification",phase:"plan",draft_id:"draft",revision:2,sequence:7,attempt_id:"native:claim",agent_id:"verifier",summary:"The original contract conflicts with the entry",reason:"An answer cannot replace the frozen oracle",evidence:"# Original evidence\n\nInspected the existing entry.",requested_at:"2026-11-14T00:00:00.000Z",observation_id:"role-request",snapshot_hash:"a".repeat(64)};
+ renderWithI18n(<QueryClientProvider client={client}><EngineeringPanel issue={issue} /></QueryClientProvider>);
+ const region=await screen.findByRole("region",{name:"Intervention"});expect(within(region).getByText(state.intervention.summary)).toBeVisible();
+ await userEvent.click(within(region).getByText("Original investigation evidence"));expect(within(region).getByRole("heading",{name:"Original evidence"})).toBeVisible();
+ expect(screen.queryByRole("button",{name:/Continue run|Start run/})).not.toBeInTheDocument();expect(screen.queryByRole("button",{name:"Abandon draft"})).not.toBeInTheDocument();
 });

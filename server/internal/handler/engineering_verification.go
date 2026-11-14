@@ -147,3 +147,7 @@ func (h *Handler) GetEngineeringVerification(w http.ResponseWriter, r *http.Requ
 func (h *Handler) CommandEngineeringVerification(w http.ResponseWriter, r *http.Request) {
 	h.taskEngineering(w, r, "command")
 }
+
+func (h *Handler) RequestEngineeringIntervention(w http.ResponseWriter, r *http.Request) {
+	h.taskEngineering(w, r, "intervention-request")
+}

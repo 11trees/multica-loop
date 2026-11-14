@@ -74,9 +74,9 @@ retains the first result, waits for idle native completion and displays Markdown
 1280 and 390 pixels. It is run for both Git and plain directories. This does not
 establish real-provider or installed Desktop acceptance.
 
-The source's generic terminal intervention and host arbitration path is not yet
-connected. Direct's normal RUN/SUBMIT lifecycle does not establish parity with that
-cross-cutting recovery feature.
+The [terminal intervention handoff](intervention.md) now freezes Direct's current
+RUN and original investigation evidence. Its independent Admin repair path remains
+incomplete; normal RUN/SUBMIT completion does not establish that recovery path.
 
 Screenshots were inspected after the browser run:
 

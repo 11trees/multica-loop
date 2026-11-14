@@ -2101,6 +2101,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			// Assignee frequency
 			r.Get("/api/assignee-frequency", h.GetAssigneeFrequency)
 			r.Get("/api/engineering/run", h.GetEngineeringRunContext)
+			r.Post("/api/engineering/intervention/request", h.RequestEngineeringIntervention)
 			r.Post("/api/engineering/direct/run", h.RunEngineeringDirect)
 			r.Post("/api/engineering/direct/submit", h.SubmitEngineeringDirect)
 			r.Post("/api/engineering/verification/start", h.StartEngineeringVerification)

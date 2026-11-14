@@ -32,7 +32,7 @@ The monorepo enforces strict package boundaries:
 | --- | --- | --- |
 | `packages/core` | nothing app-specific | `react-dom`, `next/*`, UI libraries, `process.env`, direct `localStorage` (persist through `StorageAdapter`) |
 | `packages/ui` | nothing | `@multica/core`, business logic |
-| `packages/command-chain` | platform-independent protocol logic; Node-only application (including `requirement-application.ts`, `business-application.ts` and `direct-application.ts`), repository, storage (including `feedback-store.ts`) and worker files | Node-only files imported into UI packages; bearer credentials passed into the worker |
+| `packages/command-chain` | platform-independent protocol logic; Node-only application (including `requirement-application.ts`, `business-application.ts`, `direct-application.ts` and `intervention-store.ts`), repository, storage (including `feedback-store.ts`) and worker files | Node-only files imported into UI packages; bearer credentials passed into the worker |
 | `packages/views` | `core/`, `ui/` | `next/*`, `react-router-dom`, store definitions |
 | `apps/web/platform/` | `next/*` | other apps |
 | `apps/desktop/.../platform/` | `react-router-dom`, electron | other apps |

@@ -207,3 +207,9 @@ it("keeps Direct configuration scoped and refuses malformed submitted-result rec
  for(const value of [{...direct,result:null},{...direct,attempts:[]},{...direct,result:{...direct.result,hash:"invalid"}},{...direct,native_completed:true,result:null}]){respond({...body,chain:"direct",status:"completed",direct:value});await expect(client.getEngineeringOverview("direct-issue")).rejects.toThrow(/Invalid engineering overview/);}
  respond({...body,chain:"direct",status:"completed",direct:{...direct,mode:"future-mode"}});expect((await client.getEngineeringOverview("direct-issue")).direct?.mode).toBe("unknown");
 });
+
+it("requires an immutable terminal intervention projection for waiting work",async()=>{
+ const intervention={id:"019a0000-0000-7000-8000-000000000001",status:"pending_admin",chain:"verification",phase:"inputs",draft_id:"draft",revision:2,sequence:7,attempt_id:"native:claim",agent_id:"verifier",summary:"Contract conflict",reason:"Original entry disagrees",evidence:"# Investigation\n\nOriginal evidence",requested_at:"2026-11-14T00:00:00.000Z",observation_id:"role-request:native:claim",snapshot_hash:"a".repeat(64)};
+ respond({...body,status:"waiting_for_intervention",intervention});expect(await new ApiClient("https://api.example.test").getEngineeringOverview("issue")).toMatchObject({intervention:{summary:"Contract conflict"}});
+ for(const invalid of [{...body,status:"waiting_for_intervention"},{...body,intervention},{...body,status:"waiting_for_intervention",intervention:{...intervention,snapshot_hash:"changed"}}]){respond(invalid);await expect(new ApiClient("https://api.example.test").getEngineeringOverview("issue")).rejects.toThrow(/Invalid engineering overview/);}
+});

@@ -12,13 +12,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func readDirectText(name string, max int64) (string, error) {
+func readEngineeringTaskText(name string, max int64) (string, error) {
 	if name == "" {
-		return "", fmt.Errorf("a Direct summary file is required")
+		return "", fmt.Errorf("an engineering submission file is required")
 	}
 	base := os.Getenv("TMPDIR")
 	if base == "" {
-		return "", fmt.Errorf("Direct files require the native task-private TMPDIR")
+		return "", fmt.Errorf("Engineering files require the native task-private TMPDIR")
 	}
 	root, err := filepath.EvalSymlinks(base)
 	if err != nil {
@@ -38,7 +38,7 @@ func readDirectText(name string, max int64) (string, error) {
 	}
 	rel, err := filepath.Rel(root, file)
 	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
-		return "", fmt.Errorf("Direct submission files must be inside task-private TMPDIR")
+		return "", fmt.Errorf("Engineering submission files must be inside task-private TMPDIR")
 	}
 	f, err := os.Open(file)
 	if err != nil {
@@ -50,14 +50,14 @@ func readDirectText(name string, max int64) (string, error) {
 		return "", err
 	}
 	if !info.Mode().IsRegular() {
-		return "", fmt.Errorf("Direct submission requires a regular UTF-8 file")
+		return "", fmt.Errorf("Engineering submission requires a regular UTF-8 file")
 	}
 	data, err := io.ReadAll(io.LimitReader(f, max*4+1))
 	if err != nil {
 		return "", err
 	}
 	if int64(len(data)) > max*4 || !utf8.Valid(data) {
-		return "", fmt.Errorf("Direct submission file exceeds its UTF-8 size boundary")
+		return "", fmt.Errorf("Engineering submission file exceeds its UTF-8 size boundary")
 	}
 	return string(data), nil
 }
@@ -80,14 +80,14 @@ func init() {
 	submit.Flags().String("result-file", "", "Optional full Markdown result in task-private TMPDIR (at most 100000 characters)")
 	submit.RunE = func(cmd *cobra.Command, _ []string) error {
 		summaryFile, _ := cmd.Flags().GetString("summary-file")
-		summary, err := readDirectText(summaryFile, 4000)
+		summary, err := readEngineeringTaskText(summaryFile, 4000)
 		if err != nil {
 			return err
 		}
 		payload := map[string]string{"summary": summary}
 		resultFile, _ := cmd.Flags().GetString("result-file")
 		if resultFile != "" {
-			content, err := readDirectText(resultFile, 100000)
+			content, err := readEngineeringTaskText(resultFile, 100000)
 			if err != nil {
 				return err
 			}

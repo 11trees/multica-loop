@@ -57,19 +57,19 @@ func TestEngineeringDirectFilesStayInsideTaskTempAndRejectNonUTF8(t *testing.T) 
 	t.Setenv("TMPDIR", dir)
 	outside := filepath.Join(t.TempDir(), "outside.md")
 	os.WriteFile(outside, []byte("Outside"), 0600)
-	if _, err := readDirectText(outside, 4000); err == nil {
+	if _, err := readEngineeringTaskText(outside, 4000); err == nil {
 		t.Fatal("external Direct input was read")
 	}
 	link := filepath.Join(dir, "linked.md")
 	if err := os.Symlink(outside, link); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := readDirectText(link, 4000); err == nil {
+	if _, err := readEngineeringTaskText(link, 4000); err == nil {
 		t.Fatal("Direct symlink escaped task temp")
 	}
 	invalid := filepath.Join(dir, "invalid.md")
 	os.WriteFile(invalid, []byte{0xff}, 0600)
-	if _, err := readDirectText(invalid, 4000); err == nil {
+	if _, err := readEngineeringTaskText(invalid, 4000); err == nil {
 		t.Fatal("invalid UTF-8 submitted")
 	}
 }

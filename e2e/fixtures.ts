@@ -361,6 +361,13 @@ export class TestApiClient {
     return response.json();
   }
 
+  async configureDirectEngineering(issueId: string, payload: unknown) {
+    if (!this.createdIssueIds.includes(issueId)) throw new Error("Not an owned Direct fixture issue");
+    const response = await this.authedFetch(`/api/issues/${issueId}/engineering/direct`, { method: "POST", body: JSON.stringify(payload) });
+    if (!response.ok) throw new Error(`Direct configuration failed: ${response.status} ${await response.text()}`);
+    return response.json();
+  }
+
   async configureBusinessEngineering(issueId: string, payload: unknown) {
     if (!this.createdIssueIds.includes(issueId)) throw new Error("Not an owned business fixture issue");
     const response = await this.authedFetch(`/api/issues/${issueId}/engineering/business-analysis`, { method: "POST", body: JSON.stringify(payload) });
@@ -629,6 +636,7 @@ export class TestApiClient {
       const { DatabaseSync } = await import("node:sqlite");
       const database = new DatabaseSync(process.env.MULTICA_ENGINEERING_DATABASE);
       try {
+        for(const table of ["engineering_intervention", "engineering_intervention_view"])if(database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(table))for(const issueId of this.createdIssueIds)database.prepare(`DELETE FROM ${table} WHERE workspace_id=? AND issue_id=?`).run(this.workspaceId,issueId);
         if(database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='direct_contract'").get())for(const issueId of this.createdIssueIds)database.prepare("DELETE FROM direct_contract WHERE workspace_id=? AND issue_id=?").run(this.workspaceId,issueId);
         if(database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='engineering_feedback_batch'").get())for(const issueId of this.createdIssueIds){
           for(const row of database.prepare("SELECT payload FROM engineering_feedback_batch WHERE workspace_id=? AND issue_id=?").all(this.workspaceId,issueId)){const batch=JSON.parse(String(row.payload));const ids=[batch.triageDraftId,...batch.groups.flatMap((group:{verifications:Record<string,{draftId:string}>})=>Object.values(group.verifications).map(item=>item.draftId))];for(const id of ids)database.prepare("DELETE FROM chain_drafts WHERE id=?").run(id);}

@@ -30,7 +30,9 @@ const businessSource=z.object({projectId:z.string().min(1),reviewDraftId:z.strin
 const requirement=z.object({end_to_end:z.boolean().optional().default(false),business_source:businessSource.nullable().optional().default(null),feedback:feedback.nullable().optional().default(null),reproduction:z.object({agent_id:z.string().min(1),draft_id:z.string().min(1),status:z.string(),observation:z.object({status:z.enum(["reproduced","not_reproduced"]),expectedBehavior:z.string().min(1),actualBehavior:z.string().min(1),environment:z.string().min(1),stability:z.string().min(1),impactScope:z.string().min(1)}).nullable(),result:z.object({verdict:z.literal("reproduced"),report:z.string().min(1),code_version:z.string().min(1)}).nullable()}).nullable().optional().default(null),review_enabled:z.boolean().optional().default(false),review:requirementReview.nullable().optional().default(null),delivery_units:z.array(unit).optional().default([]),delivery_policy:deliveryPolicy.nullable().optional().default(null),accepted:z.record(z.string(),acceptedBinding).optional().default({}),progress:z.array(z.object({key:z.string(),chain:z.string().nullable(),status:z.string(),stop_reason:z.string().nullable()})).optional().default([]),publication:publication.nullable().optional().default(null),kind:z.string(),input:z.string(),context:z.object({intent:z.string(),changeSummary:z.string(),acceptances:z.array(z.object({id:z.string(),key:z.string(),statement:z.string(),oracle:z.string(),sourceRef:z.string(),revision:z.number().int().positive()}))}).nullable(),plan:z.object({rationale:z.string(),coverage:z.string(),units:z.array(unit)}).nullable()});
 const directResult=z.object({id:z.string().min(1),attemptId:z.string().min(1),summary:z.string().min(1).max(4000),content:z.string().min(1).max(100000),submittedAt:z.iso.datetime(),hash:z.string().regex(/^[a-f0-9]{64}$/)});
 const direct=z.object({input:z.string().min(1),project_id:z.string().min(1),contract_hash:z.string().regex(/^[a-f0-9]{64}$/),mode:z.string().transform(value=>value === "in_place" || value === "worktree" ? value : "unknown"),native_completed:z.boolean(),attempts:z.array(z.object({id:z.string().min(1),run_at:z.iso.datetime().nullable(),active:z.boolean()})),result:directResult.nullable()}).superRefine((value,ctx)=>{if(value.native_completed && !value.result || value.result && !value.attempts.some(attempt=>attempt.active && attempt.id === value.result!.attemptId && attempt.run_at))ctx.addIssue({code:"custom",message:"Invalid Direct submission receipt"});}).transform(value=>({input:value.input,projectId:value.project_id,contractHash:value.contract_hash,mode:value.mode,nativeCompleted:value.native_completed,attempts:value.attempts.map(attempt=>({id:attempt.id,runAt:attempt.run_at,active:attempt.active})),result:value.result}));
+const intervention=z.object({id:z.string().uuid(),status:z.string().min(1),chain:z.string().min(1),phase:z.string().min(1),draft_id:z.string().nullable(),revision:z.number().int().positive(),sequence:z.number().int().nonnegative(),attempt_id:z.string().min(1),agent_id:z.string().min(1),summary:z.string().min(1),reason:z.string().min(1),evidence:z.string().min(1),requested_at:z.iso.datetime(),observation_id:z.string().min(1),snapshot_hash:z.string().regex(/^[a-f0-9]{64}$/)});
 const state = z.object({
+  intervention:intervention.nullable().optional().default(null),
   direct_enabled:z.boolean().optional().default(false),direct:direct.nullable().optional().default(null),
   business_enabled:z.boolean().optional().default(false),end_to_end_enabled:z.boolean().optional().default(false),
   business:business.nullable().optional().default(null),
@@ -51,6 +53,7 @@ const state = z.object({
   }).nullable().optional().default(null),
   result: z.object({ verdict: z.string().optional(), commit: z.string().optional() }).nullable().optional().default(null),
 }).superRefine((value, ctx) => {
+  if((value.status === "waiting_for_intervention") !== !!value.intervention)ctx.addIssue({code:"custom",message:"Missing terminal intervention state"});
   if(value.configured && value.chain === "direct" && (!value.direct || value.business || value.requirement || value.status === "completed" && !value.direct.result))ctx.addIssue({code:"custom",message:"Missing exclusive Direct result state"});
   if (value.configured && (!value.enabled || !value.agent_id || value.revision === null || value.sequence === null)) ctx.addIssue({ code: "custom", message: "Incomplete engineering identity" });
   if(value.requirement?.end_to_end && !value.requirement.business_source)ctx.addIssue({code:"custom",message:"Missing End to End business provenance"});
@@ -63,6 +66,7 @@ const state = z.object({
   if (value.configured && value.status === "waiting_for_answers" && !value.questions) ctx.addIssue({ code: "custom", message: "Missing human checkpoint questions" });
 });
 export const EngineeringOverviewSchema = state.transform(value => ({
+  intervention:value.intervention,
   directEnabled:value.direct_enabled,direct:value.direct,
   businessEnabled:value.business_enabled,endToEndEnabled:value.end_to_end_enabled,
   business:value.business,
