@@ -1,6 +1,6 @@
 //go:build darwin || linux
 
-package adminrunner
+package processidentity
 
 import (
 	"context"
@@ -19,19 +19,19 @@ func TestAdminRecordedProcessStopRequiresExactBirthIdentity(t *testing.T) {
 	done := make(chan struct{})
 	go func() { _ = cmd.Wait(); close(done) }()
 	t.Cleanup(func() { _ = cmd.Process.Kill(); <-done })
-	marker, err := processMarker(cmd.Process.Pid)
+	marker, err := Marker(cmd.Process.Pid)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	if stopRecorded(ctx, cmd.Process.Pid, marker+"-wrong") {
+	if StopRecorded(ctx, cmd.Process.Pid, marker+"-wrong") {
 		t.Fatal("Wrong birth marker confirmed or stopped a process")
 	}
 	if err = syscall.Kill(cmd.Process.Pid, 0); err != nil {
 		t.Fatal("Wrong birth marker signalled the owned fixture")
 	}
-	if !stopRecorded(ctx, cmd.Process.Pid, marker) || !groupGone(cmd.Process.Pid) {
+	if !StopRecorded(ctx, cmd.Process.Pid, marker) || !GroupGone(cmd.Process.Pid) {
 		t.Fatal("Exact fixture identity did not confirm physical exit")
 	}
 }

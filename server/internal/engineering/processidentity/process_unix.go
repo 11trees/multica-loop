@@ -1,6 +1,6 @@
 //go:build darwin || linux
 
-package adminrunner
+package processidentity
 
 import (
 	"context"
@@ -10,13 +10,13 @@ import (
 	"time"
 )
 
-func supported() bool        { return true }
-func groupGone(pid int) bool { return pid > 0 && errors.Is(syscall.Kill(-pid, 0), syscall.ESRCH) }
-func stopRecorded(ctx context.Context, pid int, marker string) bool {
-	if groupGone(pid) {
+func Supported() bool        { return true }
+func GroupGone(pid int) bool { return pid > 0 && errors.Is(syscall.Kill(-pid, 0), syscall.ESRCH) }
+func StopRecorded(ctx context.Context, pid int, marker string) bool {
+	if GroupGone(pid) {
 		return true
 	}
-	actual, err := processMarker(pid)
+	actual, err := Marker(pid)
 	if err != nil || actual != marker {
 		return false
 	}
@@ -32,7 +32,7 @@ func stopRecorded(ctx context.Context, pid int, marker string) bool {
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		if groupGone(pid) {
+		if GroupGone(pid) {
 			return true
 		}
 		select {
@@ -40,7 +40,7 @@ func stopRecorded(ctx context.Context, pid int, marker string) bool {
 			return false
 		case <-ticker.C:
 		case <-timer.C:
-			actual, err = processMarker(pid)
+			actual, err = Marker(pid)
 			if err != nil || actual != marker {
 				return false
 			}
@@ -51,7 +51,7 @@ func stopRecorded(ctx context.Context, pid int, marker string) bool {
 		}
 	}
 }
-func validateGroup(pid int) error {
+func ValidateGroup(pid int) error {
 	group, err := syscall.Getpgid(pid)
 	if err != nil {
 		return err

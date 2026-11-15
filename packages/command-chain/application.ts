@@ -1,3 +1,4 @@
+import { EngineeringProcessStore } from "./process-store";
 import { InterventionStore, interventionInstructions } from "./intervention-store";
 import { DirectApplication } from "./direct-application";
 import { RequirementApplication, type RequirementDefinitions } from "./requirement-application";
@@ -28,7 +29,7 @@ const coordinator = z.strictObject({ kind: z.literal("coordinator") });
 const actor = z.discriminatedUnion("kind", [human, task, daemon, host, coordinator]);
 export const applicationRequestSchema = z.strictObject({
   actor,
-  action: z.enum(["intervention-request", "repair-observations", "repair-observation-ack", "configure-direct","direct-run","direct-submit","direct-scope","direct-completed","business-handoff","end-to-end-scope","business-scope","business-read","business-comment","business-comment-intent","business-comment-ack","business-comment-resolved","business-comment-protected","configure-business", "configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations", "verified-binding", "publication", "publication-ack", "delivery-policy", "activate-unit", "accept-unit", "parent-scope", "review-inputs", "configure-review", "review-ack", "begin-feedback", "cancel-feedback", "feedback-restored", "authorize-feedback-work", "prepare-feedback-verification", "prepare-feedback-report"]),
+  action: z.enum(["process", "process-scope", "intervention-request", "repair-observations", "repair-observation-ack", "configure-direct","direct-run","direct-submit","direct-scope","direct-completed","business-handoff","end-to-end-scope","business-scope","business-read","business-comment","business-comment-intent","business-comment-ack","business-comment-resolved","business-comment-protected","configure-business", "configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations", "verified-binding", "publication", "publication-ack", "delivery-policy", "activate-unit", "accept-unit", "parent-scope", "review-inputs", "configure-review", "review-ack", "begin-feedback", "cancel-feedback", "feedback-restored", "authorize-feedback-work", "prepare-feedback-verification", "prepare-feedback-report"]),
   payload: z.unknown().optional(),
   host_version: z.string().optional(),
 });
@@ -96,6 +97,7 @@ export class EngineeringApplication {
   private readonly business:BusinessApplication;
   private readonly direct:DirectApplication;
   private readonly interventions:InterventionStore;
+  private readonly processes:EngineeringProcessStore;
 
   constructor(database: string, private readonly definitionSource: string, private readonly developmentSource?: string, private readonly analysisSource?: string,requirementDefinitions?:RequirementDefinitions,businessDefinitions?:BusinessDefinitions,kernelVersion?:string) {
     parseCommandChainDefinition(definitionSource, profile);
@@ -106,6 +108,7 @@ export class EngineeringApplication {
       PRIMARY KEY (workspace_id, issue_id, revision)
     )`);
     this.interventions = new InterventionStore(this.db,kernelVersion);
+    this.processes=new EngineeringProcessStore(this.db);
     this.drafts = new SqliteDraftStore(database);
     this.direct=new DirectApplication(this.db);
     this.db.exec("CREATE TABLE IF NOT EXISTS engineering_receipt (draft_id TEXT NOT NULL, receipt_id TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY (draft_id, receipt_id))");
@@ -483,6 +486,15 @@ export class EngineeringApplication {
       return pending.filter(item => !this.interventions.pending(item.workspace_id, item.issue_id));
     }
     const pending = this.interventions.pending(actor.workspaceId, actor.issueId);
+    if(action==="process"){
+      if(actor.kind!=="daemon")throw new Error("Only the native runtime can record physical process facts");
+      return this.processes.invoke({workspaceId:actor.workspaceId,issueId:actor.issueId,agentId:actor.agentId,attemptId:actor.attemptId},request.payload,!!pending,actor.projectId);
+    }
+    if(action==="process-scope"){
+      if(actor.kind!=="host")throw new Error("Only the native host can inspect physical process ownership");
+      return this.processes.scope(actor.workspaceId,actor.issueId);
+    }
+    if(["completion","direct-completed","verified-binding"].includes(action))this.processes.assertExited(actor.workspaceId,actor.issueId);
     if (action === "intervention-request") {
       if (pending) return this.interventions.request(actor, request.payload, null,request.host_version);
       if (actor.kind !== "task") throw new Error("Only the current native task can request intervention");
@@ -498,6 +510,10 @@ export class EngineeringApplication {
       return { ...frozen, intervention: this.interventions.view(pending), agent_action: "end_execution" };
     }
     const result = await this.invokeWorkflow(request);
+    if(action==="bind"&&actor.kind==="daemon"){
+      const binding=z.object({bound:z.literal(true),repository_path:text}).parse(result),mode=z.object({mode:z.enum(["in_place","worktree"])}).parse(request.payload).mode;
+      this.processes.bind({workspaceId:actor.workspaceId,issueId:actor.issueId,agentId:actor.agentId,attemptId:actor.attemptId},actor.projectId,binding.repository_path,mode);
+    }
     if (actor.kind === "task" && ["read", "start", "direct-run"].includes(action)) this.interventions.viewed(actor, result);
     if (action === "overview" && pending) return { ...result, status: "waiting_for_intervention", intervention: this.interventions.view(pending) };
     if (actor.kind === "task" && ["read", "start", "direct-run"].includes(action)) return { ...result, intervention_instructions: interventionInstructions };

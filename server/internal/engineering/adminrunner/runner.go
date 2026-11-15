@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/multica-ai/multica/server/internal/engineering/processidentity"
 	"github.com/multica-ai/multica/server/pkg/agent"
 )
 
@@ -70,8 +71,6 @@ type Runner struct {
 	active  *invocation
 }
 
-func Supported() bool { return supported() }
-
 func (r *Runner) Tick(ctx context.Context, owner string, token int64) error {
 	var state struct {
 		Control struct {
@@ -111,7 +110,7 @@ func (r *Runner) Tick(ctx context.Context, owner string, token int64) error {
 			return fmt.Errorf("Admin allocation %s has unconfirmed process identity", old.AttemptID)
 		}
 		stopCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-		confirmed := stopRecorded(stopCtx, *old.PID, *old.Marker)
+		confirmed := processidentity.StopRecorded(stopCtx, *old.PID, *old.Marker)
 		cancel()
 		if !confirmed {
 			return fmt.Errorf("Admin process %s has not confirmed exit", old.AttemptID)
@@ -124,7 +123,7 @@ func (r *Runner) Tick(ctx context.Context, owner string, token int64) error {
 	if state.Control.Intent != "running" {
 		return nil
 	}
-	if !supported() {
+	if !processidentity.Supported() {
 		return fmt.Errorf("Independent Admin execution is not supported on this platform")
 	}
 	data, err = r.Client.Call(ctx, map[string]any{"action": "claim", "authority": current})
@@ -179,7 +178,7 @@ func (r *Runner) execute(ctx context.Context, run *invocation) {
 		run.mu.Lock()
 		pid, marker := run.pid, run.marker
 		run.mu.Unlock()
-		confirmed := pid == 0 || groupGone(pid)
+		confirmed := pid == 0 || processidentity.GroupGone(pid)
 		run.mu.Lock()
 		run.confirmed = confirmed
 		run.mu.Unlock()
@@ -200,7 +199,7 @@ func (r *Runner) execute(ctx context.Context, run *invocation) {
 	}
 	defer func() {
 		run.mu.Lock()
-		confirmed := run.pid == 0 || groupGone(run.pid)
+		confirmed := run.pid == 0 || processidentity.GroupGone(run.pid)
 		run.mu.Unlock()
 		if confirmed {
 			_ = os.RemoveAll(temporary)
@@ -272,11 +271,11 @@ func (r *Runner) execute(ctx context.Context, run *invocation) {
 		run.mu.Lock()
 		run.pid = pid
 		run.mu.Unlock()
-		marker, err := processMarker(pid)
+		marker, err := processidentity.Marker(pid)
 		if err != nil {
 			return err
 		}
-		if err = validateGroup(pid); err != nil {
+		if err = processidentity.ValidateGroup(pid); err != nil {
 			return err
 		}
 		run.mu.Lock()

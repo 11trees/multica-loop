@@ -28,6 +28,19 @@ const configure = (mode: "in_place" | "worktree" = "in_place") => invoke(human, 
   input: "Read existing notes and write a summary without changing their meaning", execution_resources: [{ path: repository, mode }] });
 const bind = (owner = task(), mode: "in_place" | "worktree" = "in_place", workDir = repository) => invoke({ ...owner, kind: "daemon" }, "bind", { work_dir: workDir, mode, overlays: [] });
 
+it("keeps physical ownership through surrender and accepts only runtime cleanup afterward",async()=>{
+ await configure();const owner=task(),runtime={...owner,kind:"daemon" as const};await bind(owner);await invoke(owner,"direct-run");
+ const identity={allocation_id:randomUUID(),runtime_id:randomUUID(),host_id:"fixture-boot"};
+ await expect(invoke(owner,"process",{...identity,operation:"reserve",provider:"codex"})).rejects.toThrow(/Only the native runtime/);
+ await invoke(runtime,"process",{...identity,operation:"reserve",provider:"codex"});await invoke(runtime,"process",{...identity,operation:"bind",pid:42,group_id:42,marker:"birth"});
+ await expect(invoke(host,"completion")).rejects.toThrow(/physical exit/);
+ await invoke(owner,"intervention-request",{summary:"Original conflict",reason:"Keep the oracle",evidence:"Original evidence"});
+ await expect(invoke(runtime,"process",{...identity,operation:"bind",pid:42,group_id:42,marker:"birth"})).rejects.toThrow(/Inactive/);
+ expect(await invoke(runtime,"process",{...identity,operation:"exit",pid:42,exit_confirmed:true})).toEqual({exited:true});
+ expect(await invoke(host,"process-scope")).toMatchObject({allocations:[{status:"exited",owner:{attemptId:owner.attemptId}}]});
+ await expect(invoke(host,"completion")).rejects.toThrow(/surrendered/);
+});
+
 it("requires RUN before SUBMIT, saves one immutable result and closes without inventing an independent verification", async () => {
   await configure(); const owner = task();
   expect(await invoke({ kind: "coordinator" }, "continuations")).toEqual([expect.objectContaining({ reason: "direct_ready", agent_id: agentId })]);

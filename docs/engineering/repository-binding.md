@@ -109,3 +109,11 @@ other chains, or real-provider delivery acceptance.
 Bug [reproduction](reproduction.md) uses the same readonly frozen-commit checks
 as requirement investigation. It must preserve persistent target files and
 revalidate the bound runtime repository before handing evidence to planning.
+
+## Physical writer ownership
+
+A successful binding is now retained for the [native Codex process journal](process-ownership.md).
+It does not prove that a process started or exited. Reserve and bind the actual
+process before prompt delivery, then retain its allocation until whole-tree exit
+is durably acknowledged. Admin takeover still requires separate workspace admission
+and draining; native task termination does not grant repair write permission.

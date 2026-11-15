@@ -400,6 +400,10 @@ export class TestApiClient {
     return this.engineeringRuntimeRequest(taskId, "engineering-repository", { work_dir: workDir, mode, overlays });
   }
 
+  async recordEngineeringProcess(taskId:string,payload:unknown){
+    return this.engineeringRuntimeRequest(taskId,"engineering-process",payload);
+  }
+
   private async engineeringRuntimeRequest(taskId: string, operation: string, payload: unknown) {
     if (!this.engineeringRuns.some(run => run.taskId === taskId)) throw new Error("Not an owned engineering fixture");
     const client = new pg.Client(DATABASE_URL);
@@ -642,6 +646,13 @@ export class TestApiClient {
     if (process.env.MULTICA_ENGINEERING_DATABASE && this.createdIssueIds.length && this.workspaceId) {
       const { DatabaseSync } = await import("node:sqlite");
       const { existsSync } = await import("node:fs");
+
+      const physical=new DatabaseSync(process.env.MULTICA_ENGINEERING_DATABASE);
+      try{
+        if(physical.prepare("SELECT 1 FROM sqlite_master WHERE name='engineering_process'").get())for(const issueId of this.createdIssueIds){
+          if(physical.prepare("SELECT 1 FROM engineering_process WHERE workspace_id=? AND issue_id=? AND status<>'exited'").get(this.workspaceId,issueId))throw new Error("Native fixture still owns an unconfirmed process allocation");
+        }
+      }finally{physical.close();}
       const adminPath=process.env.MULTICA_ENGINEERING_DATABASE+".admin.sqlite";
       if(existsSync(adminPath)){
         const admin=new DatabaseSync(adminPath);
@@ -668,7 +679,9 @@ export class TestApiClient {
         finally {admin.close();}
       }
       const database = new DatabaseSync(process.env.MULTICA_ENGINEERING_DATABASE);
+
       try {
+        for(const table of ["engineering_process","engineering_process_binding"])if(database.prepare("SELECT 1 FROM sqlite_master WHERE name=?").get(table))for(const issueId of this.createdIssueIds)database.prepare(`DELETE FROM ${table} WHERE workspace_id=? AND issue_id=?`).run(this.workspaceId,issueId);
         if(database.prepare("SELECT name FROM sqlite_master WHERE name='engineering_intervention_delivery'").get())for(const issueId of this.createdIssueIds)database.prepare("DELETE FROM engineering_intervention_delivery WHERE observation_id IN (SELECT json_extract(payload,'$.observationId') FROM engineering_intervention WHERE workspace_id=? AND issue_id=?)").run(this.workspaceId,issueId);
         for(const table of ["engineering_intervention", "engineering_intervention_view"])if(database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(table))for(const issueId of this.createdIssueIds)database.prepare(`DELETE FROM ${table} WHERE workspace_id=? AND issue_id=?`).run(this.workspaceId,issueId);
         if(database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='direct_contract'").get())for(const issueId of this.createdIssueIds)database.prepare("DELETE FROM direct_contract WHERE workspace_id=? AND issue_id=?").run(this.workspaceId,issueId);

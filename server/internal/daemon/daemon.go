@@ -8885,6 +8885,12 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		CodexVersion:   codexVersion,
 		BuiltinRuntime: !usesCustomProfileCommand,
 	}
+	if task.EngineeringChain != "" && provider == "codex" {
+		journal := &engineeringProcessJournal{client: d.client, task: task, ctx: ctx}
+		backendConfig.OnProcessStarting = journal.beforeStart
+		backendConfig.OnProcessStarted = journal.started
+		backendConfig.OnProcessExited = journal.exited
+	}
 	if hermesOverlayActive {
 		// Retire an owner left by a crashed/interrupted daemon before it can
 		// execute tools with the preceding task's frozen environment.

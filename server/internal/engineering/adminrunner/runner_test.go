@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/multica-ai/multica/server/internal/engineering"
+	"github.com/multica-ai/multica/server/internal/engineering/processidentity"
 )
 
 // This executable is a test-created provider, with no vendor executable lookup.
@@ -198,7 +199,7 @@ func TestAdminRunnerBindsRealFixtureProcessAndRetainsDeferredReceipt(t *testing.
 				run.mu.Lock()
 				pid := run.pid
 				run.mu.Unlock()
-				if !groupGone(pid) {
+				if !processidentity.GroupGone(pid) {
 					t.Fatal("Stopped invocation retains a live process group")
 				}
 				return
