@@ -722,6 +722,11 @@ func main() {
 
 	// Start background workers.
 	sweepCtx, sweepCancel := context.WithCancel(context.Background())
+	if err := h.StartEngineeringLocalControl(sweepCtx); err != nil {
+		slog.Error("engineering local control startup failed", "error", err)
+		os.Exit(1)
+	}
+
 	autopilotCtx, autopilotCancel := context.WithCancel(context.Background())
 	telemetryWorker := selfhosttelemetry.New(pool, version, telemetryConfig, slog.Default())
 	// Reuse the router's services here. In particular, the router wires the

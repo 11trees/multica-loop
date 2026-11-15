@@ -115,7 +115,8 @@ it("persists an immutable takeover request scoped to the live Case and retains i
  expect(store.execution.inspectTakeover(claim,inspection)).toMatchObject({phase:"source-inspected",inspection});
  expect(store.execution.inspectTakeover(claim,inspection)).toMatchObject({phase:"source-inspected"});
  expect(()=>store.execution.inspectTakeover(claim,{...inspection,runtime_id:randomUUID()})).toThrow(/cannot be replaced/);
- expect(store.execution.pendingTakeovers(authority)).toEqual([]);
+ expect(store.execution.pendingTakeovers(authority)).toEqual([expect.objectContaining({phase:"source-inspected"})]);
+ expect(store.execution.currentTakeover(claim)).toMatchObject({request:{phase:"source-inspected"}});
  expect(store.execution.command(claim,{action:"status"})).toMatchObject({takeover:{phase:"source-inspected"},agent_action:"investigate"});
  store.execution.setIntent({intent:"stopped",request_id:"stop"});
  expect(()=>store.execution.inspectTakeover(claim,inspection)).toThrow(/identity, intent or generation/);

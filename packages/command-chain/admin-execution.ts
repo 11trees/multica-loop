@@ -183,7 +183,12 @@ export class AdminExecutionStore {
     private takeover(attemptId:string) {const row=this.db.prepare("SELECT payload FROM admin_takeover WHERE attempt_id=?").get(attemptId);return row ? takeoverSchema.parse(JSON.parse(String(row.payload))) : null;}
     pendingTakeovers(authority:AdminAuthority) {
         this.requireAuthority(authority);
-        return this.active().flatMap(attempt=>{const request=this.takeover(attempt.attemptId);if(!request || request.phase!=="requested")return [];try{this.current(adminClaimSchema.parse(request.claim));return [request];}catch{return [];}});
+        return this.active().flatMap(attempt=>{const request=this.takeover(attempt.attemptId);if(!request)return [];try{const current=this.current(adminClaimSchema.parse(request.claim));if(current.submission)return [];return [request];}catch{return [];}});
+    }
+    currentTakeover(claim:AdminClaim) {
+        const attempt=this.current(claim,true),request=this.takeover(claim.attemptId);
+        if(attempt.submission || !request || request.phase!=="source-inspected")throw new DraftConflictError("Takeover source is not inspected or invocation already submitted");
+        return {request,intent_revision:attempt.intentRevision};
     }
     inspectTakeover(claim:AdminClaim,input:unknown) {
         const inspection=takeoverInspectionSchema.parse(input);

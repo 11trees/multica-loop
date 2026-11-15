@@ -252,7 +252,7 @@ func init() {
 				return err
 			}
 		}
-		h := &handler.Handler{Queries: db.New(pool), EngineeringWorker: &engineering.Client{Worker: client.Worker, Database: client.Database[:len(client.Database)-len(".admin.sqlite")]}, EngineeringAdminWorker: client, EngineeringAdminExecutor: &adminrunner.Runner{Client: client, Multica: binary, Root: root}}
+		h := &handler.Handler{EngineeringTakeoverControl: &engineering.LocalControlClient{Socket: client.Database[:len(client.Database)-len(".admin.sqlite")] + ".control.sock"}, Queries: db.New(pool), EngineeringWorker: &engineering.Client{Worker: client.Worker, Database: client.Database[:len(client.Database)-len(".admin.sqlite")]}, EngineeringAdminWorker: client, EngineeringAdminExecutor: &adminrunner.Runner{Client: client, Multica: binary, Root: root}}
 		h.RunEngineeringAdmin(ctx)
 		return nil
 	}}

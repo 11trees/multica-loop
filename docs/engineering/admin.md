@@ -164,8 +164,7 @@ that their Cases, observations, attempts and scheduling records are removed.
 
 [Native execution ownership](process-ownership.md) now records preparation-to-cleanup
 controllers, original issue/chat scope, Codex birth/exit facts and project admission
-guards in PostgreSQL as prerequisites for takeover. Admin fence acquisition and
-writer draining are not connected yet.
+guards in PostgreSQL as prerequisites for takeover. Admin fence acquisition and physical writer draining are not connected yet; the API-owned native cancellation bridge is available only behind an already committed matching fence.
 Scoped workspace takeover, repair workspace/build actions, independent diagnosis,
 repair verification, external dependency probes, verified business handoff and
 runtime updates remain unconnected. Real-provider, Linux runtime and packaged
@@ -193,6 +192,29 @@ Case generation; stopped or replaced attempts cannot write a result.
 Inspection does not acquire the project fence, cancel a native task, confirm
 physical cleanup, validate the currently installed API/kernel version, or grant
 write authority. These facts must be freshly checked by the acquiring
-coordinator. The native cancellation bridge, fence acquisition/draining, repair
+coordinator. Fence acquisition, physical draining, repair
 and independent verification remain incomplete; investigation may still submit
 only deferred results.
+
+
+### Private native cancellation bridge
+
+The API owns `<engineering database>.control.sock` and a private credential file;
+both have mode 0600. The independent Admin host reads the credential in Go and
+never projects it into the worker or provider environment. The bridge has no TCP
+route and constructs no separate TaskService or event bus.
+
+For an inspected, live invocation the host calls the bridge with only its claim.
+The API re-reads management authority/intent/session, the original business
+checkpoint and the native source task dispatch/runtime. It requires a committed
+`draining` project fence matching Case, attempt, generation, supervision token,
+intent revision, original observation/hash/claim and registered repository.
+Without a fence it returns `fence_required` and makes no cancellation.
+
+The API enumerates active issue and chat tasks in that project and calls its
+existing `CancelTaskWithReason`, rechecking authority and source before each task
+and afterward. Token revocation and daemon notification stay in the native
+service. It returns the unfinished controller count and remains `draining`, even
+when that count is zero. It neither kills the shared daemon nor asserts physical
+exit, fence ownership, verified repair or business completion. Source-version
+authority, fence acquisition and physical draining still require integration.

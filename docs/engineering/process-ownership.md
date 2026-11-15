@@ -91,9 +91,7 @@ The existing browser intervention scenarios exercise the retained public process
 API with known no-spawn allocations; they do not run a provider or prove Admin
 workspace takeover.
 
-Independent Admin action requests, source/version validation, cancellation and
-draining of every project writer, takeover revocation and separate repair
-verification still require migration. Shared paths attached to different projects,
+Independent Admin requests and native source inspection are connected. An API-owned private Unix bridge cancels project issue/chat tasks through the native service only behind a committed matching repair fence, retaining cleanup barriers. Source-version authority, fence acquisition, physical draining of every writer, takeover revocation and separate repair verification still require migration. Shared paths attached to different projects,
 remote physical recovery, stale-claim cleanup after runtime reassignment, other
 provider lifecycle adapters and legacy unrecorded executions need their own proofs.
 A terminal task or an empty set of known allocations cannot replace missing facts.
@@ -114,6 +112,6 @@ bindings even if cleanup removed the directory; it neither recreates the path
 nor proves it still exists. The Go takeover coordinator must additionally verify
 the native task dispatch claim, project/resource mapping, source-version
 authority and current management lease before acquiring a fence, and revalidate
-after draining. The independent host now inspects durable Admin requests against the native dispatch claim and project/runtime directory mapping. Fence acquisition and draining are not connected yet. Observation delivery still
+after draining. The independent host now inspects durable Admin requests against the native dispatch claim and project/runtime directory mapping. Fence acquisition and physical draining are not connected yet; native cancellation is connected behind an existing matching fence. Observation delivery still
 preserves historical faults even when their native claim is no longer current;
 historical evidence alone cannot authorize a new repair.

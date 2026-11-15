@@ -223,7 +223,10 @@ type RuntimeRecoveryNotifier interface {
 }
 
 type Handler struct {
-	EngineeringHostVersion   string
+	EngineeringHostVersion     string
+	EngineeringTakeoverControl interface {
+		Call(context.Context, any) (json.RawMessage, error)
+	}
 	EngineeringAdminExecutor interface {
 		Tick(context.Context, string, int64) error
 		Stop(context.Context) bool

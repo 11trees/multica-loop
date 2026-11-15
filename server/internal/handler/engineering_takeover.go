@@ -115,6 +115,11 @@ func (h *Handler) ReconcileEngineeringTakeovers(ctx context.Context, authority e
 		if err != nil {
 			return err
 		}
+		if h.EngineeringTakeoverControl != nil {
+			if _, err = h.EngineeringTakeoverControl.Call(ctx, map[string]any{"claim": request.Claim}); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
