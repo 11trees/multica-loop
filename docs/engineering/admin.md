@@ -147,11 +147,12 @@ Go tests cover native source validation, interrupted acknowledgement, exact runt
 version projection, unavailable management reads and heartbeat progress while
 business discovery is blocked. All investigator processes in these checks are test-created fixtures with isolated homes. No installed model executable or account is resolved.
 
-Both controlled native browser scenarios passed against the independent host in 37.6 seconds. Direct and
+Both controlled native browser scenarios passed against the independent host in 41.4 seconds. Direct and
 verification requests reached one acknowledged management Case with exact worker
 and API executable fingerprints. The shared UI displayed the retained Case at
 1280 and 390 pixels, while ordinary continuation and Done stayed blocked. These
-runs used fixture-native tasks and no provider process.
+runs used fixture-native tasks and no provider process. Teardown checks confirm
+that their Cases, observations, attempts and scheduling records are removed.
 
 ![Direct repair Case](assets/admin-case-direct-1280.png)
 
