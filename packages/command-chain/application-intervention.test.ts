@@ -125,3 +125,18 @@ it("pins the exact surrendered YAML draft and the original runtime binding", asy
   draft.sequence++;db.prepare("UPDATE chain_drafts SET payload=? WHERE id=?").run(JSON.stringify(draft),original!.draftId);db.close();
   await expect(invoke(host,"repair-source",pin)).rejects.toThrow(/checkpoint changed/);
 });
+
+it("retains distinct registered and execution paths after the surrendered worktree is removed", async () => {
+  const worktree=join(directory,"execution");
+  execFileSync("git",["-C",repository,"worktree","add","-qb","fixture-execution",worktree]);
+  const execution=await realpath(worktree);
+  await invoke(human,"configure-direct",{expected_revision:0,agent_id:agentId,project_id:projectId,repository_path:repository,input:"Original worktree scope",execution_resources:[{path:repository,mode:"worktree"}]});
+  await invoke({...owner,kind:"daemon"},"bind",{work_dir:execution,mode:"worktree",overlays:[]});
+  await invoke(owner,"direct-run");await invoke(owner,"intervention-request",body);
+  const [original]=await invoke({kind:"coordinator"},"repair-observations") as Array<{observationId:string;snapshotHash:string}>;
+  const pin={observation_id:original!.observationId,snapshot_hash:original!.snapshotHash,case_id:"REPAIR-worktree"};
+  await invoke(host,"repair-observation-ack",pin);
+  await rm(execution,{recursive:true});
+  expect(await invoke(host,"repair-source",pin)).toMatchObject({registered_repository_path:repository,execution_repository_path:execution,mode:"worktree"});
+  expect(await invoke(host,"execution-permission")).toEqual({allowed:false});
+});
