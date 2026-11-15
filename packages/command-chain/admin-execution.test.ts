@@ -91,3 +91,33 @@ it("pins history chunks and refuses unsupported verification or external-wait sh
     expect(() => store.execution.command(allocated.claim, { action: "submit", result: { outcome: "verification-requested", summary: "Do not bypass", repairVersion: "unverified", originalObservationIds: ["original"], repairEvidenceKeys: ["claim"], verification } })).toThrow(/workspace takeover/);
     expect(() => store.execution.command(allocated.claim, { action: "submit", result: { outcome: "external-wait-requested", summary: "Do not escalate Agent failure", dependency: "missing", diagnosisAttemptId: "invented", baselineVersion: "original", originalObservationIds: ["original"], evidenceKey: "claim", retryAfterMs: 30000 } })).toThrow(/independent diagnosis/);
 });
+
+it("persists an immutable takeover request scoped to the live Case and retains inspection without granting ownership", () => {
+ const authority=store.acquireSupervisor("host",30000,true)!, observationId=randomUUID();
+ const original={...observation("takeover"),observationId,evidence:{original:{observationId,snapshotHash:"original-snapshot",attemptId:"native:123"}}};
+ const repair=store.observe(authority,original);
+ store.execution.configure({expected_revision:0,configuration:{provider:"codex",executablePath:"/fixture/codex"}});
+ store.execution.setIntent({intent:"running",request_id:"start"});
+ const {claim}=store.execution.claim(authority)!;
+ const command={action:"workspace-takeover",observation_id:observationId,reason:"Recover the original failed workspace"};
+ expect(()=>store.execution.command(claim,command)).toThrow(/Read Admin status/);
+ store.execution.command(claim,{action:"status"});
+ expect(()=>store.execution.command(claim,{...command,observation_id:"foreign"})).toThrow(/original business observation/);
+ expect(()=>store.execution.command(claim,{...command,workspace_path:"/invented"})).toThrow();
+ const request=store.execution.command(claim,command);
+ expect(request).toMatchObject({case_id:repair.caseId,phase:"requested",inspection:null});
+ store.close();store=new AdminStore(filename,()=>now);
+ expect(store.execution.command(claim,command)).toEqual(request);
+ expect(()=>store.execution.command(claim,{...command,reason:"replace"})).toThrow(/cannot be replaced/);
+ expect(store.execution.pendingTakeovers(authority)).toEqual([request]);
+ const inspection={observation_id:observationId,snapshot_hash:"original-snapshot",source_attempt_id:"native:123",project_id:randomUUID(),runtime_id:randomUUID(),registered_repository_path:"/fixture/root",execution_repository_path:"/fixture/worktree",mode:"worktree",receipt_hash:"receipt",code_version:"original-version",kernel_version:"original-kernel",host_version:"original-host"};
+ expect(()=>store.execution.inspectTakeover(claim,{...inspection,source_attempt_id:"native:456"})).toThrow(/another original source/);
+ expect(store.execution.inspectTakeover(claim,inspection)).toMatchObject({phase:"source-inspected",inspection});
+ expect(store.execution.inspectTakeover(claim,inspection)).toMatchObject({phase:"source-inspected"});
+ expect(()=>store.execution.inspectTakeover(claim,{...inspection,runtime_id:randomUUID()})).toThrow(/cannot be replaced/);
+ expect(store.execution.pendingTakeovers(authority)).toEqual([]);
+ expect(store.execution.command(claim,{action:"status"})).toMatchObject({takeover:{phase:"source-inspected"},agent_action:"investigate"});
+ store.execution.setIntent({intent:"stopped",request_id:"stop"});
+ expect(()=>store.execution.inspectTakeover(claim,inspection)).toThrow(/identity, intent or generation/);
+ expect(store.execution.pendingTakeovers(authority)).toEqual([]);
+});

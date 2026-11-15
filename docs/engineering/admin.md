@@ -170,3 +170,29 @@ Scoped workspace takeover, repair workspace/build actions, independent diagnosis
 repair verification, external dependency probes, verified business handoff and
 runtime updates remain unconnected. Real-provider, Linux runtime and packaged
 acceptance remain unverified. The complete migration stays active.
+
+
+### Workspace takeover requests
+
+An investigation that has read `engineering admin status` can request
+`engineering admin workspace-takeover --observation-id <id> --reason <reason>`.
+The ID must identify an original business observation from its own Case. The
+management database (schema 3) saves one immutable request per invocation;
+repeated identical commands return that request, while changed reasons or
+observations are rejected. Runtime credentials cannot supply project IDs,
+workspace paths, host authority, or a replacement source claim.
+
+The independent host reconciles pending requests using the private business
+`repair-source` action, then checks the native issue lifecycle, exact task
+dispatch timestamp, Agent/runtime association, and local project directory
+mapping. It persists the result as `source-inspected`, retaining the original
+code/runtime versions and both registered and execution paths. `status` includes
+this record. Settlement rechecks the live management lease, intent, session and
+Case generation; stopped or replaced attempts cannot write a result.
+
+Inspection does not acquire the project fence, cancel a native task, confirm
+physical cleanup, validate the currently installed API/kernel version, or grant
+write authority. These facts must be freshly checked by the acquiring
+coordinator. The native cancellation bridge, fence acquisition/draining, repair
+and independent verification remain incomplete; investigation may still submit
+only deferred results.

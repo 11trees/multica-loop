@@ -114,6 +114,6 @@ bindings even if cleanup removed the directory; it neither recreates the path
 nor proves it still exists. The Go takeover coordinator must additionally verify
 the native task dispatch claim, project/resource mapping, source-version
 authority and current management lease before acquiring a fence, and revalidate
-after draining. The coordinator is not connected yet. Observation delivery still
+after draining. The independent host now inspects durable Admin requests against the native dispatch claim and project/runtime directory mapping. Fence acquisition and draining are not connected yet. Observation delivery still
 preserves historical faults even when their native claim is no longer current;
 historical evidence alone cannot authorize a new repair.

@@ -34,7 +34,7 @@ it("isolates workspaces and prevents recursively creating an Admin Case for its 
 it("refuses business, unrelated and newer databases before management schema creation",()=>{
  const business=join(directory,"business.sqlite"),db=new DatabaseSync(business);db.exec("CREATE TABLE engineering_contract(id TEXT)");db.close();expect(()=>new AdminStore(business)).toThrow(/business or unrelated/);
  const check=new DatabaseSync(business);expect(check.prepare("SELECT name FROM sqlite_master WHERE name='admin_control'").get()).toBeUndefined();check.close();
- const newer=join(directory,"newer.sqlite"),future=new DatabaseSync(newer);future.exec("CREATE TABLE admin_control(singleton INTEGER);PRAGMA user_version=3");future.close();expect(()=>new AdminStore(newer)).toThrow(/newer/);
+ const newer=join(directory,"newer.sqlite"),future=new DatabaseSync(newer);future.exec("CREATE TABLE admin_control(singleton INTEGER);PRAGMA user_version=4");future.close();expect(()=>new AdminStore(newer)).toThrow(/newer/);
 });
 it("upgrades an existing observation database without rewriting its Case or granting execution",()=>{
  const authority=store.acquireSupervisor("existing-host")!,original=observation(),repair=store.observe(authority,original);
@@ -45,4 +45,13 @@ it("upgrades an existing observation database without rewriting its Case or gran
  expect(store.observe(authority,original)).toEqual(repair);
  expect(store.issue(workspaceId,issueId)).toMatchObject({case_id:repair.caseId,observation_count:1,desired_intent:"stopped",execution_connected:false});
  expect(store.execution.configuration()).toBeNull();expect(store.execution.claim(authority)).toBeNull();
+});
+it("upgrades schema two with pending Cases while keeping Admin stopped and preserving original evidence",()=>{
+ const authority=store.acquireSupervisor("upgrade-host")!,original=observation(),repair=store.observe(authority,original);
+ store.close();const prior=new DatabaseSync(filename);prior.exec("DROP TABLE admin_takeover;PRAGMA user_version=2");prior.close();
+ store=new AdminStore(filename,()=>now);
+ expect(store.observe(authority,original)).toEqual(repair);
+ expect(store.control()).toMatchObject({desired_intent:"stopped",intent_revision:0});
+ expect(store.execution.pendingTakeovers(authority)).toEqual([]);
+ const check=new DatabaseSync(filename);expect(check.prepare("PRAGMA user_version").get()!.user_version).toBe(3);expect(check.prepare("SELECT count(*) AS n FROM admin_observation").get()!.n).toBe(1);check.close();
 });

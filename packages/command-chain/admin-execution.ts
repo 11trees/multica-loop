@@ -17,6 +17,8 @@ export const adminRuntimeSchema = z.strictObject({ provider: z.literal("codex"),
 const authority = z.strictObject({ ownerId: text, token: z.number().int().positive() });
 export const adminClaimSchema = z.strictObject({ authority, caseId: text, attemptId: text, generation: z.number().int().positive(), sessionId: z.uuid() });
 export type AdminClaim = z.infer<typeof adminClaimSchema>;
+const takeoverInspectionSchema=z.strictObject({observation_id:text,snapshot_hash:text,source_attempt_id:text,project_id:z.uuid(),runtime_id:z.uuid(),registered_repository_path:text,execution_repository_path:text,mode:z.enum(["in_place","worktree"]),receipt_hash:text,code_version:z.string(),kernel_version:text.nullable(),host_version:text.nullable()});
+const takeoverSchema=z.strictObject({claim:adminClaimSchema,case_id:text,observation_id:text,snapshot_hash:text,workspace_id:z.uuid(),issue_id:z.uuid(),source_attempt_id:text,reason:text,phase:z.enum(["requested","source-inspected"]),inspection:takeoverInspectionSchema.nullable()});
 const attemptSchema = z.strictObject({ attemptId: text, caseId: text, ownerId: text, supervisionToken: z.number().int().positive(), generation: z.number().int().positive(), intentRevision: z.number().int().nonnegative(), sessionId: z.uuid(),
     status: z.enum(["launching", "running", "completed", "failed", "interrupted"]), pid: z.number().int().positive().nullable(), startMarker: text.nullable(), processGroupId: z.number().int().positive().nullable(),
     runtime: z.strictObject({ revision: z.number().int().positive(), configuration: adminRuntimeSchema }), statusViewed: z.boolean(), submission: adminSubmissionSchema.nullable(), startedAt: z.number(), finishedAt: z.number().nullable(), lastError: z.string().nullable(), recoveryDecision: z.strictObject({ policyVersion: z.literal(1), failedAttemptIds: z.array(text), method: z.enum(["investigate", "minimal-reproduction", "independent-diagnosis", "replan", "alternate-runtime"]), switchRuntime: z.boolean(), action: z.literal("continue-repair") }), interruptionCause: z.enum(["user-stop", "host-loss"]).optional() });
@@ -29,7 +31,8 @@ type Control = {
 export function initializeAdminExecution(db: DatabaseSync, version: number) {
     if (version < 2)
         db.exec("ALTER TABLE admin_control ADD COLUMN execution_supported INTEGER NOT NULL DEFAULT 0");
-    db.exec(`CREATE TABLE IF NOT EXISTS admin_runtime(singleton INTEGER PRIMARY KEY CHECK(singleton=1),revision INTEGER NOT NULL,payload TEXT NOT NULL);
+    db.exec(`CREATE TABLE IF NOT EXISTS admin_takeover(attempt_id TEXT PRIMARY KEY,case_id TEXT NOT NULL,payload TEXT NOT NULL);
+ CREATE TABLE IF NOT EXISTS admin_runtime(singleton INTEGER PRIMARY KEY CHECK(singleton=1),revision INTEGER NOT NULL,payload TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS admin_intent_command(request_id TEXT PRIMARY KEY,action TEXT NOT NULL,revision INTEGER NOT NULL);
  CREATE TABLE IF NOT EXISTS admin_attempt(attempt_id TEXT PRIMARY KEY,case_id TEXT NOT NULL,status TEXT NOT NULL,payload TEXT NOT NULL);
  CREATE UNIQUE INDEX IF NOT EXISTS admin_one_live_attempt ON admin_attempt((1)) WHERE status IN ('launching','running');
@@ -115,6 +118,7 @@ export class AdminExecutionStore {
     command(claim: AdminClaim, input: unknown) {
         const value = z.discriminatedUnion("action", [
             z.strictObject({ action: z.literal("status") }),
+            z.strictObject({ action: z.literal("workspace-takeover"), observation_id: text, reason: text.max(16000) }),
             z.strictObject({ action: z.literal("history"), collection: z.enum(["observations", "evidence", "attempts"]), index: z.number().int().nonnegative(), start: z.number().int().nonnegative(), length: z.number().int().min(1).max(16000), hash: text.optional() }),
             z.strictObject({ action: z.literal("evidence"), key: text, kind: z.enum(["hypothesis", "finding", "action", "change"]), payload: z.record(z.string(), z.unknown()) }),
             z.strictObject({ action: z.literal("submit"), result: adminSubmissionSchema }),
@@ -129,7 +133,19 @@ export class AdminExecutionStore {
                     rows.push({ index, text: preview, length: content.length, hash: createHash("sha256").update(content).digest("hex") });
                     remaining -= preview.length;
                 } return [collection, { total: reader.total, rows }]; }));
-                return { attempt, history, requiredOriginalObservationIds: this.db.prepare("SELECT observation_id FROM admin_observation WHERE case_id=? AND origin<>'admin' ORDER BY rowid").all(attempt.caseId).map(row => String(row.observation_id)), agent_action: attempt.submission ? "end_execution" : "investigate" };
+                return { attempt, history, takeover: this.takeover(attempt.attemptId), requiredOriginalObservationIds: this.db.prepare("SELECT observation_id FROM admin_observation WHERE case_id=? AND origin<>'admin' ORDER BY rowid").all(attempt.caseId).map(row => String(row.observation_id)), agent_action: attempt.submission ? "end_execution" : "investigate" };
+            }
+            if (value.action === "workspace-takeover") {
+                if (attempt.submission) throw new DraftConflictError("Admin already submitted; end execution");
+                const row = this.db.prepare("SELECT payload FROM admin_observation WHERE observation_id=? AND case_id=? AND origin='business'").get(value.observation_id, attempt.caseId);
+                if (!row) throw new DraftConflictError("Takeover must reference this Case's original business observation");
+                const source = z.object({workspaceId:z.uuid(),issueId:z.uuid(),evidence:z.object({original:z.object({observationId:text,snapshotHash:text,attemptId:text})})}).parse(JSON.parse(String(row.payload)));
+                if(source.evidence.original.observationId !== value.observation_id) throw new DraftConflictError("Original observation identity changed");
+                const prior=this.takeover(attempt.attemptId);
+                if(prior){if(prior.observation_id!==value.observation_id || prior.reason!==value.reason)throw new DraftConflictError("Takeover request cannot be replaced");return prior;}
+                const request=takeoverSchema.parse({claim,case_id:attempt.caseId,observation_id:value.observation_id,snapshot_hash:source.evidence.original.snapshotHash,workspace_id:source.workspaceId,issue_id:source.issueId,source_attempt_id:source.evidence.original.attemptId,reason:value.reason,phase:"requested",inspection:null});
+                this.db.prepare("INSERT INTO admin_takeover VALUES(?,?,?)").run(attempt.attemptId,attempt.caseId,json(request));
+                return request;
             }
             if (value.action === "history") {
                 const row = this.history(attempt.caseId, value.collection).read(value.index);
@@ -162,6 +178,20 @@ export class AdminExecutionStore {
             attempt.submission = value.result;
             this.save(attempt);
             return { submitted: true, agent_action: "end_execution" };
+        });
+    }
+    private takeover(attemptId:string) {const row=this.db.prepare("SELECT payload FROM admin_takeover WHERE attempt_id=?").get(attemptId);return row ? takeoverSchema.parse(JSON.parse(String(row.payload))) : null;}
+    pendingTakeovers(authority:AdminAuthority) {
+        this.requireAuthority(authority);
+        return this.active().flatMap(attempt=>{const request=this.takeover(attempt.attemptId);if(!request || request.phase!=="requested")return [];try{this.current(adminClaimSchema.parse(request.claim));return [request];}catch{return [];}});
+    }
+    inspectTakeover(claim:AdminClaim,input:unknown) {
+        const inspection=takeoverInspectionSchema.parse(input);
+        return this.transaction(()=>{this.current(claim,true);const request=this.takeover(claim.attemptId);
+            if(!request || request.observation_id!==inspection.observation_id || request.snapshot_hash!==inspection.snapshot_hash || request.source_attempt_id!==inspection.source_attempt_id)throw new DraftConflictError("Takeover inspection belongs to another original source");
+            if(request.inspection && json(request.inspection)!==json(inspection))throw new DraftConflictError("Takeover inspection cannot be replaced");
+            request.inspection=inspection;request.phase="source-inspected";
+            this.db.prepare("UPDATE admin_takeover SET payload=? WHERE attempt_id=?").run(json(request),claim.attemptId);return request;
         });
     }
     private history(caseId: string, collection: "observations" | "evidence" | "attempts") {

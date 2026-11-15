@@ -60,6 +60,28 @@ func TestEngineeringAdminPrivateCommandUsesInvocationSocketWithoutHumanProfile(t
 	if payload["action"] != "status" || len(payload) != 1 || !bytes.Contains(output.Bytes(), []byte("investigate")) {
 		t.Fatalf("Unexpected command payload or output: %v %s", payload, output.String())
 	}
+	takeover, _, err := engineeringCmd.Find([]string{"admin", "workspace-takeover"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	takeover.SetContext(context.Background())
+	takeover.SetOut(&output)
+	defer takeover.SetOut(nil)
+	if err = takeover.Flags().Set("observation-id", "original-observation"); err != nil {
+		t.Fatal(err)
+	}
+	if err = takeover.Flags().Set("reason", "Recover original workspace"); err != nil {
+		t.Fatal(err)
+	}
+	defer takeover.Flags().Set("observation-id", "")
+	defer takeover.Flags().Set("reason", "")
+	if err = takeover.RunE(takeover, nil); err != nil {
+		t.Fatal(err)
+	}
+	payload = <-received
+	if payload["action"] != "workspace-takeover" || payload["observation_id"] != "original-observation" || payload["reason"] != "Recover original workspace" || len(payload) != 3 {
+		t.Fatalf("Takeover identity was not host-projected: %v", payload)
+	}
 	t.Setenv("MULTICA_ADMIN_TOKEN", "")
 	if _, err = callAdminCommand(context.Background(), map[string]any{"action": "status"}); err == nil {
 		t.Fatal("Human credential was allowed as an invocation fallback")

@@ -134,6 +134,9 @@ func (h *Handler) runEngineeringAdmin(ctx context.Context, interval time.Duratio
 				if err := h.ReconcileEngineeringAdmin(ctx, *current); err != nil && ctx.Err() == nil {
 					slog.WarnContext(ctx, "engineering Admin observation waiting", "error", err)
 				}
+				if err := h.ReconcileEngineeringTakeovers(ctx, *current); err != nil && ctx.Err() == nil {
+					slog.WarnContext(ctx, "engineering Admin takeover inspection waiting", "error", err)
+				}
 			}
 			select {
 			case <-ctx.Done():

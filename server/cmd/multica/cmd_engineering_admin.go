@@ -85,11 +85,20 @@ func addAdminHostFlags(cmd *cobra.Command) {
 
 func init() {
 	admin := &cobra.Command{Use: "admin", Short: "Use this investigation's private command protocol"}
-	for _, action := range []string{"status", "history", "evidence", "submit"} {
+	for _, action := range []string{"status", "history", "evidence", "submit", "workspace-takeover"} {
 		action := action
 		cmd := &cobra.Command{Use: action, Args: exactArgs(0), RunE: func(cmd *cobra.Command, _ []string) error {
 			payload := map[string]any{"action": action}
 			switch action {
+			case "workspace-takeover":
+				for _, key := range []string{"observation-id", "reason"} {
+					value, _ := cmd.Flags().GetString(key)
+					if key == "observation-id" {
+						payload["observation_id"] = value
+					} else {
+						payload[key] = value
+					}
+				}
 			case "history":
 				for _, key := range []string{"collection", "hash"} {
 					value, _ := cmd.Flags().GetString(key)
@@ -130,6 +139,9 @@ func init() {
 			return err
 		}}
 		switch action {
+		case "workspace-takeover":
+			cmd.Flags().String("observation-id", "", "Original business observation from this Case")
+			cmd.Flags().String("reason", "", "Reason for scoped workspace takeover")
 		case "history":
 			cmd.Flags().String("collection", "observations", "observations, evidence or attempts")
 			cmd.Flags().String("hash", "", "Exact row SHA-256 returned by status")
