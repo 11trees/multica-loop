@@ -308,6 +308,12 @@ rewritten="$(bash -c 'source "$1"; database_url_with_name "$2" "$3"' _ \
 # ---------------------------------------------------------------------------
 write_manifest "probe-901" "$tmp_dir/checkout" 901
 mkdir -p "$tmp_dir/checkout"
+mkdir -p "$tmp_dir/checkout/server/bin"
+cat > "$tmp_dir/checkout/server/bin/multica" <<'EOF'
+#!/bin/sh
+printf '{"status":"stopped"}\n'
+EOF
+chmod +x "$tmp_dir/checkout/server/bin/multica"
 
 dev_env list > "$out" 2>&1 || fail "list must succeed with one environment"
 require_contains "$out" "probe-901"
@@ -321,7 +327,7 @@ node -e '
   if (payload.backend_port !== 18981) throw new Error("backend_port = " + payload.backend_port);
   if (payload.desktop_cdp_port !== null) throw new Error("desktop_cdp_port = " + payload.desktop_cdp_port);
   if (payload.workspace_slug !== "dev") throw new Error("workspace_slug = " + payload.workspace_slug);
-  for (const key of ["api", "web", "daemon", "desktop"]) {
+  for (const key of ["api", "web", "admin", "daemon", "desktop"]) {
     if (!payload.components[key]) throw new Error("missing component " + key);
     if (payload.components[key].state !== "stopped") {
       throw new Error(key + " state = " + payload.components[key].state);

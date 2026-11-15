@@ -14,7 +14,9 @@ structured revision returns; specification approval alone cannot authorize Done.
 ## Start and configure
 
 Set `MULTICA_ENGINEERING_ENABLED=true` in the checkout's ignored environment file.
-Restart through `make down` and `make up C=api,web`. The managed environment builds
+Restart through `make down` and `make up C=api,web`. Engineering mode also starts
+the separate [Admin management host](admin.md); it has no provider configured by
+default and requires explicit local configuration and start intent before investigation. The managed environment builds
 `packages/command-chain/dist/worker.mjs` and assigns its own
 `<environment-state-directory>/engineering.sqlite`. `make down` preserves that
 database. Node 22.13+ and Git are required on the API host.

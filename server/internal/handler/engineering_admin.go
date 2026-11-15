@@ -56,7 +56,7 @@ type engineeringRepairObservation struct {
 }
 
 // Supervision renewal does not wait behind business discovery or its worker mutex.
-// This stage records observations only; it does not allocate provider processes.
+// Provider execution is supplied only by the independent management host.
 func (h *Handler) RunEngineeringAdmin(ctx context.Context) {
 	h.runEngineeringAdmin(ctx, 10*time.Second)
 }
@@ -65,7 +65,7 @@ func (h *Handler) runEngineeringAdmin(ctx context.Context, interval time.Duratio
 	if h.EngineeringWorker == nil || h.EngineeringAdminWorker == nil {
 		return
 	}
-	owner := "api:" + randomID()
+	owner := "admin-host:" + randomID()
 	var mu sync.RWMutex
 	var authority *engineeringAdminAuthority
 	renew := func() {
@@ -81,7 +81,7 @@ func (h *Handler) runEngineeringAdmin(ctx context.Context, interval time.Duratio
 				return
 			}
 		}
-		data, err := h.EngineeringAdminWorker.Call(ctx, map[string]any{"action": "acquire", "owner_id": owner})
+		data, err := h.EngineeringAdminWorker.Call(ctx, map[string]any{"action": "acquire", "owner_id": owner, "execution_supported": h.EngineeringAdminExecutor != nil})
 		var result struct {
 			Authority *engineeringAdminAuthority `json:"authority"`
 		}
@@ -93,6 +93,34 @@ func (h *Handler) runEngineeringAdmin(ctx context.Context, interval time.Duratio
 		}
 	}
 	renew()
+	executionDone := make(chan struct{})
+	go func() {
+		defer close(executionDone)
+		if h.EngineeringAdminExecutor == nil {
+			return
+		}
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		for {
+			mu.RLock()
+			current := authority
+			mu.RUnlock()
+			if current != nil {
+				if err := h.EngineeringAdminExecutor.Tick(ctx, current.OwnerID, current.Token); err != nil && ctx.Err() == nil {
+					slog.WarnContext(ctx, "engineering Admin execution waiting", "error", err)
+				}
+			} else {
+				stop, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				h.EngineeringAdminExecutor.Stop(stop)
+				cancel()
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
 	discoveryDone := make(chan struct{})
 	go func() {
 		defer close(discoveryDone)
@@ -120,7 +148,17 @@ func (h *Handler) runEngineeringAdmin(ctx context.Context, interval time.Duratio
 		mu.RLock()
 		current := authority
 		mu.RUnlock()
-		if current != nil {
+		select {
+		case <-executionDone:
+		case <-time.After(5 * time.Second):
+		}
+		confirmed := true
+		if h.EngineeringAdminExecutor != nil {
+			stop, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			confirmed = h.EngineeringAdminExecutor.Stop(stop)
+			cancel()
+		}
+		if current != nil && confirmed {
 			release, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			_, _ = h.EngineeringAdminWorker.Call(release, map[string]any{"action": "release", "authority": current})

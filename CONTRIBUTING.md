@@ -346,10 +346,12 @@ make destroy                 # stop, then drop the database and free the slot
 make gc                      # collect expired environments or ones whose checkout is gone
 ```
 
-Components are `api` (Go backend), `web` (Next.js), `daemon` (agent daemon) and
+Components are `api` (Go backend), `web` (Next.js), `admin` (independent engineering management), `daemon` (agent daemon) and
 `desktop` (Electron). Selecting any of them implies `api`. `make up` is
 idempotent: re-running it against a live environment reuses the database, the
-profile and any component already healthy.
+profile and any component already healthy. Engineering mode automatically includes
+the `admin` component. It starts no provider until a local operator explicitly
+configures a runtime and requests execution; see [Admin management](docs/engineering/admin.md).
 
 Three properties are worth knowing because the old flow lacked them:
 

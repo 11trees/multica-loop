@@ -1,0 +1,83 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"net"
+	"net/http"
+	"os"
+	"path/filepath"
+	"runtime"
+	"testing"
+)
+
+func TestEngineeringAdminPrivateCommandUsesInvocationSocketWithoutHumanProfile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix invocation socket")
+	}
+	root, err := os.MkdirTemp("", "admin-cli-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(root)
+	socket := filepath.Join(root, "command.sock")
+	listener, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("MULTICA_ADMIN_SOCKET", socket)
+	t.Setenv("MULTICA_ADMIN_TOKEN", "fixture-private-token")
+	t.Setenv("MULTICA_TOKEN", "fixture-human-token-must-not-be-used")
+	received := make(chan map[string]any, 1)
+	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/command" || r.Header.Get("Authorization") != "Bearer fixture-private-token" {
+			t.Error("Invocation credential projection changed")
+			http.Error(w, "unauthorized", 403)
+			return
+		}
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Error(err)
+		}
+		received <- payload
+		_, _ = w.Write([]byte(`{"agent_action":"investigate"}`))
+	})}
+	go server.Serve(listener)
+	defer server.Close()
+	command, _, err := engineeringCmd.Find([]string{"admin", "status"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	command.SetContext(context.Background())
+	var output bytes.Buffer
+	command.SetOut(&output)
+	defer command.SetOut(nil)
+	if err = command.RunE(command, nil); err != nil {
+		t.Fatal(err)
+	}
+	payload := <-received
+	if payload["action"] != "status" || len(payload) != 1 || !bytes.Contains(output.Bytes(), []byte("investigate")) {
+		t.Fatalf("Unexpected command payload or output: %v %s", payload, output.String())
+	}
+	t.Setenv("MULTICA_ADMIN_TOKEN", "")
+	if _, err = callAdminCommand(context.Background(), map[string]any{"action": "status"}); err == nil {
+		t.Fatal("Human credential was allowed as an invocation fallback")
+	}
+}
+
+func TestEngineeringAdminManagementIsUnavailableToTaskInvocation(t *testing.T) {
+	command, _, err := engineeringCmd.Find([]string{"admin-control", "start"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("MULTICA_ADMIN_TOKEN", "fixture-invocation")
+	if _, err = adminWorker(command); err == nil {
+		t.Fatal("Investigator obtained local management control")
+	}
+	t.Setenv("MULTICA_ADMIN_TOKEN", "")
+	t.Setenv("MULTICA_TASK_ID", "fixture-native-task")
+	if _, err = adminWorker(command); err == nil {
+		t.Fatal("Native business task obtained local management control")
+	}
+}

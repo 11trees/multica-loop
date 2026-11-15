@@ -149,7 +149,7 @@ func TestEngineeringApplicationActorBoundaries(t *testing.T) {
 		t.Fatal("terminal intervention did not use the native task boundary")
 	}
 	testutil.Call(t, auth(h.ConfigureEngineeringVerification), request(session, `{"agent_id":"not-a-uuid"}`)).Want(http.StatusBadRequest)
-	if len(recorder.inputs) != 2 {
+	if len(recorder.inputs) != 3 {
 		t.Fatal("invalid agent selection reached worker")
 	}
 }
