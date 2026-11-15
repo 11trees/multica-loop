@@ -39,7 +39,7 @@ DEV_CODE_DEFAULT=888888
 WORKSPACE_NAME="${MULTICA_DEV_WORKSPACE_NAME:-Dev}"
 WORKSPACE_SLUG="${MULTICA_DEV_WORKSPACE_SLUG:-dev}"
 
-ALL_COMPONENTS="api web daemon desktop"
+ALL_COMPONENTS="admin api web daemon desktop"
 DEFAULT_COMPONENTS="api web"
 
 # An agent runs with TMPDIR=/tmp/multica-task-<id>, deleted when the run ends.
@@ -621,6 +621,35 @@ api_identity_matches() {
   [ "$launched_at" = 0 ] || api_started_after "$health" "$launched_at"
 }
 
+admin_identity_matches() {
+  local state pid expected
+  state="$(cat "$STATE_DIR/admin-state.json" 2>/dev/null || true)"
+  pid="$(json_field "$state" pid || true)"
+  expected="$(git -C "$REPO_ROOT" rev-parse HEAD)"
+  [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null \
+    && listener_pid_belongs_to_component admin "$pid" \
+    && [ "$(json_field "$state" commit || true)" = "$expected" ]
+}
+
+start_admin() {
+  local build_commit waited=0
+  if admin_identity_matches; then ok "admin host already running"; return 0; fi
+  stop_component admin
+  build_commit="$(git -C "$REPO_ROOT" rev-parse HEAD)"
+  info "Building independent Admin host"
+  (cd "$REPO_ROOT" && pnpm --filter @multica/command-chain build) || die "Failed to build Admin worker."
+  (cd "$REPO_ROOT/server" && go build -ldflags "-X main.commit=${build_commit:0:9} -X main.buildCommit=$build_commit" -o bin/multica ./cmd/multica) || die "Failed to build Admin host."
+  export MULTICA_ENGINEERING_WORKER="$REPO_ROOT/packages/command-chain/dist/worker.mjs"
+  export MULTICA_ENGINEERING_DATABASE="$STATE_DIR/engineering.sqlite"
+  launch_detached admin "$MULTICA_BIN" engineering admin-host --state-file "$STATE_DIR/admin-state.json"
+  while [ "$waited" -lt 30 ]; do
+    if admin_identity_matches; then ok "independent Admin host ready (no provider starts without configuration and intent)";return 0;fi
+    component_pid admin >/dev/null || die "Admin host exited. Log: $(log_file admin)"
+    sleep 1; waited=$((waited+1))
+  done
+  die "Admin host did not report its process identity. Log: $(log_file admin)"
+}
+
 start_api() {
   local launched_at health waited=0 expected_commit
   if [ "${MULTICA_ENGINEERING_ENABLED:-}" = true ]; then
@@ -1039,7 +1068,7 @@ stop_desktop_daemon() {
 
 stop_component() {
   local name=$1 pid launcher="" status state recorded_listener="" port="" listener=""
-  local descendants="" child survivors=""
+  local descendants="" child survivors="" waited=0
   case "$name" in
     daemon)
       if [ -x "$MULTICA_BIN" ]; then
@@ -1088,6 +1117,19 @@ stop_component() {
       fi
     fi
     descendants="$(descendant_pids "$pid")"
+    # Admin owns provider groups outside its launch group; let it confirm their
+    # exit before generic group cleanup. An uncertain exit retains its allocation.
+    if [ "$name" = admin ]; then
+      kill -TERM "$pid" 2>/dev/null || true
+      while kill -0 "$pid" 2>/dev/null && [ "$waited" -lt 25 ]; do sleep 1;waited=$((waited+1));done
+      if kill -0 "$pid" 2>/dev/null; then
+        warn "Admin host has not finished physical cleanup; refusing forced stop"
+        return 1
+      fi
+      rm -f "$(pid_file admin)" "$STATE_DIR/admin-state.json"
+      ok "admin host stopped"
+      return 0
+    fi
     # Negative pid targets the process group, so make → go run → server all go
     # down together instead of leaving the real listener orphaned.
     kill -TERM -"$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
@@ -1159,6 +1201,15 @@ stop_component() {
 
 component_state() {
   case "$1" in
+    admin)
+      if admin_identity_matches; then
+        printf 'running|independent management|pid %s' "$(json_field "$(cat "$STATE_DIR/admin-state.json")" pid)"
+      elif component_pid admin >/dev/null; then
+        printf 'stale|independent management|identity differs from this checkout; run make up'
+      else
+        printf 'stopped|independent management|'
+      fi
+      ;;
     api)
       local health expected_commit reported_commit
       health="$(health_json || true)"
@@ -1371,12 +1422,12 @@ save_manifest() {
 
 cmd_up() {
   local requested="$DEFAULT_COMPONENTS" name="" owner=human ttl=0 lifecycle_requested=0 comp
-  local cdp_request=""
+  local cdp_request="" all_requested=0
 
   while [ $# -gt 0 ]; do
     case "$1" in
       --components|-c) requested="$(printf '%s' "$2" | tr ',' ' ')"; shift 2 ;;
-      --all) requested="$ALL_COMPONENTS"; shift ;;
+      --all) requested="$ALL_COMPONENTS"; all_requested=1; shift ;;
       --name) name="$2"; shift 2 ;;
       --ephemeral) owner=agent; lifecycle_requested=1; [ "$ttl" != 0 ] || ttl=24; shift ;;
       --ttl) ttl="$2"; owner=agent; lifecycle_requested=1; shift 2 ;;
@@ -1442,6 +1493,12 @@ cmd_up() {
   fi
   ensure_dev_code "$ENV_FILE"
   load_env_file "$ENV_FILE"
+  if [ "${MULTICA_ENGINEERING_ENABLED:-}" = true ]; then
+    component_selected admin || COMPONENTS="$COMPONENTS admin"
+  elif component_selected admin; then
+    if [ "$all_requested" = 1 ]; then COMPONENTS="${COMPONENTS/admin /}";
+    else die "The admin component requires MULTICA_ENGINEERING_ENABLED=true."; fi
+  fi
 
   acquire_lock
   trap release_lock EXIT
@@ -1553,6 +1610,7 @@ cmd_up() {
 
   step "Components: $COMPONENTS"
   component_selected api && start_api
+  component_selected admin && start_admin
   seed_dev_workspace
   component_selected web && start_web
   component_selected daemon && start_daemon
@@ -1821,7 +1879,7 @@ usage() {
   cat <<'EOF'
 Local development environments: named, listable, deletable.
 
-  dev-env.sh up      [--components api,web,daemon,desktop] [--all]
+  dev-env.sh up      [--components api,web,admin,daemon,desktop] [--all]
                      [--name N] [--ephemeral] [--ttl HOURS]
                      [--cdp | --remote-debugging-port N | --no-cdp]
   dev-env.sh status  [name] [--json]

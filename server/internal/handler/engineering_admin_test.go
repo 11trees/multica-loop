@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -18,6 +19,13 @@ type engineeringAdminTestWorker struct {
 }
 
 func (w engineeringAdminTestWorker) Call(_ context.Context, input any) (json.RawMessage, error) {
+	if value, ok := input.(map[string]string); ok {
+		converted := map[string]any{}
+		for key, entry := range value {
+			converted[key] = entry
+		}
+		return w.call(converted)
+	}
 	return w.call(input.(map[string]any))
 }
 
@@ -107,8 +115,20 @@ func TestEngineeringAdminRenewalDoesNotWaitForBusinessDiscovery(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	started, renewed, done := make(chan struct{}), make(chan struct{}, 1), make(chan struct{})
+	var discoveryStarted sync.Once
 	h := *testHandler
-	h.EngineeringWorker = engineeringAdminTestWorker{call: func(_ map[string]any) (json.RawMessage, error) { close(started); <-ctx.Done(); return nil, ctx.Err() }}
+	ticked := make(chan struct{}, 1)
+	h.EngineeringAdminExecutor = engineeringAdminTestExecutor{tick: func() {
+		select {
+		case ticked <- struct{}{}:
+		default:
+		}
+	}, confirmed: true}
+	h.EngineeringWorker = engineeringAdminTestWorker{call: func(_ map[string]any) (json.RawMessage, error) {
+		discoveryStarted.Do(func() { close(started) })
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}}
 	h.EngineeringAdminWorker = engineeringAdminTestWorker{call: func(input map[string]any) (json.RawMessage, error) {
 		switch input["action"] {
 		case "acquire":
@@ -136,10 +156,71 @@ func TestEngineeringAdminRenewalDoesNotWaitForBusinessDiscovery(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("blocked business discovery starved supervision renewal")
 	}
+	select {
+	case <-ticked:
+	case <-time.After(time.Second):
+		t.Fatal("blocked business discovery starved independent execution")
+	}
 	cancel()
 	select {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("supervision did not stop")
+	}
+}
+
+type engineeringAdminTestExecutor struct {
+	tick      func()
+	confirmed bool
+}
+
+func (e engineeringAdminTestExecutor) Tick(context.Context, string, int64) error {
+	if e.tick != nil {
+		e.tick()
+	}
+	return nil
+}
+func (e engineeringAdminTestExecutor) Stop(context.Context) bool { return e.confirmed }
+
+func TestEngineeringAdminUnconfirmedExitDoesNotReleaseSupervision(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	started := make(chan struct{}, 1)
+	released := make(chan struct{}, 1)
+	h := &Handler{EngineeringWorker: engineeringAdminTestWorker{call: func(map[string]any) (json.RawMessage, error) { return json.RawMessage(`[]`), nil }}, EngineeringAdminExecutor: engineeringAdminTestExecutor{tick: func() {
+		select {
+		case started <- struct{}{}:
+		default:
+		}
+	}, confirmed: false}}
+	h.EngineeringAdminWorker = engineeringAdminTestWorker{call: func(input map[string]any) (json.RawMessage, error) {
+		switch input["action"] {
+		case "acquire":
+			return json.Marshal(map[string]any{"authority": engineeringAdminAuthority{OwnerID: input["owner_id"].(string), Token: 1}})
+		case "renew":
+			return json.RawMessage(`{"renewed":true}`), nil
+		case "release":
+			released <- struct{}{}
+			return json.RawMessage(`{"released":true}`), nil
+		}
+		return nil, fmt.Errorf("Unexpected operation")
+	}}
+	done := make(chan struct{})
+	go func() { h.runEngineeringAdmin(ctx, 20*time.Millisecond); close(done) }()
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		cancel()
+		t.Fatal("Executor did not start")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("Host shutdown did not finish")
+	}
+	select {
+	case <-released:
+		t.Fatal("Unconfirmed process exit released supervision")
+	default:
 	}
 }

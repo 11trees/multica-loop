@@ -34,5 +34,15 @@ it("isolates workspaces and prevents recursively creating an Admin Case for its 
 it("refuses business, unrelated and newer databases before management schema creation",()=>{
  const business=join(directory,"business.sqlite"),db=new DatabaseSync(business);db.exec("CREATE TABLE engineering_contract(id TEXT)");db.close();expect(()=>new AdminStore(business)).toThrow(/business or unrelated/);
  const check=new DatabaseSync(business);expect(check.prepare("SELECT name FROM sqlite_master WHERE name='admin_control'").get()).toBeUndefined();check.close();
- const newer=join(directory,"newer.sqlite"),future=new DatabaseSync(newer);future.exec("CREATE TABLE admin_control(singleton INTEGER);PRAGMA user_version=2");future.close();expect(()=>new AdminStore(newer)).toThrow(/newer/);
+ const newer=join(directory,"newer.sqlite"),future=new DatabaseSync(newer);future.exec("CREATE TABLE admin_control(singleton INTEGER);PRAGMA user_version=3");future.close();expect(()=>new AdminStore(newer)).toThrow(/newer/);
+});
+it("upgrades an existing observation database without rewriting its Case or granting execution",()=>{
+ const authority=store.acquireSupervisor("existing-host")!,original=observation(),repair=store.observe(authority,original);
+ store.close();const prior=new DatabaseSync(filename);
+ for(const table of ["admin_runtime","admin_intent_command","admin_attempt","admin_schedule","admin_evidence"])prior.exec(`DROP TABLE ${table}`);
+ prior.exec("ALTER TABLE admin_control DROP COLUMN execution_supported;PRAGMA user_version=1");prior.close();
+ store=new AdminStore(filename,()=>now);
+ expect(store.observe(authority,original)).toEqual(repair);
+ expect(store.issue(workspaceId,issueId)).toMatchObject({case_id:repair.caseId,observation_count:1,desired_intent:"stopped",execution_connected:false});
+ expect(store.execution.configuration()).toBeNull();expect(store.execution.claim(authority)).toBeNull();
 });

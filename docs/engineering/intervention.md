@@ -15,7 +15,7 @@ rejects the old system-assistance credential for them. Recreating the earlier
 three-assistance-attempt loop would therefore route current faults incorrectly.
 
 The target implements the terminal handoff and immutable pending observation.
-[Independent Admin observation delivery and supervision](admin.md) now retain it
+[Independent Admin observation, supervision and investigation](admin.md) now retain it
 in a separate management Case. Investigation/diagnosis, repair workspaces,
 separate verification, resource takeover, business recovery and runtime update
 are not yet connected. Pending handoffs intentionally remain blocked until that
@@ -88,7 +88,7 @@ drafts and stale writes. API and CLI tests exercise native identity derivation a
 UTF-8 task-private files. Core/UI tests cover malformed projections, retained
 investigation evidence and blocked continuation.
 
-The controlled browser run passed both Direct and verification paths in 38.2
+The controlled browser run passed both Direct and verification paths in 37.6
 seconds, including readonly workspace drift after status viewing. It uses the
 real API, private worker, native task credentials, management CLI and shared UI,
 with fixture-native runs and no provider process. Screenshots at 1280 and 390

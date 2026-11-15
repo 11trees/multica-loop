@@ -1222,6 +1222,15 @@ func (b *codexBackend) executeOnce(ctx context.Context, prompt string, opts Exec
 		stopProcess()
 		return nil, fmt.Errorf("start codex: %w", err)
 	}
+	if b.cfg.OnProcessStarted != nil {
+		if err := b.cfg.OnProcessStarted(cmd.Process.Pid); err != nil {
+			cancel()
+			stopProcess()
+			_ = cmd.Wait()
+			releaseProcessGroup(cmd)
+			return nil, fmt.Errorf("bind codex process: %w", err)
+		}
+	}
 	activeLaunches := activeCodexLaunches.Add(1)
 	for {
 		maxSeen := maxActiveCodexLaunchesObserved.Load()

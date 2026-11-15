@@ -222,7 +222,11 @@ type RuntimeRecoveryNotifier interface {
 }
 
 type Handler struct {
-	EngineeringHostVersion string
+	EngineeringHostVersion   string
+	EngineeringAdminExecutor interface {
+		Tick(context.Context, string, int64) error
+		Stop(context.Context) bool
+	}
 	EngineeringAdminWorker interface {
 		Call(context.Context, any) (json.RawMessage, error)
 	}
