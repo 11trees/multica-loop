@@ -29,7 +29,7 @@ const coordinator = z.strictObject({ kind: z.literal("coordinator") });
 const actor = z.discriminatedUnion("kind", [human, task, daemon, host, coordinator]);
 export const applicationRequestSchema = z.strictObject({
   actor,
-  action: z.enum(["execution-permission", "process", "process-scope", "intervention-request", "repair-observations", "repair-observation-ack", "configure-direct","direct-run","direct-submit","direct-scope","direct-completed","business-handoff","end-to-end-scope","business-scope","business-read","business-comment","business-comment-intent","business-comment-ack","business-comment-resolved","business-comment-protected","configure-business", "configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations", "verified-binding", "publication", "publication-ack", "delivery-policy", "activate-unit", "accept-unit", "parent-scope", "review-inputs", "configure-review", "review-ack", "begin-feedback", "cancel-feedback", "feedback-restored", "authorize-feedback-work", "prepare-feedback-verification", "prepare-feedback-report"]),
+  action: z.enum(["execution-permission", "process", "process-scope", "intervention-request", "repair-source", "repair-observations", "repair-observation-ack", "configure-direct","direct-run","direct-submit","direct-scope","direct-completed","business-handoff","end-to-end-scope","business-scope","business-read","business-comment","business-comment-intent","business-comment-ack","business-comment-resolved","business-comment-protected","configure-business", "configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations", "verified-binding", "publication", "publication-ack", "delivery-policy", "activate-unit", "accept-unit", "parent-scope", "review-inputs", "configure-review", "review-ack", "begin-feedback", "cancel-feedback", "feedback-restored", "authorize-feedback-work", "prepare-feedback-verification", "prepare-feedback-report"]),
   payload: z.unknown().optional(),
   host_version: z.string().optional(),
 });
@@ -475,6 +475,35 @@ export class EngineeringApplication {
     if (action === "repair-observations") {
       if (actor.kind !== "coordinator") throw new Error("Only the host can read pending Admin observations");
       return this.interventions.observations();
+    }
+    if (action === "repair-source") {
+      if (actor.kind !== "host") throw new Error("Only the host can validate an Admin repair source");
+      const original = this.interventions.repairSource(actor.workspaceId, actor.issueId, request.payload);
+      const frozen = original.chain === "direct" ? z.object({ repository_path: text, code_version: z.string() }).parse(original.snapshot) : (() => { const value = z.object({repositoryPath:text,contract:z.object({binding:z.object({codeVersion:text})})}).parse(original.snapshot); return {repository_path:value.repositoryPath,code_version:value.contract.binding.codeVersion}; })();
+      let registeredPath = frozen.repository_path;
+      let execution: { repositoryPath: string; mode: "in_place" | "worktree" } | undefined;
+      if (original.chain === "direct") {
+        const current = this.direct.current(actor.workspaceId, actor.issueId);
+        if (!current || current.revision !== original.revision || current.version !== original.sequence || current.agentId !== original.agentId || current.activeAttemptId !== original.attemptId || current.result || current.nativeCompleted || current.repositoryPath !== frozen.repository_path || current.initialCommit !== frozen.code_version || current.contractHash !== z.object({direct:z.object({contract_hash:text})}).parse(original.snapshot).direct.contract_hash) {
+          throw new DraftConflictError("Original Direct checkpoint changed before repair");
+        }
+        execution = current.attempts.find(attempt => attempt.id === original.attemptId);
+      } else {
+        const current = this.current(actor.workspaceId, actor.issueId), role = current && this.activeRole(current);
+        const draft = original.draftId ? await this.drafts.read(original.draftId) : undefined;
+        const frozenDraft = z.object({ draft: draftSchema }).parse(original.snapshot).draft;
+        if (!current || !role || role.chain !== original.chain || role.agentId !== original.agentId || role.draftId !== original.draftId || current.contract.binding.revision !== original.revision || !draft || JSON.stringify(draft) !== JSON.stringify(frozenDraft)) {
+          throw new DraftConflictError("Original engineering checkpoint changed before repair");
+        }
+        const bound = this.execution(current, { ...actor, kind: "task", agentId: original.agentId, attemptId: original.attemptId });
+        if (bound.attemptId === original.attemptId && bound.agentId === original.agentId && bound.repositoryPath === frozen.repository_path) execution = bound;
+        registeredPath = current.repositoryPath;
+      }
+      if (!execution) throw new DraftConflictError("Original execution has no recorded repository binding");
+      return { observation_id: original.observationId, case_id: z.object({case_id:text}).parse(request.payload).case_id,
+        snapshot_hash: original.snapshotHash, receipt_hash: original.receiptHash, kernel_version: original.kernelVersion ?? null, host_version: original.hostVersion ?? null, workspace_id: original.workspaceId, issue_id: original.issueId,
+        agent_id: original.agentId, attempt_id: original.attemptId, chain: original.chain, revision: original.revision, sequence: original.sequence,
+        registered_repository_path: registeredPath, execution_repository_path: execution.repositoryPath, mode: execution.mode, code_version: frozen.code_version };
     }
     if (action === "repair-observation-ack") {
       if (actor.kind !== "host") throw new Error("Only the host can acknowledge Admin observation delivery");

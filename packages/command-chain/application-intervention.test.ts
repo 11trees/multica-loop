@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -19,7 +19,7 @@ let directory: string, repository: string, database: string, definition: string,
 const invoke = (actor: ApplicationRequest["actor"], action: ApplicationRequest["action"], payload?: unknown) => app.invoke({ actor, action, payload });
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), "intervention-host-")); repository = join(directory, "repository"); database = join(directory, "state.sqlite");
-  execFileSync("git", ["init", "-q", repository]);
+  execFileSync("git", ["init", "-q", repository]); repository = await realpath(repository);
   const git = (...args: string[]) => execFileSync("git", ["-C", repository, ...args], { stdio: "ignore" });
   git("config", "user.name", "Intervention fixture"); git("config", "user.email", "fixture@example.invalid");
   await writeFile(join(repository, "README.md"), "Original source\n"); git("add", "."); git("commit", "-qm", "Original fixture");
@@ -84,4 +84,44 @@ it("revalidates the original checkpoint and immutable receipt identity on later 
  expect(await invoke(owner,"read")).toMatchObject({agent_action:"end_execution",intervention:{summary:body.summary}});
  const db=new DatabaseSync(database),row=db.prepare("SELECT payload FROM engineering_intervention").get()!,record=JSON.parse(String(row.payload));record.phase="fabricated-phase";db.prepare("UPDATE engineering_intervention SET payload=?").run(JSON.stringify(record));db.close();
  await expect(invoke(human,"overview")).rejects.toThrow(/identity or receipt changed/);
+});
+
+it("validates the acknowledged original Direct source without granting ownership or probing a removed directory", async () => {
+  await direct(); await invoke(owner, "direct-run"); await invoke(owner, "intervention-request", body);
+  const [original] = await invoke({kind:"coordinator"}, "repair-observations") as Array<{observationId:string;snapshotHash:string}>;
+  const pin = {observation_id:original!.observationId, snapshot_hash:original!.snapshotHash, case_id:"REPAIR-original"};
+  await expect(invoke(host,"repair-source",pin)).rejects.toThrow(/acknowledged Admin Case/);
+  await invoke(host,"repair-observation-ack",pin);
+  for (const actor of [owner,human,{...owner,kind:"daemon" as const},{kind:"coordinator" as const}]) {
+    await expect(invoke(actor,"repair-source",pin)).rejects.toThrow(/Only the host/);
+  }
+  const expected = {observation_id:pin.observation_id,case_id:pin.case_id,attempt_id:owner.attemptId,registered_repository_path:repository,execution_repository_path:repository,mode:"in_place"};
+  expect(await invoke(host,"repair-source",pin)).toMatchObject(expected);
+  for (const change of [{case_id:"REPAIR-foreign"},{snapshot_hash:"changed"},{observation_id:"changed"},{workspace_path:"/invented"}]) {
+    await expect(invoke(host,"repair-source",{...pin,...change})).rejects.toThrow();
+  }
+  await rm(repository,{recursive:true});
+  app.close();app=new EngineeringApplication(database,definition);
+  expect(await invoke(host,"repair-source",pin)).toMatchObject(expected);
+  expect(await invoke(host,"execution-permission")).toEqual({allowed:false});
+  const db = new DatabaseSync(database),row=db.prepare("SELECT payload FROM direct_contract").get()!,record=JSON.parse(String(row.payload));
+  record.version++;db.prepare("UPDATE direct_contract SET payload=?").run(JSON.stringify(record));db.close();
+  await expect(invoke(host,"repair-source",pin)).rejects.toThrow(/checkpoint changed/);
+});
+
+it("pins the exact surrendered YAML draft and the original runtime binding", async () => {
+  await invoke(human,"configure",{expected_revision:0,agent_id:agentId,repository_path:repository,sources:[{key:"original",kind:"acceptance",description:"Original",oracle:"Observe source",sourceRef:"README.md"}]});
+  await invoke({...owner,kind:"daemon"},"bind",{work_dir:repository,mode:"in_place",overlays:[]});
+  await invoke(owner,"start");await invoke(owner,"intervention-request",body);
+  const [original]=await invoke({kind:"coordinator"},"repair-observations") as Array<{observationId:string;snapshotHash:string;draftId:string}>;
+  const pin={observation_id:original!.observationId,snapshot_hash:original!.snapshotHash,case_id:"REPAIR-yaml"};
+  await invoke(host,"repair-observation-ack",pin);
+  expect(await invoke(host,"repair-source",pin)).toMatchObject({chain:"verification",attempt_id:owner.attemptId,execution_repository_path:repository});
+  const db=new DatabaseSync(database),row=db.prepare("SELECT payload FROM chain_drafts WHERE id=?").get(original!.draftId)!,draft=JSON.parse(String(row.payload));
+  const binding=db.prepare("SELECT payload FROM engineering_execution").get()!;
+  db.prepare("DELETE FROM engineering_execution").run();
+  await expect(invoke(host,"repair-source",pin)).rejects.toThrow(/bind its actual repository/);
+  db.prepare("INSERT INTO engineering_execution(workspace_id,issue_id,revision,agent_id,attempt_id,payload) VALUES(?,?,?,?,?,?)").run(human.workspaceId,human.issueId,1,agentId,owner.attemptId,String(binding.payload));
+  draft.sequence++;db.prepare("UPDATE chain_drafts SET payload=? WHERE id=?").run(JSON.stringify(draft),original!.draftId);db.close();
+  await expect(invoke(host,"repair-source",pin)).rejects.toThrow(/checkpoint changed/);
 });

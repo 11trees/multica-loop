@@ -97,3 +97,23 @@ verification still require migration. Shared paths attached to different project
 remote physical recovery, stale-claim cleanup after runtime reassignment, other
 provider lifecycle adapters and legacy unrecorded executions need their own proofs.
 A terminal task or an empty set of known allocations cannot replace missing facts.
+
+### Original repair source
+
+The private business worker's host-only `repair-source` action takes the original
+`observation_id`, acknowledged `case_id`, and `snapshot_hash`. It verifies the
+immutable receipt, exact delivery acknowledgement and current surrendered
+checkpoint. Direct requires the same active attempt and unfinished contract;
+YAML requires the original role, revision and exact saved draft. Both require the
+original daemon repository binding. Callers cannot provide replacement paths.
+The result distinguishes registered repository from actual execution directory,
+and retains the original code, kernel and API versions and receipt hash.
+
+This is a read-only source description, not a takeover receipt. It reads saved
+bindings even if cleanup removed the directory; it neither recreates the path
+nor proves it still exists. The Go takeover coordinator must additionally verify
+the native task dispatch claim, project/resource mapping, source-version
+authority and current management lease before acquiring a fence, and revalidate
+after draining. The coordinator is not connected yet. Observation delivery still
+preserves historical faults even when their native claim is no longer current;
+historical evidence alone cannot authorize a new repair.

@@ -127,6 +127,18 @@ export class InterventionStore {
     if (saved.case_id !== value.case_id || saved.snapshot_hash !== value.snapshot_hash) throw new DraftConflictError("Observation cannot be linked to another Admin Case");
     return { acknowledged: true };
   }
+  repairSource(workspaceId: string, issueId: string, input: unknown) {
+    const expected = z.strictObject({ observation_id: text, case_id: text, snapshot_hash: text }).parse(input);
+    const record = this.pending(workspaceId, issueId);
+    if (!record || record.observationId !== expected.observation_id || record.snapshotHash !== expected.snapshot_hash) {
+      throw new DraftConflictError("Repair source no longer matches the original observation");
+    }
+    const delivery = this.db.prepare("SELECT case_id,snapshot_hash FROM engineering_intervention_delivery WHERE observation_id=?").get(record.observationId);
+    if (delivery?.case_id !== expected.case_id || delivery.snapshot_hash !== record.snapshotHash) {
+      throw new DraftConflictError("Repair source requires the exact acknowledged Admin Case");
+    }
+    return record;
+  }
   observations() { return this.db.prepare("SELECT payload FROM engineering_intervention source WHERE NOT EXISTS (SELECT 1 FROM engineering_intervention_delivery delivery WHERE delivery.observation_id=json_extract(source.payload,'$.observationId')) ORDER BY rowid LIMIT 25").all().map(row => this.parse(row.payload)); }
 }
 
