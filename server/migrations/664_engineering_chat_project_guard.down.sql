@@ -1,0 +1,2 @@
+DROP TRIGGER engineering_chat_project_mutation ON chat_session;
+DROP FUNCTION engineering_guard_chat_project_mutation();

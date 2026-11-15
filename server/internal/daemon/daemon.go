@@ -7912,6 +7912,23 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		return TaskResult{}, fmt.Errorf("refusing to spawn agent: task has no workspace_id (task_id=%s)", task.ID)
 	}
 
+	var ownershipJournal *engineeringProcessJournal
+	if task.EngineeringOwnership {
+		ownershipJournal = &engineeringProcessJournal{client: d.client, task: task, ctx: ctx, provider: provider}
+		if err := ownershipJournal.begin(); err != nil {
+			_ = ownershipJournal.end()
+			return TaskResult{}, asEnvironmentSetupFailure(err)
+		}
+		// Registered before preparation: this runs after all worktree and env defers.
+		defer func() {
+			if err := ownershipJournal.end(); err != nil {
+				taskResult.Status = "blocked"
+				taskResult.FailureReason = "cleanup_unconfirmed"
+				taskResult.Comment = "Execution cleanup was not durably acknowledged"
+				returnErr = nil
+			}
+		}()
+	}
 	prepareTimeout := d.effectiveTaskPrepareTimeout()
 	prepareCtx, cancelPrepare := context.WithTimeoutCause(ctx, prepareTimeout, errTaskPrepareTimeout)
 	prepareComplete := false
@@ -8662,6 +8679,15 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// other errors use its existing FailTask + taskfailure.Classify path with the same
 	// "start task failed: <…>" string and the same failure_reason
 	// taxonomy as before — see MUL-2946 for the classifier contract.
+	if ownershipJournal != nil {
+		mode := "in_place"
+		if env.LocalWorktree != nil {
+			mode = "worktree"
+		}
+		if err := ownershipJournal.workspace(env.WorkDir, mode); err != nil {
+			return TaskResult{}, asEnvironmentSetupFailure(err)
+		}
+	}
 	var taskCapabilities []string
 	if provider == "pi" || provider == "omp" {
 		taskCapabilities = append(taskCapabilities, protocol.DaemonCapabilityPiProcessCleanupV1)
@@ -8898,11 +8924,10 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		CodexVersion:   codexVersion,
 		BuiltinRuntime: !usesCustomProfileCommand,
 	}
-	if task.EngineeringChain != "" && provider == "codex" {
-		journal := &engineeringProcessJournal{client: d.client, task: task, ctx: ctx}
-		backendConfig.OnProcessStarting = journal.beforeStart
-		backendConfig.OnProcessStarted = journal.started
-		backendConfig.OnProcessExited = journal.exited
+	if ownershipJournal != nil && provider == "codex" {
+		backendConfig.OnProcessStarting = ownershipJournal.beforeStart
+		backendConfig.OnProcessStarted = ownershipJournal.started
+		backendConfig.OnProcessExited = ownershipJournal.exited
 	}
 	if hermesOverlayActive {
 		// Retire an owner left by a crashed/interrupted daemon before it can
@@ -9168,6 +9193,9 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	defer stopUsageFlush()
 	if err := d.bindEngineeringEnvironment(ctx, task, env, provider); err != nil {
 		return TaskResult{}, asEnvironmentSetupFailure(err)
+	}
+	if ownershipJournal != nil {
+		ownershipJournal.invoked.Store(true)
 	}
 	result, tools, err := d.executeAndDrain(ctx, backend, prompt, execOpts, taskLog, task.ID, env.CodexHome, &msgSeq)
 	if err != nil {

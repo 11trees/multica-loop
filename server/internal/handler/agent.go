@@ -398,6 +398,7 @@ type TaskCancellationActor struct {
 
 type AgentTaskResponse struct {
 	EngineeringChain      string `json:"engineering_chain,omitempty"`
+	EngineeringOwnership  bool   `json:"engineering_ownership,omitempty"`
 	EngineeringRepository string `json:"engineering_repository,omitempty"`
 	EngineeringCommit     string `json:"engineering_commit,omitempty"`
 	// Restricted marks a run on an issue in a private project the caller

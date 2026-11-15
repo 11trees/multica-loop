@@ -1,73 +1,99 @@
-# Native engineering process ownership
+# Native engineering execution ownership
 
-LoopWork's repair takeover drains physical workspace writers before granting an
-owned repair anchor (`repair-takeover.ts` and `execution-processes.ts`). Native
-Multica task termination, cancellation and slot availability do not establish
-that physical fact. This journal supplies the prerequisite for that takeover;
-it does not grant repair write permission by itself.
+LoopWork's repair takeover drains workspace writers before granting an owned
+repair anchor (`repair-takeover.ts` and `execution-processes.ts`). Native task
+termination, cancellation and slot availability do not establish that fact. The
+native ownership journal and project admission guards supply prerequisites;
+Admin takeover and independent repair verification remain unconnected.
 
-## Connected lifecycle
+## Task preparation and cleanup
 
-Engineering Codex runs now use three synchronous SDK boundaries:
+An engineering-enabled local runtime receives `engineering_ownership` for tasks
+whose native issue or chat belongs to a project. The daemon registers an execution
+controller before preparing a workdir, with its actual daemon PID, birth marker,
+host boot identity and exact native runtime/dispatch claim. PostgreSQL freezes the
+project and original issue or chat scope. A unique live scope prevents replacement
+claims from preparing another workspace until the old controller is quiesced.
+Independent issues and chats can still run concurrently.
 
-1. Before `cmd.Start`, reserve a unique physical allocation against the exact
-   native task claim and its previously acknowledged repository binding.
-2. After starting the owned process group, persist the real PID, group ID and
-   birth marker before initialization or prompt delivery.
-3. After the SDK reaps and confirms the whole group has exited, persist the exit
-   fact before publishing the native result. A missing exit acknowledgement
-   produces `cleanup_unconfirmed`; the daemon maps it to a blocked native result.
+Once preparation finishes, the controller binds the actual directory and execution
+mode before native StartTask. Its final receipt runs after worktree finalization,
+environment cleanup and path-lock release. A provider exit receipt alone cannot
+close that controller. Missing cleanup acknowledgements produce a blocked native
+result with `cleanup_unconfirmed`.
 
-Each physical retry reserves a new allocation. The daemon uses its control-plane
-credential for `/api/daemon/tasks/{taskId}/engineering-process`; a task token cannot
-write these records. Go derives workspace, issue, agent, runtime and claim identity
-from native records. Request bodies cannot supply a replacement runtime or actor.
-The daemon captures the host's boot-session identity locally. Go keeps credentials
-outside the private protocol worker.
+Protocol admission is checked through a readonly host operation before preparation
+or reservation and after persisting a real PID. Original terminal interventions
+continue to block new starts while cleanup receipts remain writable.
 
-Two business-side SQLite tables retain repository bindings and process allocations.
-They are independent of Admin's investigation-process allocation. Bindings freeze
-the actual directory, execution mode and project for a native claim. A PID/birth
-identity cannot be replaced. Allocation IDs and exit receipts are immutable, and
-an unconfirmed allocation blocks new provider starts for the same native issue,
-including replacement claims. Other issues are not globally serialized by this
-journal.
+The daemon uses its control-plane credential for
+`/api/daemon/tasks/{taskId}/engineering-controller`; a task token cannot write these
+records. Go projects native task, runtime, workspace and claim identity, rechecking
+the native claim under a transaction lock. Bodies cannot supply replacement
+runtime or actor identities. Credentials stay outside the private protocol worker.
 
-Protocol surrender blocks new reservations and PID binding, while permitting the
-same runtime to record physical cleanup afterward. Cancellation can also report
-cleanup after the native task becomes terminal, provided its claim remains current.
-The completion and verified-binding checks reject pending physical allocations.
-An unrecorded older run is not assigned invented process metadata.
+## Codex process facts
 
-## Verification and limits
+Each physical Codex launch uses synchronous SDK boundaries:
 
-Store tests cover binding and project identity, claim replacement, immutable birth
-identity, unknown exit, idempotent cleanup, host/claim isolation and surrender.
-Application tests exercise cleanup after Direct surrender without releasing its
-original intervention. PostgreSQL-backed handler tests check control-plane identity,
-stale claims, forged runtime fields and cleanup after native cancellation.
+1. Reserve a unique allocation before `cmd.Start`.
+2. Persist the actual PID, group ID and birth marker before initialization or
+   prompt delivery.
+3. Confirm whole-group exit and persist the exit receipt before native settlement.
 
-An isolated native daemon fixture runs a test-created Codex executable through the
-real SDK and bundled worker. It verifies repository binding before reservation,
-PID acknowledgement before initialization, normal exit receipts, rejected reservation
-without prompt delivery and lost exit acknowledgement retaining a blocked allocation.
-SDK fixtures independently check callback ordering, rejected pre-spawn reservation,
-rejected PID binding and missing exit receipt. No installed provider or account is
-resolved. macOS execution is verified; Linux process identity is compiled separately.
+PostgreSQL retains controllers and their allocations in `engineering_run_guard`
+and `engineering_run_process`. A rejected bind still saves the actual PID when
+cancellation, protocol surrender or a repair fence won the launch race, then denies the acknowledgement
+so the SDK stops the child. Exit and final cleanup receipts remain writable after
+native cancellation or project fencing, while the same native claim remains valid.
+A new claim cannot rewrite old process identities or cleanup facts.
 
-The complete kernel passed 257 tests across 24 files. All 43 PostgreSQL-backed
-engineering handler tests passed with the race detector. Native daemon, SDK and
-Admin regression fixtures passed, as did kernel typecheck/lint and Go vet.
-The two browser scenarios passed in 50.5 seconds against the managed API: each
-reserved a known no-spawn allocation, proved native task termination and an
-unconfirmed cleanup could not grant Done, then recorded actual no-spawn cleanup
-without weakening the original Admin intervention. Their process and binding
-records were removed by scoped teardown. These browser allocations did not run
-a provider; the actual SDK lifecycle is exercised by the separate native fixture.
+No-spawn cleanup is explicit and cannot contradict a recorded PID. An unknown
+allocation or unsupported invoked provider remains unconfirmed. Native idle gates
+include these controllers even after the corresponding task becomes terminal;
+configured engineering completion also checks this boundary.
 
-The journal currently covers the Codex protocol path, not all provider families or
-legacy unrecorded runs. Remote physical recovery, stale-claim cleanup after runtime
-reassignment, project-wide admission fences, draining other writers, takeover
-revocation and independent repair verification still require migration. A terminal
-task or a journal with no known allocation cannot stand in for those missing proofs.
-Admin workspace takeover remains unconnected until those ownership checks exist.
+The existing `/engineering-process` API and its business SQLite records remain
+available at the public API boundary. Updated native daemons write lifecycle facts
+only through the PostgreSQL controller API. Business SQLite still owns repository
+bindings and original protocol/intervention state; this is not a dual-write or
+fallback execution path. Completion checks both the protocol and native ownership.
+
+## Project admission fences
+
+`engineering_repair_fence` stores a project-scoped management owner, original
+observation/source references, generation and phase. Admission obtains a key-share
+lock on the native project row before reading the fence. A trusted acquirer must
+lock that row for update, insert the fence and commit **before** cancelling tasks
+or draining controllers. Waiting admissions then read the committed fence.
+
+Database guards reject dispatched/running admission, new execution controllers,
+project changes, project-resource changes and issue/chat project reassignment while
+a fence exists. Logical task cancellation and physical cleanup can still finish.
+The fence does not yet have a connected Admin action that acquires, drains,
+validates or releases it. Its presence or a quiesced controller cannot authorize
+repair writes or business completion.
+
+## Verification and remaining work
+
+PostgreSQL-backed handler fixtures cover control-plane identity, strict native
+claim binding, project chats, replacement claims, immutable PID/cleanup facts,
+no-spawn receipts, missing physical exit, completion after final controller cleanup,
+and project mutation guards. A concurrency fixture observes the actual PostgreSQL
+lock wait and proves admission rejects a fence committed while it waited.
+
+The native daemon fixture runs a test-created Codex executable through the real SDK
+and bundled worker. It checks controller admission, actual-workspace binding,
+pre-prompt PID acknowledgement, rejected reservations/bindings and lost exit/final
+cleanup acknowledgements. SDK fixtures separately test process-group shutdown and
+callback ordering. No installed provider or account is resolved by these fixtures.
+The existing browser intervention scenarios exercise the retained public process
+API with known no-spawn allocations; they do not run a provider or prove Admin
+workspace takeover.
+
+Independent Admin action requests, source/version validation, cancellation and
+draining of every project writer, takeover revocation and separate repair
+verification still require migration. Shared paths attached to different projects,
+remote physical recovery, stale-claim cleanup after runtime reassignment, other
+provider lifecycle adapters and legacy unrecorded executions need their own proofs.
+A terminal task or an empty set of known allocations cannot replace missing facts.

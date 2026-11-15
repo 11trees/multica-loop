@@ -30,7 +30,7 @@ func TestEngineeringNativeCodexPhysicalLifecycle(t *testing.T) {
 	if _, err = os.Stat(worker); err != nil {
 		t.Skip("Build command-chain before the bundled-worker integration")
 	}
-	for _, failure := range []string{"none", "reserve", "exit"} {
+	for _, failure := range []string{"none", "reserve", "bind", "exit", "end"} {
 		t.Run(failure, func(t *testing.T) {
 			home := t.TempDir()
 			for _, key := range []string{"HOME", "USERPROFILE", "CODEX_HOME"} {
@@ -71,7 +71,8 @@ while read line;do :;done
 			// Derive the exact native claim in the same units as the real API.
 			parsed, _ := time.Parse(time.RFC3339Nano, claim)
 			nativeActor["attemptId"] = taskID + ":" + strconv.FormatInt(parsed.UnixMicro(), 10)
-			operations := make(chan string, 4)
+			operations := make(chan string, 20)
+			processPhase, controllerID := "", ""
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				switch {
@@ -90,7 +91,7 @@ while read line;do :;done
 						return
 					}
 					_, _ = w.Write(result)
-				case strings.HasSuffix(r.URL.Path, "/engineering-process"):
+				case strings.HasSuffix(r.URL.Path, "/engineering-controller"):
 					var payload map[string]any
 					if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 						t.Error(err)
@@ -99,33 +100,69 @@ while read line;do :;done
 					if payload["dispatched_at"] != claim {
 						t.Error("Physical claim changed")
 					}
-					delete(payload, "dispatched_at")
-					payload["runtime_id"] = runtimeID
 					op, _ := payload["operation"].(string)
 					operations <- op
-					if op == "exit" && failure == "exit" {
-						http.Error(w, "fixture acknowledgement rejected", 409)
-						return
+					if op == "begin" {
+						controllerID, _ = payload["controller_id"].(string)
 					}
-					if op == "reserve" {
-						payload["provider"] = "codex"
+					if controllerID == "" || controllerID != payload["controller_id"] || payload["host_id"] == "" {
+						t.Error("Controller identity changed")
 					}
-					result, err := app.Call(ctx, map[string]any{"actor": nativeActor, "action": "process", "payload": payload})
-					if err != nil {
-						t.Error(err)
-						http.Error(w, "physical fact rejected", 409)
-						return
-					}
-					if op == "reserve" && failure == "reserve" {
-						http.Error(w, "fixture acknowledgement rejected", 409)
-						return
-					}
-					if op == "bind" {
-						if err = os.WriteFile(marker, []byte("bound"), 0600); err != nil {
+					switch op {
+					case "begin":
+						if payload["provider"] != "codex" || payload["pid"] != float64(os.Getpid()) || payload["marker"] == "" {
+							t.Error("Missing native controller identity")
+						}
+						_, _ = w.Write([]byte(`{"admitted":true}`))
+					case "workspace":
+						root, _ := filepath.EvalSymlinks(repo)
+						actual, _ := filepath.EvalSymlinks(payload["workspace_path"].(string))
+						if actual != root || payload["mode"] != "in_place" {
+							t.Error("Actual workspace was not bound before launch")
+						}
+						_, _ = w.Write([]byte(`{"bound":true}`))
+					case "process-reserve":
+						processPhase = "launching"
+						if failure == "reserve" {
+							http.Error(w, "fixture acknowledgement lost", 409)
+							return
+						}
+						_, _ = w.Write([]byte(`{"reserved":true,"status":"launching"}`))
+					case "process-bind":
+						processPhase = "running"
+						if payload["pid"] != payload["group_id"] || payload["marker"] == "" {
+							t.Error("Missing physical group identity")
+						}
+						if failure == "bind" {
+							http.Error(w, "fixture admission closed after PID recorded", 409)
+							return
+						}
+						if err := os.WriteFile(marker, []byte("bound"), 0600); err != nil {
 							t.Error(err)
 						}
+						_, _ = w.Write([]byte(`{"bound":true}`))
+					case "process-exit":
+						if failure == "exit" {
+							http.Error(w, "fixture acknowledgement lost", 409)
+							return
+						}
+						if payload["exit_confirmed"] != true {
+							t.Error("Fixture did not physically stop")
+						}
+						processPhase = "exited"
+						_, _ = w.Write([]byte(`{"exited":true}`))
+					case "end":
+						if failure == "end" {
+							http.Error(w, "fixture cleanup acknowledgement lost", 409)
+							return
+						}
+						if payload["no_provider_started"] != (failure == "reserve") {
+							t.Error("Controller cleanup invented its no-spawn fact")
+						}
+						_ = json.NewEncoder(w).Encode(map[string]any{"recorded": true, "quiesced": processPhase == "exited"})
+					default:
+						t.Errorf("Unknown controller operation %s", op)
 					}
-					_, _ = w.Write(result)
 				default:
 					_, _ = w.Write([]byte(`{}`))
 				}
@@ -135,51 +172,55 @@ while read line;do :;done
 			d := &Daemon{client: NewClient(server.URL), logger: logger, localPathLocks: NewLocalPathLocker(), workspaces: make(map[string]*workspaceState), activeEnvRoots: make(map[string]int), activeStores: make(map[string]int), deletingStores: make(map[string]bool), cfg: Config{DaemonID: "fixture-daemon", WorkspacesRoot: t.TempDir(), AgentTimeout: 15 * time.Second, ServerBaseURL: server.URL, Agents: map[string]AgentEntry{"codex": {Path: fake}}}}
 			d.activeStoresCond = sync.NewCond(&d.activeStoresMu)
 			resource, _ := json.Marshal(localDirectoryRef{LocalPath: repo, DaemonID: d.cfg.DaemonID, ExecutionMode: localDirectoryModeInPlace})
-			task := Task{ID: taskID, WorkspaceID: workspaceID, IssueID: issueID, RuntimeID: runtimeID, AgentID: agentID, AuthToken: "mat_fixture", EngineeringChain: "direct", EngineeringRepository: repo, EngineeringCommit: strings.TrimSpace(string(commit)), DispatchedAt: claim, Agent: &AgentData{ID: agentID, Name: "Fixture", CustomEnv: map[string]string{"PHYSICAL_BINDING_ACK": marker, "PROMPT_CAPTURE": capture}}, ProjectResources: []ProjectResourceData{{ID: uuid.NewString(), ResourceType: localDirectoryResourceType, ResourceRef: resource}}}
+			task := Task{ID: taskID, WorkspaceID: workspaceID, IssueID: issueID, RuntimeID: runtimeID, AgentID: agentID, AuthToken: "mat_fixture", EngineeringOwnership: true, EngineeringChain: "direct", EngineeringRepository: repo, EngineeringCommit: strings.TrimSpace(string(commit)), DispatchedAt: claim, Agent: &AgentData{ID: agentID, Name: "Fixture", CustomEnv: map[string]string{"PHYSICAL_BINDING_ACK": marker, "PROMPT_CAPTURE": capture}}, ProjectResources: []ProjectResourceData{{ID: uuid.NewString(), ResourceType: localDirectoryResourceType, ResourceRef: resource}}}
 			result, runErr := d.runTask(ctx, task, "codex", 0, logger)
-			if failure == "reserve" {
-				if runErr == nil {
-					t.Fatal("Rejected reservation launched a provider")
-				}
-				if _, err = os.Stat(capture); !os.IsNotExist(err) {
-					t.Fatal("Rejected reservation delivered a prompt")
-				}
-				return
-			}
-			if runErr != nil {
+			if runErr != nil && failure != "reserve" && failure != "bind" {
 				t.Fatalf("Native fixture failed: %+v %v", result, runErr)
 			}
 			expected := "completed"
-			if failure == "exit" {
+			if failure == "exit" || failure == "end" {
 				expected = "blocked"
 			}
-			if failure == "exit" && result.FailureReason != "cleanup_unconfirmed" {
-				t.Fatalf("Missing native cleanup barrier: %+v", result)
+			if failure == "bind" || failure == "reserve" {
+				expected = ""
+				if runErr == nil {
+					t.Fatal("Rejected launch did not fail its native execution")
+				}
 			}
 			if result.Status != expected {
 				t.Fatalf("Native result=%+v; expected %s", result, expected)
 			}
-			for _, want := range []string{"reserve", "bind", "exit"} {
-				select {
-				case got := <-operations:
-					if got != want {
-						t.Fatalf("Process lifecycle=%s, expected %s", got, want)
-					}
-				default:
-					t.Fatalf("Native result preceded %s receipt", want)
+			if expected == "blocked" && result.FailureReason != "cleanup_unconfirmed" {
+				t.Fatalf("Missing native cleanup barrier: %+v", result)
+			}
+			if failure == "reserve" || failure == "bind" {
+				if _, err = os.Stat(capture); !os.IsNotExist(err) {
+					t.Fatal("Rejected launch delivered a prompt")
 				}
 			}
-			scope, err := app.Call(ctx, map[string]any{"action": "process-scope", "actor": map[string]any{"kind": "host", "workspaceId": workspaceID, "issueId": issueID}})
-			if err != nil {
-				t.Fatal(err)
+			want := []string{"begin", "workspace", "process-reserve", "process-bind", "process-exit", "end"}
+			if failure == "reserve" {
+				want = []string{"begin", "workspace", "process-reserve", "process-exit", "end"}
 			}
-			status := "exited"
-			if failure == "exit" {
-				status = "running"
+			for _, op := range want {
+				select {
+				case got := <-operations:
+					if got != op {
+						t.Fatalf("Lifecycle=%s, expected %s", got, op)
+					}
+				default:
+					t.Fatalf("Native result preceded %s receipt", op)
+				}
 			}
-			if !strings.Contains(string(scope), `"status":"`+status+`"`) {
-				t.Fatalf("Physical journal lost %s allocation: %s", status, scope)
+			select {
+			case extra := <-operations:
+				t.Fatalf("Unexpected lifecycle operation %s", extra)
+			default:
 			}
+			if failure == "exit" && processPhase != "running" {
+				t.Fatal("Lost exit acknowledgement released its allocation")
+			}
+
 		})
 	}
 }

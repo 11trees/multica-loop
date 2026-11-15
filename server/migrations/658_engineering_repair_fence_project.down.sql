@@ -1,0 +1,1 @@
+DROP INDEX engineering_repair_fence_project_idx;

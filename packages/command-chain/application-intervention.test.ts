@@ -31,6 +31,8 @@ async function direct() {
   await invoke({ ...owner, kind: "daemon" }, "bind", { work_dir: repository, mode: "in_place", overlays: [] });
 }
 it("surrenders Direct only after RUN, persists one exact terminal receipt and blocks all advancement after reopening", async () => {
+  expect(await invoke(host,"execution-permission")).toEqual({allowed:true});
+  await expect(invoke(owner,"execution-permission")).rejects.toThrow(/native host/);
   await direct(); await expect(invoke(owner, "intervention-request", body)).rejects.toThrow(/Direct RUN/);
   await invoke(owner, "direct-run"); const result = await invoke(owner, "intervention-request", body);
   expect(result).toMatchObject({ submitted: true, owner: "admin", agent_action: "end_execution", intervention: { status: "pending_admin", chain: "direct", phase: "run", ...body } });
@@ -40,6 +42,7 @@ it("surrenders Direct only after RUN, persists one exact terminal receipt and bl
   for (const action of ["direct-submit", "direct-run", "prepare-run", "selection", "completion", "configure"] as const) {
     await expect(invoke(action === "completion" ? host : owner, action, { summary: "Do not complete" })).rejects.toThrow(/surrendered/);
   }
+  expect(await invoke(host,"execution-permission")).toEqual({allowed:false});
   expect(await invoke(human, "overview")).toMatchObject({ status: "waiting_for_intervention", direct: { result: null }, intervention: { summary: body.summary } });
   expect(await invoke({ kind: "coordinator" }, "continuations")).toEqual([]);
   const observations = await invoke({ kind: "coordinator" }, "repair-observations");

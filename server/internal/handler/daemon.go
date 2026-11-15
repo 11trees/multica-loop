@@ -2856,6 +2856,14 @@ func claimResponseAgentIdentityMatches(resp AgentTaskResponse) bool {
 func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQueue, runtime db.AgentRuntime, runtimeID, runtimeWorkspaceID string) (resp AgentTaskResponse, deliveredCommentIDs []pgtype.UUID, issueSnapshot []byte, agentSkillCount, builtinSkillCount int, failure *claimBuildFailure) {
 	// Build response with fresh agent data (name + skills + custom_env + custom_args).
 	resp = taskToResponse(*task, runtimeWorkspaceID)
+	if h.EngineeringWorker != nil && runtime.RuntimeMode == "local" {
+		_, err := h.Queries.GetEngineeringTaskProject(r.Context(), db.GetEngineeringTaskProjectParams{TaskID: task.ID, WorkspaceID: parseUUID(runtimeWorkspaceID)})
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return resp, nil, nil, 0, 0, h.rejectClaimSourceLoad(r.Context(), task, err, "engineering project", "")
+		}
+		resp.EngineeringOwnership = err == nil
+	}
+
 	if err := (&service.IssueWakeupService{Tasks: h.TaskService}).CheckClaim(r.Context(), *task); err != nil {
 		if !errors.Is(err, service.ErrWakeupForbidden) {
 			return resp, nil, nil, 0, 0, h.rejectClaimSourceLoad(r.Context(), task, err, "wakeup", resp.WakeupID)

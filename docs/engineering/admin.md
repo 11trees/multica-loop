@@ -162,8 +162,10 @@ that their Cases, observations, attempts and scheduling records are removed.
 
 ![Verification repair Case at 390 pixels](assets/admin-case-verification-390.png)
 
-[Native process ownership](process-ownership.md) now records Codex allocation,
-pre-prompt birth identity and physical exit as prerequisites for takeover.
+[Native execution ownership](process-ownership.md) now records preparation-to-cleanup
+controllers, original issue/chat scope, Codex birth/exit facts and project admission
+guards in PostgreSQL as prerequisites for takeover. Admin fence acquisition and
+writer draining are not connected yet.
 Scoped workspace takeover, repair workspace/build actions, independent diagnosis,
 repair verification, external dependency probes, verified business handoff and
 runtime updates remain unconnected. Real-provider, Linux runtime and packaged

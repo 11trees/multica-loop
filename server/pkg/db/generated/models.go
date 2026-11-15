@@ -801,6 +801,61 @@ type DingtalkGroupRoute struct {
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 }
 
+type EngineeringRepairFence struct {
+	WorkspaceID      pgtype.UUID        `json:"workspace_id"`
+	ProjectID        pgtype.UUID        `json:"project_id"`
+	CaseID           string             `json:"case_id"`
+	AttemptID        string             `json:"attempt_id"`
+	Generation       int64              `json:"generation"`
+	OwnerID          string             `json:"owner_id"`
+	SupervisionToken int64              `json:"supervision_token"`
+	IntentRevision   int64              `json:"intent_revision"`
+	ObservationID    string             `json:"observation_id"`
+	IssueID          pgtype.UUID        `json:"issue_id"`
+	SourceAttemptID  string             `json:"source_attempt_id"`
+	SourceRevision   int64              `json:"source_revision"`
+	SnapshotHash     string             `json:"snapshot_hash"`
+	WorkspacePath    string             `json:"workspace_path"`
+	Phase            string             `json:"phase"`
+	Targets          []byte             `json:"targets"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+}
+
+type EngineeringRunGuard struct {
+	ControllerID      pgtype.UUID        `json:"controller_id"`
+	WorkspaceID       pgtype.UUID        `json:"workspace_id"`
+	ProjectID         pgtype.UUID        `json:"project_id"`
+	TaskID            pgtype.UUID        `json:"task_id"`
+	RuntimeID         pgtype.UUID        `json:"runtime_id"`
+	ClaimAt           pgtype.Timestamptz `json:"claim_at"`
+	Provider          string             `json:"provider"`
+	HostID            string             `json:"host_id"`
+	ControllerPid     int64              `json:"controller_pid"`
+	ControllerMarker  string             `json:"controller_marker"`
+	Phase             string             `json:"phase"`
+	WorkspacePath     pgtype.Text        `json:"workspace_path"`
+	ExecutionMode     pgtype.Text        `json:"execution_mode"`
+	NoProviderStarted pgtype.Bool        `json:"no_provider_started"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	ScopeKind         pgtype.Text        `json:"scope_kind"`
+	ScopeID           pgtype.UUID        `json:"scope_id"`
+}
+
+type EngineeringRunProcess struct {
+	AllocationID pgtype.UUID        `json:"allocation_id"`
+	ControllerID pgtype.UUID        `json:"controller_id"`
+	WorkspaceID  pgtype.UUID        `json:"workspace_id"`
+	Phase        string             `json:"phase"`
+	Pid          pgtype.Int8        `json:"pid"`
+	Marker       pgtype.Text        `json:"marker"`
+	GroupID      pgtype.Int8        `json:"group_id"`
+	ExitPid      pgtype.Int8        `json:"exit_pid"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+}
+
 type Feedback struct {
 	ID          pgtype.UUID        `json:"id"`
 	UserID      pgtype.UUID        `json:"user_id"`

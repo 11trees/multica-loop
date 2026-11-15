@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX CONCURRENTLY engineering_repair_fence_project_idx ON engineering_repair_fence(workspace_id,project_id);

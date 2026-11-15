@@ -2,7 +2,10 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -12,13 +15,68 @@ import (
 // One journal is shared by sequential SDK launches and fresh-session retries.
 // Each physical launch reserves a new ID before cmd.Start, not after a PID exists.
 type engineeringProcessJournal struct {
-	client       *Client
-	task         Task
-	ctx          context.Context
-	allocationID string
-	hostID       string
+	client          *Client
+	task            Task
+	ctx             context.Context
+	allocationID    string
+	hostID          string
+	controllerID    string
+	provider        string
+	startedProvider atomic.Bool
+	invoked         atomic.Bool
 }
 
+func (j *engineeringProcessJournal) begin() error {
+	j.controllerID = uuid.NewString()
+	host, err := processidentity.HostID()
+	if err != nil {
+		return err
+	}
+	j.hostID = host
+	marker, err := processidentity.Marker(os.Getpid())
+	if err != nil {
+		return err
+	}
+	return j.control(j.ctx, map[string]any{"operation": "begin", "provider": j.provider, "pid": os.Getpid(), "marker": marker}, "admitted")
+}
+func (j *engineeringProcessJournal) workspace(path, mode string) error {
+	return j.control(j.ctx, map[string]any{"operation": "workspace", "workspace_path": path, "mode": mode}, "bound")
+}
+func (j *engineeringProcessJournal) end() error {
+	if j.controllerID == "" || j.hostID == "" {
+		return nil
+	}
+	noProvider := !j.invoked.Load()
+	if j.provider == "codex" {
+		noProvider = !j.startedProvider.Load()
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	var response struct {
+		Recorded bool `json:"recorded"`
+		Quiesced bool `json:"quiesced"`
+	}
+	payload := map[string]any{"operation": "end", "controller_id": j.controllerID, "host_id": j.hostID, "dispatched_at": j.task.DispatchedAt, "no_provider_started": noProvider}
+	if err := j.client.postJSON(ctx, fmt.Sprintf("/api/daemon/tasks/%s/engineering-controller", j.task.ID), payload, &response); err != nil {
+		return err
+	}
+	if !response.Recorded || j.provider == "codex" && !response.Quiesced {
+		return fmt.Errorf("Native controller cleanup was not acknowledged")
+	}
+	return nil
+}
+func (j *engineeringProcessJournal) control(ctx context.Context, payload map[string]any, key string) error {
+	payload["controller_id"], payload["host_id"], payload["dispatched_at"] = j.controllerID, j.hostID, j.task.DispatchedAt
+	var response map[string]json.RawMessage
+	if err := j.client.postJSON(ctx, fmt.Sprintf("/api/daemon/tasks/%s/engineering-controller", j.task.ID), payload, &response); err != nil {
+		return err
+	}
+	var ack bool
+	if json.Unmarshal(response[key], &ack) != nil || !ack {
+		return fmt.Errorf("Native controller operation was not acknowledged")
+	}
+	return nil
+}
 func (j *engineeringProcessJournal) beforeStart() error {
 	j.allocationID = ""
 	host, err := processidentity.HostID()
@@ -30,6 +88,7 @@ func (j *engineeringProcessJournal) beforeStart() error {
 	return j.record(j.ctx, map[string]any{"operation": "reserve"})
 }
 func (j *engineeringProcessJournal) started(pid int) error {
+	j.startedProvider.Store(true)
 	marker, err := processidentity.Marker(pid)
 	if err != nil {
 		return err
@@ -40,6 +99,9 @@ func (j *engineeringProcessJournal) started(pid int) error {
 	return j.record(j.ctx, map[string]any{"operation": "bind", "pid": pid, "marker": marker, "group_id": pid})
 }
 func (j *engineeringProcessJournal) exited(pid int, confirmed bool) error {
+	if pid > 0 {
+		j.startedProvider.Store(true)
+	}
 	if j.allocationID == "" {
 		return nil
 	}
@@ -49,6 +111,9 @@ func (j *engineeringProcessJournal) exited(pid int, confirmed bool) error {
 	return j.record(ctx, map[string]any{"operation": "exit", "pid": pid, "exit_confirmed": confirmed})
 }
 func (j *engineeringProcessJournal) record(ctx context.Context, payload map[string]any) error {
+	operation := payload["operation"].(string)
+	payload["operation"] = "process-" + operation
+	payload["controller_id"] = j.controllerID
 	payload["allocation_id"], payload["host_id"], payload["dispatched_at"] = j.allocationID, j.hostID, j.task.DispatchedAt
 	var response struct {
 		Reserved bool   `json:"reserved"`
@@ -56,10 +121,10 @@ func (j *engineeringProcessJournal) record(ctx context.Context, payload map[stri
 		Exited   bool   `json:"exited"`
 		Status   string `json:"status"`
 	}
-	if err := j.client.postJSON(ctx, fmt.Sprintf("/api/daemon/tasks/%s/engineering-process", j.task.ID), payload, &response); err != nil {
+	if err := j.client.postJSON(ctx, fmt.Sprintf("/api/daemon/tasks/%s/engineering-controller", j.task.ID), payload, &response); err != nil {
 		return err
 	}
-	switch payload["operation"] {
+	switch operation {
 	case "reserve":
 		if !response.Reserved || response.Status != "launching" {
 			return fmt.Errorf("Native process reservation was not acknowledged")

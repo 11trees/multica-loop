@@ -29,7 +29,7 @@ const coordinator = z.strictObject({ kind: z.literal("coordinator") });
 const actor = z.discriminatedUnion("kind", [human, task, daemon, host, coordinator]);
 export const applicationRequestSchema = z.strictObject({
   actor,
-  action: z.enum(["process", "process-scope", "intervention-request", "repair-observations", "repair-observation-ack", "configure-direct","direct-run","direct-submit","direct-scope","direct-completed","business-handoff","end-to-end-scope","business-scope","business-read","business-comment","business-comment-intent","business-comment-ack","business-comment-resolved","business-comment-protected","configure-business", "configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations", "verified-binding", "publication", "publication-ack", "delivery-policy", "activate-unit", "accept-unit", "parent-scope", "review-inputs", "configure-review", "review-ack", "begin-feedback", "cancel-feedback", "feedback-restored", "authorize-feedback-work", "prepare-feedback-verification", "prepare-feedback-report"]),
+  action: z.enum(["execution-permission", "process", "process-scope", "intervention-request", "repair-observations", "repair-observation-ack", "configure-direct","direct-run","direct-submit","direct-scope","direct-completed","business-handoff","end-to-end-scope","business-scope","business-read","business-comment","business-comment-intent","business-comment-ack","business-comment-resolved","business-comment-protected","configure-business", "configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations", "verified-binding", "publication", "publication-ack", "delivery-policy", "activate-unit", "accept-unit", "parent-scope", "review-inputs", "configure-review", "review-ack", "begin-feedback", "cancel-feedback", "feedback-restored", "authorize-feedback-work", "prepare-feedback-verification", "prepare-feedback-report"]),
   payload: z.unknown().optional(),
   host_version: z.string().optional(),
 });
@@ -134,7 +134,7 @@ export class EngineeringApplication {
 
   private async dependencyBinding(workspaceId:string,issueId:string) {
     const result=await this.invoke({actor:{kind:"host",workspaceId,issueId},action:"verified-binding"});
-    if(!("allowed" in result) || !result.allowed || !result.configured || !("binding" in result))throw new Error("Analysis dependencies require registered current passed verification");
+    if(!("allowed" in result) || !result.allowed || !("configured" in result) || !result.configured || !("binding" in result))throw new Error("Analysis dependencies require registered current passed verification");
     if(!("repository_path" in result))throw new Error("Verified dependency repository is unavailable");
     return {binding:verificationContractSchema.shape.binding.parse(result.binding),repositoryPath:text.parse(result.repository_path)};
   }
@@ -489,6 +489,10 @@ export class EngineeringApplication {
     if(action==="process"){
       if(actor.kind!=="daemon")throw new Error("Only the native runtime can record physical process facts");
       return this.processes.invoke({workspaceId:actor.workspaceId,issueId:actor.issueId,agentId:actor.agentId,attemptId:actor.attemptId},request.payload,!!pending,actor.projectId);
+    }
+    if(action==="execution-permission"){
+      if(actor.kind!=="host")throw new Error("Only the native host can inspect execution admission");
+      return {allowed:!pending};
     }
     if(action==="process-scope"){
       if(actor.kind!=="host")throw new Error("Only the native host can inspect physical process ownership");

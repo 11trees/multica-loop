@@ -1,0 +1,1 @@
+DROP INDEX engineering_run_guard_claim_idx;

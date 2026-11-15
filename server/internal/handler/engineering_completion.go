@@ -60,6 +60,15 @@ func (h *Handler) requireEngineeringCompletionWithCatalog(ctx context.Context, c
 	if !*permission.Allowed {
 		return &engineeringCompletionError{message: "independent verification has not authorized issue completion"}
 	}
+	if *permission.Configured {
+		active, err := h.Queries.HasUnfinishedEngineeringIssueTask(ctx, params.ID)
+		if err != nil {
+			return &engineeringCompletionError{message: "native execution cleanup lookup is unavailable", unavailable: true}
+		}
+		if active {
+			return &engineeringCompletionError{message: "wait for native execution and physical cleanup before completion"}
+		}
+	}
 	if permission.Direct != nil {
 		issue, err := h.Queries.GetIssueInWorkspace(ctx, db.GetIssueInWorkspaceParams{ID: params.ID, WorkspaceID: workspaceID})
 		if err != nil {
