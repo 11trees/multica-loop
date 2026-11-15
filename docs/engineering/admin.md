@@ -138,8 +138,8 @@ Fake-provider integration runs the real SDK process lifecycle and bundled worker
 asserting PID binding before the first command, private status/evidence/submit,
 retained deferred results, cooperative user stop and confirmed group exit. Separate
 checks refuse a wrong birth marker and unknown allocation identity; CLI checks
-keep human credentials out of the invocation protocol. Race-enabled checks passed. The complete protocol kernel passed 254 tests across
-23 files; the PostgreSQL-backed engineering handler checks, kernel typecheck/lint,
+keep human credentials out of the invocation protocol. Race-enabled checks passed. The complete protocol kernel passed 257 tests across
+24 files; the PostgreSQL-backed engineering handler checks, kernel typecheck/lint,
 Go vet and environment registry checks also passed. Linux cross-compilation passed;
 no Linux process was executed.
 
@@ -147,7 +147,7 @@ Go tests cover native source validation, interrupted acknowledgement, exact runt
 version projection, unavailable management reads and heartbeat progress while
 business discovery is blocked. All investigator processes in these checks are test-created fixtures with isolated homes. No installed model executable or account is resolved.
 
-Both controlled native browser scenarios passed against the independent host in 41.4 seconds. Direct and
+Both controlled native browser scenarios passed against the independent host in 50.5 seconds. Direct and
 verification requests reached one acknowledged management Case with exact worker
 and API executable fingerprints. The shared UI displayed the retained Case at
 1280 and 390 pixels, while ordinary continuation and Done stayed blocked. These
@@ -162,6 +162,8 @@ that their Cases, observations, attempts and scheduling records are removed.
 
 ![Verification repair Case at 390 pixels](assets/admin-case-verification-390.png)
 
+[Native process ownership](process-ownership.md) now records Codex allocation,
+pre-prompt birth identity and physical exit as prerequisites for takeover.
 Scoped workspace takeover, repair workspace/build actions, independent diagnosis,
 repair verification, external dependency probes, verified business handoff and
 runtime updates remain unconnected. Real-provider, Linux runtime and packaged

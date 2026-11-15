@@ -1,6 +1,6 @@
 //go:build linux
 
-package adminrunner
+package processidentity
 
 import (
 	"fmt"
@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-func processMarker(pid int) (string, error) {
+func Marker(pid int) (string, error) {
 	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
 	if err != nil {
 		return "", err
@@ -22,4 +22,9 @@ func processMarker(pid int) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(string(boot)) + ":" + parts[19], nil
+}
+
+func HostID() (string, error) {
+	data, err := os.ReadFile("/proc/sys/kernel/random/boot_id")
+	return strings.TrimSpace(string(data)), err
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/multica-ai/multica/server/internal/engineering"
 	"github.com/multica-ai/multica/server/internal/engineering/adminrunner"
+	"github.com/multica-ai/multica/server/internal/engineering/processidentity"
 	"github.com/multica-ai/multica/server/internal/handler"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/spf13/cobra"
@@ -202,7 +203,7 @@ func init() {
 		if err != nil {
 			return err
 		}
-		if !adminrunner.Supported() {
+		if !processidentity.Supported() {
 			return fmt.Errorf("Independent Admin host requires macOS or Linux process identity support")
 		}
 		root, _ := cmd.Flags().GetString("root")

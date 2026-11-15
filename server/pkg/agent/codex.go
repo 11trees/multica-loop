@@ -1217,9 +1217,26 @@ func (b *codexBackend) executeOnce(ctx context.Context, prompt string, opts Exec
 	// the process group configured above already covers that and this is a plain
 	// Start. Ownership that cannot be taken is logged, not fatal; a child that
 	// cannot be resumed is killed and reported here.
+	if b.cfg.OnProcessStarting != nil {
+		if err := b.cfg.OnProcessStarting(); err != nil {
+			cancel()
+			stopProcess()
+			if b.cfg.OnProcessExited != nil {
+				_ = b.cfg.OnProcessExited(0, true)
+			}
+			return nil, fmt.Errorf("reserve codex process: %w", err)
+		}
+	}
 	if err := startOwnedProcessTree(cmd, b.cfg.Logger); err != nil {
 		cancel()
 		stopProcess()
+		if b.cfg.OnProcessExited != nil {
+			pid := 0
+			if cmd.Process != nil {
+				pid = cmd.Process.Pid
+			}
+			_ = b.cfg.OnProcessExited(pid, pid == 0)
+		}
 		return nil, fmt.Errorf("start codex: %w", err)
 	}
 	if b.cfg.OnProcessStarted != nil {
@@ -1227,6 +1244,10 @@ func (b *codexBackend) executeOnce(ctx context.Context, prompt string, opts Exec
 			cancel()
 			stopProcess()
 			_ = cmd.Wait()
+			confirmed := cmd.ProcessState != nil && waitProcessGroupGone(cmd, codexGracefulShutdown())
+			if b.cfg.OnProcessExited != nil {
+				_ = b.cfg.OnProcessExited(cmd.Process.Pid, confirmed)
+			}
 			releaseProcessGroup(cmd)
 			return nil, fmt.Errorf("bind codex process: %w", err)
 		}
@@ -1386,6 +1407,7 @@ func (b *codexBackend) executeOnce(ctx context.Context, prompt string, opts Exec
 	// cover that path instead of relying on stdin EOF to stop the child.
 	var waitOnce sync.Once
 	var cleanupConfirmed bool
+	var physicalCleanupConfirmed bool
 	var waitReturned bool
 	var cleanupWaitErr error
 	drainAndWait := func() {
@@ -1464,6 +1486,13 @@ func (b *codexBackend) executeOnce(ctx context.Context, prompt string, opts Exec
 			if codexCleanupConfirmationOverride.Load() < 0 {
 				cleanupConfirmed = false
 			}
+			physicalCleanupConfirmed = cleanupConfirmed
+			if b.cfg.OnProcessExited != nil {
+				if err := b.cfg.OnProcessExited(cmd.Process.Pid, cleanupConfirmed); err != nil {
+					cleanupConfirmed = false
+					b.cfg.Logger.Warn("codex process exit receipt was not acknowledged", "pid", cmd.Process.Pid)
+				}
+			}
 			b.cfg.Logger.Info("codex lifecycle",
 				"phase", "cleanup",
 				"task_id", b.cfg.TaskID,
@@ -1472,7 +1501,7 @@ func (b *codexBackend) executeOnce(ctx context.Context, prompt string, opts Exec
 				"process_group", cmd.Process.Pid,
 				"attempt", attempt,
 				"latency", time.Since(launchStarted).Round(time.Millisecond).String(),
-				"reaped", cleanupConfirmed,
+				"reaped", physicalCleanupConfirmed,
 				"exit_status", codexProcessExitStatus(cmd.ProcessState),
 				"wait_error", cleanupWaitErr,
 				"stderr_bytes", stderrBuf.TotalBytes(),
@@ -1485,6 +1514,17 @@ func (b *codexBackend) executeOnce(ctx context.Context, prompt string, opts Exec
 			// exactly-once per launch attempt.
 			releaseProcessGroup(cmd)
 		})
+	}
+
+	publishResult := func(result Result) {
+		if b.cfg.OnProcessExited != nil && !cleanupConfirmed {
+			result.Status = "cleanup_unconfirmed"
+			result.Error = "Native Codex process exit was not confirmed and durably acknowledged"
+			result.ResumeRejected = false
+			result.codexInitializeRetrySafe = false
+			result.codexStartupRefreshRetrySafe = false
+		}
+		resCh <- result
 	}
 
 	// Drive the session lifecycle in a goroutine.
@@ -1551,7 +1591,7 @@ func (b *codexBackend) executeOnce(ctx context.Context, prompt string, opts Exec
 				finalError += "; retry suppressed: process-tree cleanup cannot be confirmed on this platform"
 			}
 			b.cfg.Logger.Warn("codex lifecycle", "phase", "initialize_failure", "task_id", b.cfg.TaskID, "runtime_id", b.cfg.RuntimeID, "pid", cmd.Process.Pid, "attempt", attempt, "latency", initializeLatency.Round(time.Millisecond).String(), "semantic_activity", semanticObserved.Load(), "cleanup_confirmed", cleanupConfirmed, "retry_safe", retrySafe)
-			resCh <- Result{Status: finalStatus, Error: finalError, DurationMs: time.Since(startTime).Milliseconds(), codexInitializeRetrySafe: retrySafe}
+			publishResult(Result{Status: finalStatus, Error: finalError, DurationMs: time.Since(startTime).Milliseconds(), codexInitializeRetrySafe: retrySafe})
 			return
 		}
 		b.cfg.Logger.Info("codex lifecycle", "phase", "initialize_response", "task_id", b.cfg.TaskID, "runtime_id", b.cfg.RuntimeID, "pid", cmd.Process.Pid, "attempt", attempt, "latency", time.Since(initializeStarted).Round(time.Millisecond).String())
@@ -1591,7 +1631,7 @@ func (b *codexBackend) executeOnce(ctx context.Context, prompt string, opts Exec
 					"latency", time.Since(c.threadSetupStarted).Round(time.Millisecond).String(),
 					"latency_ms", time.Since(c.threadSetupStarted).Milliseconds(),
 					"cleanup_confirmed", cleanupConfirmed,
-					"reaped", cleanupConfirmed,
+					"reaped", physicalCleanupConfirmed,
 					"retry_safe", false,
 					"retry_attempted", false,
 					"stderr_model_refresh_failure_count", classification.modelRefreshFailure,
@@ -1600,12 +1640,12 @@ func (b *codexBackend) executeOnce(ctx context.Context, prompt string, opts Exec
 					"stderr_bare_timeout_count", classification.bareTimeout,
 				)
 			}
-			resCh <- Result{
+			publishResult(Result{
 				Status:         finalStatus,
 				Error:          finalError,
 				DurationMs:     time.Since(startTime).Milliseconds(),
 				ResumeRejected: isCodexResumeOverflow(opts, err),
-			}
+			})
 			return
 		}
 		c.setThreadID(threadID)
@@ -1696,7 +1736,7 @@ func (b *codexBackend) executeOnce(ctx context.Context, prompt string, opts Exec
 					drainAndWait() // flush os/exec stderr goroutine before sampling Tail
 					finalStatus = "failed"
 					finalError = withAgentStderr(fmt.Sprintf("codex turn/start failed: %v", err), "codex", sanitizeCodexDiagnostic(stderrBuf.Tail()))
-					resCh <- Result{Status: finalStatus, Error: finalError, DurationMs: time.Since(startTime).Milliseconds()}
+					publishResult(Result{Status: finalStatus, Error: finalError, DurationMs: time.Since(startTime).Milliseconds()})
 					return
 				}
 			}
@@ -1892,7 +1932,7 @@ func (b *codexBackend) executeOnce(ctx context.Context, prompt string, opts Exec
 				"codex_version", codexVersion,
 				"daemon_version", b.cfg.DaemonVersion,
 				"cleanup_confirmed", cleanupConfirmed,
-				"reaped", cleanupConfirmed,
+				"reaped", physicalCleanupConfirmed,
 				// retry_safe describes the terminal attempt, not the measured wait
 				// interval. Successful samples therefore report false by design.
 				"retry_safe", startupRefreshRetrySafe,
@@ -1927,7 +1967,7 @@ func (b *codexBackend) executeOnce(ctx context.Context, prompt string, opts Exec
 		taskCodexHome := strings.TrimSpace(b.cfg.Env["CODEX_HOME"])
 		usageMap = codexResultUsageMap(startTime, taskCodexHome, threadID, resumed, opts.Model, u)
 
-		resCh <- Result{
+		publishResult(Result{
 			Status:                       finalStatus,
 			Output:                       finalOutput,
 			Error:                        finalError,
@@ -1935,7 +1975,7 @@ func (b *codexBackend) executeOnce(ctx context.Context, prompt string, opts Exec
 			DurationMs:                   duration.Milliseconds(),
 			Usage:                        usageMap,
 			codexStartupRefreshRetrySafe: startupRefreshRetrySafe,
-		}
+		})
 	}()
 
 	supplement := func(supplementCtx context.Context, instruction string) error {
