@@ -164,7 +164,7 @@ that their Cases, observations, attempts and scheduling records are removed.
 
 [Native execution ownership](process-ownership.md) now records preparation-to-cleanup
 controllers, original issue/chat scope, Codex birth/exit facts and project admission
-guards in PostgreSQL as prerequisites for takeover. Admin fence acquisition and physical writer draining are not connected yet; the API-owned native cancellation bridge is available only behind an already committed matching fence.
+guards in PostgreSQL as prerequisites for takeover. Admin draining-fence acquisition and native task cancellation are connected; physical writer draining and owned repair access remain incomplete.
 Scoped workspace takeover, repair workspace/build actions, independent diagnosis,
 repair verification, external dependency probes, verified business handoff and
 runtime updates remain unconnected. Real-provider, Linux runtime and packaged
@@ -192,7 +192,7 @@ Case generation; stopped or replaced attempts cannot write a result.
 Inspection does not acquire the project fence, cancel a native task, confirm
 physical cleanup, validate the currently installed API/kernel version, or grant
 write authority. These facts must be freshly checked by the acquiring
-coordinator. Fence acquisition, physical draining, repair
+coordinator. Physical draining, repair
 and independent verification remain incomplete; investigation may still submit
 only deferred results.
 
@@ -209,12 +209,36 @@ The API re-reads management authority/intent/session, the original business
 checkpoint and the native source task dispatch/runtime. It requires a committed
 `draining` project fence matching Case, attempt, generation, supervision token,
 intent revision, original observation/hash/claim and registered repository.
-Without a fence it returns `fence_required` and makes no cancellation.
+It acquires the project row for update, revalidates the source and management identity, creates the draining fence, and commits before cancellation. An existing fence must match the same owner/source; later-generation handover additionally requires the management store to confirm the predecessor invocation physically exited.
 
 The API enumerates active issue and chat tasks in that project and calls its
 existing `CancelTaskWithReason`, rechecking authority and source before each task
 and afterward. Token revocation and daemon notification stay in the native
 service. It returns the unfinished controller count and remains `draining`, even
 when that count is zero. It neither kills the shared daemon nor asserts physical
-exit, fence ownership, verified repair or business completion. Source-version
-authority, fence acquisition and physical draining still require integration.
+exit, owned repair access, verified repair or business completion. Physical draining and owned repair access still require integration.
+
+
+### Draining-fence acquisition and source authority
+
+The private API reads `takeover-current` and the acknowledged original
+`repair-source`; caller input remains only the invocation claim. It matches the
+original receipt, snapshot, code version, API/kernel fingerprints, execution path
+and mode against the saved inspection. The source worker validates the original
+checkpoint; the API additionally checks its revision, exact native dispatch,
+issue lifecycle and project/runtime mapping. Original runtime fingerprints are
+provenance, not claims that the installed binaries have that same version.
+
+After taking the project's update lock, the API repeats the authority/source
+read and requires an unchanged acquisition tuple. It stores the original source
+revision and hash in the fence. It commits before invoking native cancellation
+and revalidates immediately after commit, before each cancellation, and after
+the cancellation pass. If a later check fails, the committed fence remains;
+logical status changes cannot release it.
+
+Retries by the exact same owner reuse the fence. A newer generation may replace
+only a lower-generation fence from the same Case and unchanged original source.
+Management must confirm the previous invocation reached a physically settled
+terminal state; unknown/live predecessors and other Cases are rejected. The
+original source fields remain unchanged during handover. Acquisition and
+handover enter `draining`, never `owned`; they do not authorize repair writes.

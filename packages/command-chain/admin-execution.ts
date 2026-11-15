@@ -190,6 +190,12 @@ export class AdminExecutionStore {
         if(attempt.submission || !request || request.phase!=="source-inspected")throw new DraftConflictError("Takeover source is not inspected or invocation already submitted");
         return {request,intent_revision:attempt.intentRevision};
     }
+    predecessorStopped(claim:AdminClaim,attemptId:string) {
+        this.currentTakeover(claim);
+        const prior=this.read(text.parse(attemptId));
+        if(prior.caseId!==claim.caseId || prior.generation>=claim.generation)throw new DraftConflictError("Takeover predecessor belongs to another Case or generation");
+        return {stopped:!['launching','running'].includes(prior.status) && prior.finishedAt!==null};
+    }
     inspectTakeover(claim:AdminClaim,input:unknown) {
         const inspection=takeoverInspectionSchema.parse(input);
         return this.transaction(()=>{this.current(claim,true);const request=this.takeover(claim.attemptId);

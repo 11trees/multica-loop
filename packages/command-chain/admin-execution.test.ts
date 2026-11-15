@@ -121,4 +121,11 @@ it("persists an immutable takeover request scoped to the live Case and retains i
  store.execution.setIntent({intent:"stopped",request_id:"stop"});
  expect(()=>store.execution.inspectTakeover(claim,inspection)).toThrow(/identity, intent or generation/);
  expect(store.execution.pendingTakeovers(authority)).toEqual([]);
+ store.execution.retire(authority,{attempt_id:claim.attemptId,exit_confirmed:true,pid:0,marker:"",owned_launch:true,reason:"Fixture confirmed no process spawned"});
+ store.execution.setIntent({intent:"running",request_id:"resume"});
+ const successor=store.execution.claim(authority)!.claim;
+ store.execution.command(successor,{action:"status"});store.execution.command(successor,command);store.execution.inspectTakeover(successor,inspection);
+ expect(store.execution.predecessorStopped(successor,claim.attemptId)).toEqual({stopped:true});
+ expect(()=>store.execution.predecessorStopped(successor,successor.attemptId)).toThrow(/another Case or generation/);
+ expect(()=>store.execution.predecessorStopped(claim,successor.attemptId)).toThrow(/identity, intent or generation/);
 });

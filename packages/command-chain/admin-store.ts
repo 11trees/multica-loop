@@ -137,6 +137,7 @@ export class AdminStore {
 
 export const adminRequestSchema = z.discriminatedUnion("action", [
   z.strictObject({action:z.literal("state")}),
+  z.strictObject({action:z.literal("takeover-predecessor"),claim:adminClaimSchema,attempt_id:text}),
   z.strictObject({action:z.literal("takeover-current"),claim:adminClaimSchema}),
   z.strictObject({action:z.literal("takeover-pending"),authority:adminAuthoritySchema}),
   z.strictObject({action:z.literal("takeover-inspected"),claim:adminClaimSchema,payload:z.unknown()}),
@@ -157,6 +158,7 @@ export const adminRequestSchema = z.discriminatedUnion("action", [
 export function invokeAdmin(store: AdminStore, input: unknown) {
   const request = adminRequestSchema.parse(input);
   switch (request.action) {
+    case "takeover-predecessor": return store.execution.predecessorStopped(request.claim,request.attempt_id);
     case "takeover-current": return store.execution.currentTakeover(request.claim);
     case "takeover-pending": return store.execution.pendingTakeovers(request.authority);
     case "takeover-inspected": return store.execution.inspectTakeover(request.claim,request.payload);

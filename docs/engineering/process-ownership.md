@@ -70,8 +70,8 @@ or draining controllers. Waiting admissions then read the committed fence.
 Database guards reject dispatched/running admission, new execution controllers,
 project changes, project-resource changes and issue/chat project reassignment while
 a fence exists. Logical task cancellation and physical cleanup can still finish.
-The fence does not yet have a connected Admin action that acquires, drains,
-validates or releases it. Its presence or a quiesced controller cannot authorize
+The private Admin action now acquires a draining fence and cancels native tasks.
+It does not yet establish physical ownership or release the fence. Its presence or a quiesced controller cannot authorize
 repair writes or business completion.
 
 ## Verification and remaining work
@@ -91,7 +91,7 @@ The existing browser intervention scenarios exercise the retained public process
 API with known no-spawn allocations; they do not run a provider or prove Admin
 workspace takeover.
 
-Independent Admin requests and native source inspection are connected. An API-owned private Unix bridge cancels project issue/chat tasks through the native service only behind a committed matching repair fence, retaining cleanup barriers. Source-version authority, fence acquisition, physical draining of every writer, takeover revocation and separate repair verification still require migration. Shared paths attached to different projects,
+Independent Admin requests and native source inspection are connected. An API-owned private Unix bridge cancels project issue/chat tasks through the native service only behind a committed matching repair fence, retaining cleanup barriers. Original checkpoint revision/receipt and native claim validation, draining-fence acquisition and same-source predecessor handover are connected. Physical draining of every writer, owned repair access, takeover revocation/release and separate repair verification still require migration. Shared paths attached to different projects,
 remote physical recovery, stale-claim cleanup after runtime reassignment, other
 provider lifecycle adapters and legacy unrecorded executions need their own proofs.
 A terminal task or an empty set of known allocations cannot replace missing facts.
@@ -112,6 +112,6 @@ bindings even if cleanup removed the directory; it neither recreates the path
 nor proves it still exists. The Go takeover coordinator must additionally verify
 the native task dispatch claim, project/resource mapping, source-version
 authority and current management lease before acquiring a fence, and revalidate
-after draining. The independent host now inspects durable Admin requests against the native dispatch claim and project/runtime directory mapping. Fence acquisition and physical draining are not connected yet; native cancellation is connected behind an existing matching fence. Observation delivery still
+after draining. The independent host now inspects durable Admin requests against the native dispatch claim and project/runtime directory mapping. The private API now acquires and commits the draining fence before native cancellation. Physical draining and owned repair access remain incomplete. Observation delivery still
 preserves historical faults even when their native claim is no longer current;
 historical evidence alone cannot authorize a new repair.
