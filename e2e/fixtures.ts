@@ -660,7 +660,26 @@ export class TestApiClient {
       const adminPath=process.env.MULTICA_ENGINEERING_DATABASE+".admin.sqlite";
       if(existsSync(adminPath)){
         const admin=new DatabaseSync(adminPath);
-        try { for(const issueId of this.createdIssueIds){const cases=admin.prepare("SELECT DISTINCT case_id FROM admin_observation WHERE workspace_id=? AND issue_id=?").all(this.workspaceId,issueId);admin.prepare("DELETE FROM admin_observation WHERE workspace_id=? AND issue_id=?").run(this.workspaceId,issueId);for(const row of cases)admin.prepare("DELETE FROM admin_case WHERE case_id=? AND NOT EXISTS(SELECT 1 FROM admin_observation WHERE case_id=?)").run(String(row.case_id),String(row.case_id));} }
+        try {
+          admin.exec("PRAGMA busy_timeout=1000; BEGIN IMMEDIATE");
+          for(const issueId of this.createdIssueIds){
+            const cases=admin.prepare("SELECT DISTINCT case_id FROM admin_observation WHERE workspace_id=? AND issue_id=?").all(this.workspaceId,issueId);
+            for(const row of cases){
+              const caseId=String(row.case_id);
+              if(admin.prepare("SELECT 1 FROM admin_attempt WHERE case_id=? AND status IN ('launching','running')").get(caseId))throw new Error("Admin fixture still owns a live invocation");
+            }
+            admin.prepare("DELETE FROM admin_observation WHERE workspace_id=? AND issue_id=?").run(this.workspaceId,issueId);
+            for(const row of cases){
+              const caseId=String(row.case_id);
+              if(admin.prepare("SELECT 1 FROM admin_observation WHERE case_id=?").get(caseId))continue;
+              admin.prepare("DELETE FROM admin_evidence WHERE attempt_id IN (SELECT attempt_id FROM admin_attempt WHERE case_id=?)").run(caseId);
+              admin.prepare("DELETE FROM admin_attempt WHERE case_id=?").run(caseId);
+              admin.prepare("DELETE FROM admin_schedule WHERE case_id=?").run(caseId);
+              admin.prepare("DELETE FROM admin_case WHERE case_id=?").run(caseId);
+            }
+          }
+          admin.exec("COMMIT");
+        }catch(error){try{admin.exec("ROLLBACK");}catch{}throw error;}
         finally {admin.close();}
       }
       const database = new DatabaseSync(process.env.MULTICA_ENGINEERING_DATABASE);
