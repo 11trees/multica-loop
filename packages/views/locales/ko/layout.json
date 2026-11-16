@@ -12,7 +12,8 @@
     "runtimes": "런타임",
     "skills": "스킬",
     "settings": "설정",
-    "views": "뷰"
+    "views": "뷰",
+    "history": "LoopWork 기록"
   },
   "tab": {
     "issue": "태스크",
@@ -244,5 +245,43 @@
     "copy_table": "표 복사",
     "copied": "복사했습니다",
     "copy_failed": "복사하지 못했습니다"
+  },
+  "history": {
+    "title": "LoopWork 기록",
+    "ownership": "읽기 전용 기록입니다. 이 작업은 여전히 LoopWork에서 관리합니다.",
+    "loading": "기록을 불러오는 중…",
+    "error": "기록을 불러올 수 없습니다.",
+    "retry": "다시 시도",
+    "unavailable": "이 워크스페이스에는 볼 수 있는 기록 보관본이 없습니다.",
+    "project": "프로젝트",
+    "all_projects": "모든 프로젝트",
+    "search": "검색",
+    "search_placeholder": "작업 제목 또는 원본 ID",
+    "count": "보관된 작업: {{count}}",
+    "empty": "일치하는 작업이 없습니다.",
+    "previous": "이전",
+    "next": "다음",
+    "back_task": "작업으로 돌아가기",
+    "back_list": "기록으로 돌아가기",
+    "documents": "원본 문서",
+    "no_documents": "이 작업에는 보관된 문서가 없습니다.",
+    "missing": "기록을 찾을 수 없습니다.",
+    "image_reference": "이미지 참조 (파일 미이전)",
+    "captured": "보관 시각: {{date}}",
+    "revision": "버전 {{revision}}",
+    "original_source": "원문 보기",
+    "statuses": {
+      "backlog": "백로그",
+      "in_plan": "계획 중",
+      "in_repro": "재현 중",
+      "ready_for_dev": "개발 대기",
+      "in_dev": "개발 중",
+      "in_review": "검토 중",
+      "in_feedback": "피드백 처리 중",
+      "ready_to_close": "종료 대기",
+      "done": "완료",
+      "cancelled": "취소됨",
+      "blocked": "차단됨"
+    }
   }
 }

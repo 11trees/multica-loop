@@ -1,3 +1,4 @@
+import {HistoryPage} from "@multica/views/history";
 import { useEffect, useLayoutEffect } from "react";
 import { createMemoryRouter, Outlet, useLocation, useMatches } from "react-router-dom";
 import type { RouteObject } from "react-router-dom";
@@ -247,6 +248,7 @@ export const appRoutes: RouteObject[] = [
             handle: { title: "Member" },
           },
           { path: "squads", element: <SquadsPage />, handle: { title: "Squads" } },
+          {path:"history",element:<HistoryPage/>,handle:{title:"History"}},
           { path: "views", element: <AllViewsPage />, handle: { title: "Views" } },
           {
             path: "squads/:id",

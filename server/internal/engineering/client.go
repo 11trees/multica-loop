@@ -23,6 +23,7 @@ func (e *Rejection) Error() string { return e.Message }
 type Client struct {
 	Worker, Database string
 	Admin            bool
+	History          bool
 	mu               sync.Mutex
 }
 
@@ -36,8 +37,14 @@ func (c *Client) Call(ctx context.Context, input any) (json.RawMessage, error) {
 		return nil, err
 	}
 	args := []string{c.Worker, c.Database}
+	if c.Admin && c.History {
+		return nil, errors.New("conflicting engineering worker mode")
+	}
 	if c.Admin {
 		args = append(args, "--admin")
+	}
+	if c.History {
+		args = append(args, "--history")
 	}
 	cmd := exec.CommandContext(ctx, "node", args...)
 	for _, key := range []string{"PATH", "TMPDIR", "TMP", "TEMP", "LANG", "SystemRoot", "WINDIR"} {

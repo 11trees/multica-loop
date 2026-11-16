@@ -100,6 +100,65 @@ were unchanged before and after that comparison. Its report pins this exact
 archive hash; no native execution ownership was transferred. These counts
 describe that snapshot, not future source state or completed cutover.
 
+## Native browsing
+
+Local single-user deployments can opt into native history with both settings in
+the managed environment's private configuration:
+
+```dotenv
+MULTICA_LOOPWORK_HISTORY_ARCHIVE=/absolute/migration/loopwork-capture
+MULTICA_LOOPWORK_HISTORY_HASH=the_exact_hash_from_manifest
+```
+
+Use the actual 64-character manifest hash, an absolute persistent archive path,
+local authentication and the engineering worker. Restart the API after changing
+these settings. The archive remains outside managed environment expiry.
+
+In Web and shared Desktop routing, open **Work → LoopWork history**, select a
+source project or search its tasks, then open the task and its original document.
+Task/document selection is in the URL, so refresh, direct links and browser Back
+retain the source identity. Native project/issue correspondence and task adoption
+are still separate work. Installed Desktop acceptance remains outstanding.
+
+The authenticated native routes are:
+
+- `GET /api/engineering/history/availability`
+- `GET /api/engineering/history?project_id=...&search=...&offset=...`
+- `GET /api/engineering/history/tasks/{original-id}`
+- `GET /api/engineering/history/tasks/{original-id}/documents/{original-id}`
+
+Only the reserved local human and local workspace can read this deployment's
+archive. Other members/workspaces and task/cloud machine credentials cannot
+consume it. Requests cannot select a filesystem path or archive hash. The host
+pins the configured identity, the private history reader revalidates archive
+files/inventory on each read, and Go checks the response identity. This worker
+mode does not initialize engineering storage or accept execution commands.
+
+Shared API clients send an explicit workspace identity, with query caches scoped
+to both workspace and user. Navigation and command-palette entries follow the
+same authenticated availability. Historical source state is displayed as history;
+there is no run, Team reassignment, answer or Done operation. Reports preserve
+the original text and revision. Markdown images remain labelled references until
+external files are migrated; they are not automatically fetched. The source-text
+disclosure retains original image/file references without executing them.
+
+Controlled browser evidence covers project filtering/search, task/report links,
+refresh and Back, read-only controls and 1280/390-pixel layouts using fixture
+content. A separate configured-browser scenario reads the actual pinned archive.
+Native permission/hash tests and a real private-worker round trip cover the
+backend boundary. An authenticated read audit compared all 4 projects, 38 task
+records and 197 full documents with the actual archive, including task/document
+scope, original text and revision. Archive bytes were unchanged. Its local report
+is `~/.multica/migrations/loopwork/20261117-01-native-read-correspondence.json`.
+These checks do not establish native adoption, provider execution or
+packaged-client acceptance.
+
+The screenshots below contain controlled fixture content only:
+
+![Historical task browsing](assets/history-list.png)
+
+![Historical report on a narrow screen](assets/history-report-narrow.png)
+
 ## Remaining cutover work
 
 1. Establish explicit source-project/task to native workspace/project/issue
@@ -111,8 +170,10 @@ describe that snapshot, not future source state or completed cutover.
 3. Materialize external run/evidence files and attachments with their source
    references, and classify remaining historical database copies. Database
    archives alone do not include those external files.
-4. Add authenticated history navigation in native task/project views and verify
-   record-level correspondence across the selected source and native records.
+4. Extend task/document browsing to other history surfaces and establish
+   source-project/task correspondence with native records. Verify the selected
+   correspondence before adopting tasks; a historical record is not a native
+   engineering result.
 5. Complete explicit configuration migration, a target backup/restore and
    rollback exercise, exclusive-owner cutover, real-provider acceptance and
    packaged-client acceptance. Keep the original source available until these

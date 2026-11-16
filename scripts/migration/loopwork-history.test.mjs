@@ -29,6 +29,9 @@ async function fixture(t) {
    INSERT INTO command_chain_drafts VALUES('原草稿','finalize');
    INSERT INTO execution_attempts VALUES('execution-1','applied','旧任务-1','old-command-token-must-not-project',9223372036854775807);
    INSERT INTO loop_runs VALUES('old-run','stopped');INSERT INTO loop_managed_processes VALUES('old-process','exited');INSERT INTO loop_lifecycle_state VALUES(1,'stopped','stopped');`);
+  business.exec(`ALTER TABLE projects ADD COLUMN name TEXT;UPDATE projects SET name='Original project';
+   ALTER TABLE tasks ADD COLUMN item_type TEXT DEFAULT 'requirement';ALTER TABLE tasks ADD COLUMN updated_at TEXT DEFAULT '2026-01-01';ALTER TABLE tasks ADD COLUMN description TEXT;ALTER TABLE tasks ADD COLUMN current_subagent TEXT;ALTER TABLE tasks ADD COLUMN next_step TEXT;ALTER TABLE tasks ADD COLUMN blocked_reason TEXT;ALTER TABLE tasks ADD COLUMN created_at TEXT;ALTER TABLE tasks ADD COLUMN completed_at TEXT;
+   ALTER TABLE documents ADD COLUMN title TEXT DEFAULT 'Original report';ALTER TABLE documents ADD COLUMN kind TEXT DEFAULT 'review';ALTER TABLE documents ADD COLUMN source_agent TEXT;ALTER TABLE documents ADD COLUMN revision INTEGER DEFAULT 1;ALTER TABLE documents ADD COLUMN created_at TEXT;ALTER TABLE documents ADD COLUMN updated_at TEXT;ALTER TABLE documents ADD COLUMN format TEXT DEFAULT 'markdown';`);
   await mkdir(join(dataRoot,"old"));await writeFile(join(dataRoot,"old","loop-ui.db"),"Old already merged copy");await writeFile(join(dataRoot,"unknown.db"),"Unclassified source");business.prepare("INSERT INTO legacy_project_database_imports VALUES(?,?,?,?)").run(join(dataRoot,"old","loop-ui.db"),"/original/project","原项目","2026-01-01");
   const management=new DatabaseSync(join(dataRoot,"admin-management.db"));management.exec("CREATE TABLE repair_cases(case_id TEXT PRIMARY KEY,original_json TEXT); INSERT INTO repair_cases VALUES('original-case','Original failure provenance')");management.close();
   t.after(async()=>{business.close();await rm(root,{recursive:true,force:true});});return {root,sourceRoot,dataRoot,output,business};
@@ -50,7 +53,7 @@ test("captures committed WAL and exact source IDs while preserving source bytes 
 });
 
 test("rejects a source write during copy and never treats a partial capture as an archive",async(t)=>{
- const h=await fixture(t),destination=join(h.root,"copy.db");await assert.rejects(copyDatabase(join(h.dataRoot,"loop-ui.db"),destination,()=>h.business.exec("INSERT INTO documents VALUES('late','旧任务-1','Late source change')")),/Source changed/);
+ const h=await fixture(t),destination=join(h.root,"copy.db");await assert.rejects(copyDatabase(join(h.dataRoot,"loop-ui.db"),destination,()=>h.business.exec("INSERT INTO documents(document_id,task_id,content) VALUES('late','旧任务-1','Late source change')")),/Source changed/);
  await assert.rejects(verifyArchive(h.root),/manifest is missing/);assert.equal(h.business.prepare("SELECT count(*) AS n FROM documents").get().n,2);
 });
 
@@ -84,4 +87,17 @@ test("CLI captures, verifies and queries original IDs without reading an applica
  const capture=call("capture","--source-root",h.sourceRoot,"--data-root",h.dataRoot,"--output",h.output);assert.equal(capture.tasks,2);assert.equal(call("verify","--archive",h.output).verified,true);
  const record=call("record","--archive",h.output,"--table","execution_attempts","--id","execution-1");assert.equal(record.record.command_token_hash,undefined);assert.deepEqual(record.record.attempt,{sqlite_integer:"9223372036854775807"});
  assert.throws(()=>call("record","--archive",h.output,"--table","tasks","--table","documents","--id","报告-1"));
+});
+
+test("native browsing pins the archive, scopes documents to their original task and never changes history",async(t)=>{
+ const {browseArchive}=await import('./loopwork-history-lib.mjs'),h=await fixture(t);await createArchive(h);const m=await verifyArchive(h.output),before=await readFile(join(h.output,'loop-ui.db'));
+ const list=await browseArchive(h.output,m.hash,{action:'list'});assert.equal(list.total,2);assert.equal(list.projects[0].name,'Original project');assert.equal(list.historical_only,true);
+ assert.equal((await browseArchive(h.output,m.hash,{action:'list',project_id:'foreign'})).total,0);
+ assert.equal((await browseArchive(h.output,m.hash,{action:'list',search:"' OR 1=1 --"})).total,0);
+ const filtered=await browseArchive(h.output,m.hash,{action:'list',search:'pending'});assert.equal(filtered.total,1);assert.equal(filtered.tasks[0].id,'旧任务-2');
+ assert.equal((await browseArchive(h.output,m.hash,{action:'task',task_id:'旧任务-1'})).documents[0].id,'报告-1');
+ assert.equal((await browseArchive(h.output,m.hash,{action:'document',task_id:'旧任务-1',document_id:'报告-1'})).document.content,'Exact original report and evidence');
+ assert.equal((await browseArchive(h.output,m.hash,{action:'document',task_id:'旧任务-2',document_id:'报告-1'})).document,null);
+ assert.equal((await browseArchive(h.output,m.hash,{action:'document',task_id:'missing',document_id:'报告-1'})).document,null);
+ await assert.rejects(browseArchive(h.output,'0'.repeat(64),{action:'list'}),/configured identity/);assert.deepEqual(await readFile(join(h.output,'loop-ui.db')),before);
 });

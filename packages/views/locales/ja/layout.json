@@ -12,7 +12,8 @@
     "runtimes": "ランタイム",
     "skills": "スキル",
     "settings": "設定",
-    "views": "ビュー"
+    "views": "ビュー",
+    "history": "LoopWork の履歴"
   },
   "tab": {
     "issue": "タスク",
@@ -244,5 +245,43 @@
     "copy_table": "表をコピー",
     "copied": "コピーしました",
     "copy_failed": "コピーできませんでした"
+  },
+  "history": {
+    "title": "LoopWork の履歴",
+    "ownership": "読み取り専用の履歴です。これらのタスクは引き続き LoopWork が管理します。",
+    "loading": "履歴を読み込み中…",
+    "error": "履歴を読み込めませんでした。",
+    "retry": "再試行",
+    "unavailable": "このワークスペースには閲覧できる履歴がありません。",
+    "project": "プロジェクト",
+    "all_projects": "すべてのプロジェクト",
+    "search": "検索",
+    "search_placeholder": "タスク名または元の ID",
+    "count": "過去のタスク：{{count}}",
+    "empty": "一致するタスクはありません。",
+    "previous": "前へ",
+    "next": "次へ",
+    "back_task": "タスクに戻る",
+    "back_list": "履歴に戻る",
+    "documents": "元のドキュメント",
+    "no_documents": "このタスクに保存済みドキュメントはありません。",
+    "missing": "履歴レコードが見つかりません。",
+    "image_reference": "画像の参照（ファイル未移行）",
+    "captured": "保存日時：{{date}}",
+    "revision": "第 {{revision}} 版",
+    "original_source": "原文を表示",
+    "statuses": {
+      "backlog": "未着手",
+      "in_plan": "計画中",
+      "in_repro": "再現中",
+      "ready_for_dev": "開発待ち",
+      "in_dev": "開発中",
+      "in_review": "レビュー中",
+      "in_feedback": "フィードバック対応中",
+      "ready_to_close": "完了確認待ち",
+      "done": "完了",
+      "cancelled": "キャンセル済み",
+      "blocked": "ブロック中"
+    }
   }
 }

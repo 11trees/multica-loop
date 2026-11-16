@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import {History} from "@multica/ui/icons";
+import {useConfigStore} from "@multica/core/config";
+import {historyAvailabilityOptions} from "@multica/core/history/queries";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@multica/core/auth";
 import { useCurrentWorkspace, useWorkspacePaths } from "@multica/core/paths";
@@ -16,7 +19,7 @@ import { useNavigation } from "../../navigation";
 import { IssueContextMenuProvider } from "../../issues/actions";
 import { useIssueViewActions } from "../../issue-views/use-view-actions";
 import { useT } from "../../i18n";
-import { PanelBody, PanelHeader, isPathWithin } from "../panel-nav";
+import { PanelBody, PanelHeader, PanelList, PanelLink, isPathWithin } from "../panel-nav";
 import { PinnedSection, usePanelPins } from "./pinned-section";
 import { useKeptActiveItem } from "./sidebar-tree";
 import { ProjectsSection, useIssueInTree } from "./work-tree";
@@ -69,6 +72,8 @@ export function WorkPanel() {
   const { pathname } = useNavigation();
   const wsId = useCurrentWorkspace()?.id;
   const userId = useAuthStore((s) => s.user?.id);
+  const localAuth=useConfigStore(s=>s.localAuthEnabled);
+  const history=useQuery({...historyAvailabilityOptions(wsId??"",userId??""),enabled:localAuth&&!!wsId&&!!userId});
   const viewActions = useIssueViewActions();
 
   const { data: projects = EMPTY_PROJECTS } = useQuery({
@@ -167,6 +172,7 @@ export function WorkPanel() {
           through the React tree, and must not reach rememberClickedIssue. */}
       <IssueContextMenuProvider variant="sidebar">
         <PanelBody onClickCapture={rememberClickedIssue}>
+          {localAuth&&history.data?.enabled&&<PanelList><PanelLink href={p.history()} icon={<History/>} label={t($=>$.history.title)} active={isPathWithin(pathname,p.history())}/></PanelList>}
           {wsId && (
             <ViewsSection
               wsId={wsId}

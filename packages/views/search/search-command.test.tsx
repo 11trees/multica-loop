@@ -1,3 +1,5 @@
+import {configStore} from "@multica/core/config";
+import {historyAvailabilityOptions} from "@multica/core/history/queries";
 import { act, type ReactNode } from "react";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -362,6 +364,7 @@ const rowText = (text: string) =>
 
 describe("SearchCommand", () => {
   beforeEach(() => {
+    configStore.setState({localAuthEnabled:false});
     queryData.clear();
     apiFns.clear();
     apiFns.set("getBaseUrl", vi.fn(() => "http://127.0.0.1:8080"));
@@ -427,6 +430,7 @@ describe("SearchCommand", () => {
     });
 
     it("offers every workspace nav page, not a hand-maintained subset", async () => {
+      configStore.setState({localAuthEnabled:true});seed(historyAvailabilityOptions("ws-test","user-me"),{enabled:true});
       const user = userEvent.setup();
       renderSearch();
       // The Pages group is generated from WORKSPACE_PAGES — the registry the
@@ -436,6 +440,10 @@ describe("SearchCommand", () => {
         await user.type(input(), enLayout.nav[page.navKey]);
         await waitFor(() => expect(renderedValues()).toContain(`page:${key}`));
       }
+    });
+
+    it("hides private history from navigation search when this owner has no archive access",async()=>{
+      configStore.setState({localAuthEnabled:true});seed(historyAvailabilityOptions("ws-test","user-me"),{enabled:false});const user=userEvent.setup();renderSearch();await user.type(input(),"LoopWork history");await waitFor(()=>expect(renderedValues()).not.toContain("page:history"));
     });
 
     it("does not surface a page on an incidental substring of a hidden keyword", async () => {

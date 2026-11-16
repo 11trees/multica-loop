@@ -1,3 +1,4 @@
+import {readHistory} from "./history-reader";
 import { createHash } from "node:crypto";
 import { AdminStore, invokeAdmin } from "./admin-store";
 import { readFileSync, mkdirSync } from "node:fs";
@@ -27,7 +28,9 @@ let admin: AdminStore | undefined;
 try {
   const input = JSON.parse(readFileSync(0, "utf8"));
   let result: unknown;
-  if (process.argv[3] === "--admin") {
+  if (process.argv[3] === "--history") {
+    result=await readHistory(database,input);
+  } else if (process.argv[3] === "--admin") {
     admin = new AdminStore(database);
     result = invokeAdmin(admin,input);
   } else {

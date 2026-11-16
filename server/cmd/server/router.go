@@ -434,6 +434,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		LocalAuthEnabled:               os.Getenv("MULTICA_LOCAL_AUTH") == "true",
 		EngineeringWorkerPath:          os.Getenv("MULTICA_ENGINEERING_WORKER"),
 		EngineeringDatabasePath:        os.Getenv("MULTICA_ENGINEERING_DATABASE"),
+		EngineeringHistoryArchive:      os.Getenv("MULTICA_LOOPWORK_HISTORY_ARCHIVE"),
+		EngineeringHistoryHash:         os.Getenv("MULTICA_LOOPWORK_HISTORY_HASH"),
 		AllowSignup:                    os.Getenv("ALLOW_SIGNUP") != "false",
 		AllowedEmails:                  splitAndTrim(os.Getenv("ALLOWED_EMAILS")),
 		AllowedEmailDomains:            splitAndTrim(os.Getenv("ALLOWED_EMAIL_DOMAINS")),
@@ -2119,6 +2121,10 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 
 			// Assignee frequency
 			r.Get("/api/assignee-frequency", h.GetAssigneeFrequency)
+			r.Get("/api/engineering/history/availability", h.EngineeringHistoryAvailability)
+			r.Get("/api/engineering/history", h.ListEngineeringHistory)
+			r.Get("/api/engineering/history/tasks/{sourceTaskID}", h.GetEngineeringHistoryTask)
+			r.Get("/api/engineering/history/tasks/{sourceTaskID}/documents/{sourceDocumentID}", h.GetEngineeringHistoryDocument)
 			r.Get("/api/engineering/run", h.GetEngineeringRunContext)
 			r.Post("/api/engineering/intervention/request", h.RequestEngineeringIntervention)
 			r.Post("/api/engineering/direct/run", h.RunEngineeringDirect)

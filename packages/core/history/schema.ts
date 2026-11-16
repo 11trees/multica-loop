@@ -1,0 +1,12 @@
+import {z} from "zod";
+const text=z.string(),nullable=text.nullable(),id=text.min(1),time=text.nullable();
+export const HistoryAvailabilitySchema=z.object({enabled:z.boolean().default(false)});
+const source=z.object({hash:text.regex(/^[a-f0-9]{64}$/),commit:text,captured_at:z.iso.datetime(),name:z.literal("LoopWork")});
+const task=z.object({id,project_id:id,title:text,item_type:nullable,status:text,run_state:text,closure_status:text,updated_at:time});
+export const HistoryListSchema=z.object({historical_only:z.literal(true),source,projects:z.array(z.object({id,name:text,workspace_root:text,task_count:z.number().int().nonnegative(),unfinished_count:z.number().int().nonnegative()})),tasks:z.array(task),total:z.number().int().nonnegative(),offset:z.number().int().nonnegative(),limit:z.number().int().positive()});
+const document=z.object({id,title:text,kind:text,source_agent:nullable,revision:z.number().int(),created_at:time,updated_at:time});
+export const HistoryTaskSchema=z.object({historical_only:z.literal(true),source,task:task.extend({description:nullable,current_subagent:nullable,next_step:nullable,blocked_reason:nullable,created_at:time,completed_at:time}).nullable(),documents:z.array(document)});
+export const HistoryDocumentSchema=z.object({historical_only:z.literal(true),source,document:document.extend({task_id:id,content:text,format:text}).nullable()});
+export type HistoryList=z.infer<typeof HistoryListSchema>;
+export type HistoryTask=z.infer<typeof HistoryTaskSchema>;
+export type HistoryDocument=z.infer<typeof HistoryDocumentSchema>;

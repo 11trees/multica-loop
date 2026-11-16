@@ -1,0 +1,22 @@
+import {useState,type ReactNode} from "react";
+import {NavigationProvider} from "../navigation";
+import {beforeEach,expect,it,vi} from "vitest";
+import {QueryClient,QueryClientProvider} from "@tanstack/react-query";
+import {fireEvent,screen} from "@testing-library/react";
+import {renderWithI18n} from "../test/i18n";
+import {HistoryPage} from "./history-page";
+const mocks=vi.hoisted(()=>({historyAvailability:vi.fn(),listHistory:vi.fn(),historyTask:vi.fn(),historyDocument:vi.fn()}));
+vi.mock("@multica/core/api",()=>({api:mocks}));
+vi.mock("@multica/core/paths",()=>({useCurrentWorkspace:()=>({id:"workspace"})}));
+vi.mock("@multica/core/auth",()=>({useAuthStore:(select:(state:{user:{id:string}})=>unknown)=>select({user:{id:"owner"}})}));
+vi.mock("../layout/page-header",()=>({PageHeader:({children}:{children:React.ReactNode})=><header>{children}</header>}));
+const source={hash:"a".repeat(64),commit:"legacy",captured_at:"2026-11-17T00:00:00Z",name:"LoopWork"},task={id:"REQ-original",title:"Historical reader task",project_id:"old-project",item_type:"requirement",status:"ready_to_close",run_state:"idle",closure_status:"awaiting_read",updated_at:"2026-11-16",description:"Original frozen goal",current_subagent:null,next_step:null,blocked_reason:null,created_at:null,completed_at:null};
+beforeEach(()=>{vi.clearAllMocks();mocks.historyAvailability.mockResolvedValue({enabled:true});mocks.listHistory.mockResolvedValue({historical_only:true,source,projects:[{id:"old-project",name:"Original project",workspace_root:"/source",task_count:1,unfinished_count:1}],tasks:[task],total:1,offset:0,limit:50});mocks.historyTask.mockResolvedValue({historical_only:true,source,task,documents:[{id:"doc-original",title:"Original verification report",kind:"review",source_agent:"review-agent",revision:2,created_at:null,updated_at:null}]});mocks.historyDocument.mockResolvedValue({historical_only:true,source,document:{id:"doc-original",task_id:task.id,title:"Original verification report",kind:"review",content:"# Original observation\n\nFrozen Expected stays visible.\n\n![Evidence](https://external.test/private.png)",format:"markdown",source_agent:"review-agent",revision:2,created_at:null,updated_at:null}});});
+function Nav({children}:{children:ReactNode}){const [path,setPath]=useState("/local/history"),url=new URL(path,"https://history.test");return <NavigationProvider value={{push:setPath,replace:setPath,back:()=>{},pathname:url.pathname,searchParams:url.searchParams,hash:url.hash,getShareableUrl:p=>p}}>{children}</NavigationProvider>;}
+function mount(){return renderWithI18n(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><Nav><HistoryPage/></Nav></QueryClientProvider>);}
+it("browses original task and report without creating run controls or loading old remote images",async()=>{
+ const view=mount();expect(await screen.findByText("Historical reader task")).toBeInTheDocument();expect(screen.getByText(/remain owned by LoopWork/)).toBeInTheDocument();
+ fireEvent.click(screen.getByRole("button",{name:/Historical reader task/}));expect(await screen.findByText("Original frozen goal")).toBeInTheDocument();fireEvent.click(await screen.findByRole("button",{name:/Original verification report/}));expect(await screen.findByRole("heading",{name:"Original observation"})).toBeInTheDocument();expect(view.container.querySelector("img")).toBeNull();expect(screen.queryByRole("button",{name:/start|run|done/i})).not.toBeInTheDocument();expect(mocks.historyDocument).toHaveBeenCalledWith("workspace","REQ-original","doc-original");
+ fireEvent.click(screen.getByRole("button",{name:"Back to task"}));expect(await screen.findByText("Original frozen goal")).toBeInTheDocument();fireEvent.click(screen.getByRole("button",{name:"Back to history"}));expect(await screen.findByText("Historical reader task")).toBeInTheDocument();
+});
+it("does not read private archive data when availability is denied",async()=>{mocks.historyAvailability.mockResolvedValue({enabled:false});mount();expect(await screen.findByText(/No historical archive/)).toBeInTheDocument();expect(mocks.listHistory).not.toHaveBeenCalled();expect(mocks.historyTask).not.toHaveBeenCalled();});

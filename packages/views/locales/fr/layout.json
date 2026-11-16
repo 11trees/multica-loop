@@ -12,7 +12,8 @@
     "runtimes": "Runtimes",
     "skills": "Skills",
     "settings": "Paramètres",
-    "views": "Vues"
+    "views": "Vues",
+    "history": "Historique LoopWork"
   },
   "tab": {
     "issue": "Tâche",
@@ -254,5 +255,43 @@
     "copy_table": "Copier le tableau",
     "copied": "Copié",
     "copy_failed": "Impossible de copier"
+  },
+  "history": {
+    "title": "Historique LoopWork",
+    "ownership": "Historique en lecture seule. Ces tâches restent gérées par LoopWork.",
+    "loading": "Chargement de l’historique…",
+    "error": "Impossible de charger l’historique.",
+    "retry": "Réessayer",
+    "unavailable": "Aucune archive historique disponible dans cet espace.",
+    "project": "Projet",
+    "all_projects": "Tous les projets",
+    "search": "Rechercher",
+    "search_placeholder": "Titre de tâche ou identifiant d’origine",
+    "count": "Tâches archivées : {{count}}",
+    "empty": "Aucune tâche correspondante.",
+    "previous": "Précédent",
+    "next": "Suivant",
+    "back_task": "Retour à la tâche",
+    "back_list": "Retour à l’historique",
+    "documents": "Documents d’origine",
+    "no_documents": "Cette tâche ne contient aucun document archivé.",
+    "missing": "Cette entrée historique est introuvable.",
+    "image_reference": "Référence d’image (fichier non migré)",
+    "captured": "Archivage : {{date}}",
+    "revision": "Révision {{revision}}",
+    "original_source": "Texte source",
+    "statuses": {
+      "backlog": "À faire",
+      "in_plan": "Planification",
+      "in_repro": "Reproduction",
+      "ready_for_dev": "Prêt pour le développement",
+      "in_dev": "En développement",
+      "in_review": "En révision",
+      "in_feedback": "Traitement des retours",
+      "ready_to_close": "Prêt à clôturer",
+      "done": "Terminé",
+      "cancelled": "Annulé",
+      "blocked": "Bloqué"
+    }
   }
 }

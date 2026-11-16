@@ -1,5 +1,10 @@
 "use client";
 
+import {useQuery} from "@tanstack/react-query";
+import {useConfigStore} from "@multica/core/config";
+import {useAuthStore} from "@multica/core/auth";
+import {useCurrentWorkspace} from "@multica/core/paths";
+import {historyAvailabilityOptions} from "@multica/core/history/queries";
 import { useMemo } from "react";
 import type { CommandBarContext } from "@multica/core/command-bar";
 import { WORKSPACE_PAGES, type WorkspacePageKey } from "@multica/core/paths";
@@ -31,6 +36,7 @@ import { useServerSearch, type SearchResults } from "./use-server-search";
 // total Record so adding a workspace page is a compile error until its
 // keywords are filled in.
 const PAGE_KEYWORDS: Record<WorkspacePageKey, string[]> = {
+  history:["LoopWork","history","archive","历史","归档"],
   inbox: ["inbox", "notifications", "收件箱", "通知"],
   chat: ["chat", "messages", "conversation", "聊天", "消息", "对话"],
   myIssues: ["my", "issues", "assigned", "mine", "我的", "任务"],
@@ -120,6 +126,8 @@ export function useRootModel(
   const { scope, text } = parseScope(rawQuery);
   const q = text.toLowerCase();
   const active = options.active;
+  const wsId=useCurrentWorkspace()?.id??"",userId=useAuthStore(s=>s.user?.id)??"",localAuth=useConfigStore(s=>s.localAuthEnabled);
+  const history=useQuery({...historyAvailabilityOptions(wsId,userId),enabled:active&&localAuth&&!!wsId&&!!userId});
 
   // Context lookups by kind; the store keeps newest registration first.
   const find = <K extends CommandBarContext["kind"]>(kind: K) =>
@@ -155,12 +163,12 @@ export function useRootModel(
 
   const navPages = useMemo<NavPage[]>(
     () =>
-      NAV_PAGE_KEYS.map((key) => ({
+      NAV_PAGE_KEYS.filter(key=>key!=="history"||localAuth&&history.data?.enabled===true).map((key) => ({
         key,
         label: tNav(($) => $.nav[WORKSPACE_PAGES[key].navKey]),
         keywords: PAGE_KEYWORDS[key],
       })),
-    [tNav],
+    [tNav,localAuth,history.data?.enabled],
   );
 
   return useMemo<RootModel>(() => {

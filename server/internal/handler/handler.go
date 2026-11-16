@@ -70,12 +70,14 @@ type dbExecutor interface {
 
 type Config struct {
 	// LocalAuthEnabled enables the fork's loopback-only, single-user session bootstrap.
-	LocalAuthEnabled        bool
-	EngineeringWorkerPath   string
-	EngineeringDatabasePath string
-	AllowSignup             bool
-	AllowedEmails           []string
-	AllowedEmailDomains     []string
+	LocalAuthEnabled          bool
+	EngineeringWorkerPath     string
+	EngineeringDatabasePath   string
+	EngineeringHistoryArchive string
+	EngineeringHistoryHash    string
+	AllowSignup               bool
+	AllowedEmails             []string
+	AllowedEmailDomains       []string
 	// DisableWorkspaceCreation, when true, makes POST /api/workspaces return
 	// 403 for every caller. There is no role/owner exception because the repo
 	// has no platform-admin concept; operators bootstrap the workspace with
@@ -235,6 +237,9 @@ type Handler struct {
 		Call(context.Context, any) (json.RawMessage, error)
 	}
 	EngineeringWorker interface {
+		Call(context.Context, any) (json.RawMessage, error)
+	}
+	EngineeringHistoryWorker interface {
 		Call(context.Context, any) (json.RawMessage, error)
 	}
 	Queries                *db.Queries
@@ -575,6 +580,9 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 	if cfg.EngineeringWorkerPath != "" && cfg.EngineeringDatabasePath != "" {
 		h.EngineeringHostVersion = engineeringHostVersion()
 		h.EngineeringWorker = &engineering.Client{Worker: cfg.EngineeringWorkerPath, Database: cfg.EngineeringDatabasePath}
+		if cfg.LocalAuthEnabled && cfg.EngineeringHistoryArchive != "" && cfg.EngineeringHistoryHash != "" {
+			h.EngineeringHistoryWorker = &engineering.Client{Worker: cfg.EngineeringWorkerPath, Database: cfg.EngineeringHistoryArchive, History: true}
+		}
 		if h.TaskService != nil {
 			h.TaskService.EngineeringTeamOwnsIssue = func(ctx context.Context, issue db.Issue) (bool, error) {
 				routing, err := h.engineeringTeamRouting(ctx, issue)

@@ -12,7 +12,8 @@
     "runtimes": "Runtimes",
     "skills": "Skills",
     "settings": "Settings",
-    "views": "Views"
+    "views": "Views",
+    "history": "LoopWork history"
   },
   "tab": {
     "issue": "Issue",
@@ -254,5 +255,43 @@
     "copy_table": "Copy table",
     "copied": "Copied",
     "copy_failed": "Couldn't copy"
+  },
+  "history": {
+    "title": "LoopWork history",
+    "ownership": "Read-only history. These tasks remain owned by LoopWork.",
+    "loading": "Loading history…",
+    "error": "Could not load historical records.",
+    "retry": "Retry",
+    "unavailable": "No historical archive is available in this workspace.",
+    "project": "Project",
+    "all_projects": "All projects",
+    "search": "Search",
+    "search_placeholder": "Task title or original ID",
+    "count": "Archived tasks: {{count}}",
+    "empty": "No matching tasks.",
+    "previous": "Previous",
+    "next": "Next",
+    "back_task": "Back to task",
+    "back_list": "Back to history",
+    "documents": "Original documents",
+    "no_documents": "This task has no archived documents.",
+    "missing": "This historical record was not found.",
+    "image_reference": "Image reference (file not migrated)",
+    "captured": "Captured {{date}}",
+    "revision": "Revision {{revision}}",
+    "original_source": "Original source",
+    "statuses": {
+      "backlog": "Backlog",
+      "in_plan": "Planning",
+      "in_repro": "Reproducing",
+      "ready_for_dev": "Ready for development",
+      "in_dev": "In development",
+      "in_review": "In review",
+      "in_feedback": "In feedback",
+      "ready_to_close": "Ready to close",
+      "done": "Done",
+      "cancelled": "Cancelled",
+      "blocked": "Blocked"
+    }
   }
 }

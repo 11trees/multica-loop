@@ -61,6 +61,8 @@ Use `Makefile`, workspace `package.json` files, and `pnpm-workspace.yaml` for cu
 
 - Historical LoopWork capture reads source database/WAL bytes only and checkpoints private copies outside the source roots. Preserve original IDs, contracts, evidence and repair lineage in separate history storage; do not project old tokens, leases, runtime intent or completion/reading records into native authority. Already merged legacy sources must not be imported twice, and unfinished tasks retain one explicit owner until validated cutover.
 
+- Native history browsing is opt-in for the reserved local human/workspace and a host-pinned archive hash. Reject machine credentials and caller-selected paths/hashes. Use a separate readonly worker mode without engineering-store initialization or execution commands; scope client requests and caches to the explicit workspace and human. Historical state/reading never grants native completion, and unmigrated image/file references must not trigger automatic resource loading.
+
 Run these from the repository root:
 
 | Scope | Checks |

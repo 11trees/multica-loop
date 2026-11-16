@@ -12,7 +12,8 @@
     "runtimes": "執行時",
     "skills": "Skills",
     "settings": "設定",
-    "views": "檢視"
+    "views": "檢視",
+    "history": "LoopWork 歷史"
   },
   "tab": {
     "issue": "任務",
@@ -244,5 +245,43 @@
     "copy_table": "複製表格",
     "copied": "已複製",
     "copy_failed": "複製失敗"
+  },
+  "history": {
+    "title": "LoopWork 歷史",
+    "ownership": "唯讀歷史。這些任務仍歸 LoopWork，尚未移交至 Multica。",
+    "loading": "正在載入歷史記錄…",
+    "error": "無法載入歷史記錄。",
+    "retry": "重試",
+    "unavailable": "此工作區暫無可檢視的歷史封存。",
+    "project": "專案",
+    "all_projects": "全部專案",
+    "search": "搜尋",
+    "search_placeholder": "任務標題或原始 ID",
+    "count": "歷史任務：{{count}}",
+    "empty": "沒有符合的任務。",
+    "previous": "上一頁",
+    "next": "下一頁",
+    "back_task": "返回任務",
+    "back_list": "返回歷史清單",
+    "documents": "原始文件",
+    "no_documents": "此任務沒有封存文件。",
+    "missing": "找不到這筆歷史記錄。",
+    "image_reference": "圖片參照（檔案尚未遷移）",
+    "captured": "封存時間：{{date}}",
+    "revision": "第 {{revision}} 版",
+    "original_source": "檢視原文",
+    "statuses": {
+      "backlog": "待辦",
+      "in_plan": "規劃中",
+      "in_repro": "重現中",
+      "ready_for_dev": "待開發",
+      "in_dev": "開發中",
+      "in_review": "審查中",
+      "in_feedback": "處理回饋中",
+      "ready_to_close": "待關閉",
+      "done": "已完成",
+      "cancelled": "已取消",
+      "blocked": "已封鎖"
+    }
   }
 }

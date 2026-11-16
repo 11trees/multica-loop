@@ -1,3 +1,4 @@
+import {HistoryAvailabilitySchema,HistoryListSchema,HistoryTaskSchema,HistoryDocumentSchema,type HistoryList,type HistoryTask,type HistoryDocument} from "../history/schema";
 import { EngineeringTeamResponseSchema, type EngineeringTeamResponse, type TeamDefinition } from "../squads/engineering-schema";
 import { FeedbackCaptureSchema, FeedbackCancelledSchema, RequirementReviewConfiguredSchema, RequirementReviewAcknowledgedSchema, EngineeringDeliveryAuthorizationSchema, EngineeringPublicationSchema } from "../issues/engineering-schema";
 import type { ZodType } from "zod";
@@ -3101,6 +3102,14 @@ export class ApiClient {
     if (!state) throw new Error("Invalid engineering overview response");
     return state;
   }
+
+  async historyAvailability(workspaceId:string){return parseWithFallback(await this.fetch<unknown>("/api/engineering/history/availability",{headers:workspaceHeader({workspaceId})}),HistoryAvailabilitySchema,{enabled:false},{endpoint:"GET /api/engineering/history/availability"});}
+  async listHistory(workspaceId:string,filter:{projectId?:string;search?:string;offset?:number}){
+    const params=new URLSearchParams();if(filter.projectId)params.set("project_id",filter.projectId);if(filter.search)params.set("search",filter.search);if(filter.offset)params.set("offset",String(filter.offset));
+    const result=parseWithFallback<HistoryList|null>(await this.fetch<unknown>(`/api/engineering/history?${params}`,{headers:workspaceHeader({workspaceId})}),HistoryListSchema,null,{endpoint:"GET /api/engineering/history"});if(!result)throw new Error("Invalid historical task response");return result;
+  }
+  async historyTask(workspaceId:string,id:string){const result=parseWithFallback<HistoryTask|null>(await this.fetch<unknown>(`/api/engineering/history/tasks/${encodeURIComponent(id)}`,{headers:workspaceHeader({workspaceId})}),HistoryTaskSchema,null,{endpoint:"GET /api/engineering/history/tasks/:id"});if(!result)throw new Error("Invalid historical task response");return result;}
+  async historyDocument(workspaceId:string,taskId:string,documentId:string){const result=parseWithFallback<HistoryDocument|null>(await this.fetch<unknown>(`/api/engineering/history/tasks/${encodeURIComponent(taskId)}/documents/${encodeURIComponent(documentId)}`,{headers:workspaceHeader({workspaceId})}),HistoryDocumentSchema,null,{endpoint:"GET /api/engineering/history/tasks/:id/documents/:id"});if(!result)throw new Error("Invalid historical document response");return result;}
 
   async startEngineeringTeam(issueId:string):Promise<void>{
     const raw=await this.fetch<unknown>(`/api/issues/${issueId}/engineering/team-start`,{method:"POST",body:JSON.stringify({})});

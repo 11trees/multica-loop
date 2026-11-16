@@ -12,7 +12,8 @@
     "runtimes": "Runtimes",
     "skills": "Skills",
     "settings": "Ajustes",
-    "views": "Vistas"
+    "views": "Vistas",
+    "history": "Historial de LoopWork"
   },
   "tab": {
     "issue": "Tarea",
@@ -254,5 +255,43 @@
     "copy_table": "Copiar tabla",
     "copied": "Copiado",
     "copy_failed": "No se pudo copiar"
+  },
+  "history": {
+    "title": "Historial de LoopWork",
+    "ownership": "Historial de solo lectura. Estas tareas siguen gestionadas por LoopWork.",
+    "loading": "Cargando historial…",
+    "error": "No se pudo cargar el historial.",
+    "retry": "Reintentar",
+    "unavailable": "No hay un archivo histórico disponible en este espacio.",
+    "project": "Proyecto",
+    "all_projects": "Todos los proyectos",
+    "search": "Buscar",
+    "search_placeholder": "Título de tarea o ID original",
+    "count": "Tareas archivadas: {{count}}",
+    "empty": "No hay tareas coincidentes.",
+    "previous": "Anterior",
+    "next": "Siguiente",
+    "back_task": "Volver a la tarea",
+    "back_list": "Volver al historial",
+    "documents": "Documentos originales",
+    "no_documents": "Esta tarea no tiene documentos archivados.",
+    "missing": "No se encontró este registro histórico.",
+    "image_reference": "Referencia de imagen (archivo sin migrar)",
+    "captured": "Archivado: {{date}}",
+    "revision": "Revisión {{revision}}",
+    "original_source": "Texto original",
+    "statuses": {
+      "backlog": "Pendiente",
+      "in_plan": "En planificación",
+      "in_repro": "En reproducción",
+      "ready_for_dev": "Listo para desarrollo",
+      "in_dev": "En desarrollo",
+      "in_review": "En revisión",
+      "in_feedback": "Gestionando comentarios",
+      "ready_to_close": "Listo para cerrar",
+      "done": "Completado",
+      "cancelled": "Cancelado",
+      "blocked": "Bloqueado"
+    }
   }
 }
