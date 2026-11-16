@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
 import { mkdtemp,readFile,realpath,rm,writeFile } from "node:fs/promises";
@@ -365,3 +366,19 @@ it("freezes managed delivery authority and refuses mode, base and acknowledgemen
  await expect(app.invoke({actor:host,action:"activate-unit",payload})).rejects.toThrow(/preceding verified delivery/);
  await expect(app.invoke({actor:host,action:"accept-unit",payload:{binding:{}}})).rejects.toThrow(/passed verification/);
 },15000);
+
+for(const checkpoint of ["context","planning","reproduction"] as const)it(`inspects the original ${checkpoint} repair source without repository validation or inherited ownership`,async()=>{
+ const {originalRepairTargets}=await import("./repair-verification-input");
+ if(checkpoint==="context")await configure();else{const prior=await context({kind:checkpoint==="reproduction"?"bug":"requirement",expected:checkpoint==="reproduction"});await prior.command({type:"phase.complete"});}
+ const agentId=checkpoint==="context"?backlog:checkpoint==="planning"?planner:reproducer,owner={...task(agentId,42),projectId:randomUUID()};
+ await app.invoke({actor:{...owner,kind:"daemon"},action:"bind",payload:{work_dir:repository,mode:"in_place",overlays:[]}});
+ await app.invoke({actor:owner,action:"start"});await writeFile(join(repository,"drift.txt"),"Broken runtime remains reportable");
+ await app.invoke({actor:owner,action:"intervention-request",payload:{summary:"Original requirement fault",reason:"Source context blocked",evidence:"Retain original frozen phase"}});
+ const originals=z.array(z.object({observationId:z.string(),snapshotHash:z.string()}).passthrough()).parse(await app.invoke({actor:{kind:"coordinator"},action:"repair-observations"})),original=originals[0]!;
+ const pin={observation_id:original.observationId,snapshot_hash:original.snapshotHash,case_id:"REPAIR-requirement"},sourceHost={kind:"host" as const,workspaceId:human.workspaceId,issueId:human.issueId};
+ await app.invoke({actor:sourceHost,action:"repair-observation-ack",payload:pin});
+ expect(await app.invoke({actor:sourceHost,action:"repair-source",payload:pin})).toMatchObject({agent_id:agentId,attempt_id:owner.attemptId,chain:checkpoint,registered_repository_path:repository,execution_repository_path:repository,mode:"in_place"});
+ const targets=originalRepairTargets([{...original,origin:"business",evidence:{original}}]);expect(targets.length).toBeGreaterThan(2);
+ const db=new DatabaseSync(database);db.prepare("DELETE FROM engineering_process_binding WHERE attempt_id=?").run(owner.attemptId);db.close();
+ await expect(app.invoke({actor:sourceHost,action:"repair-source",payload:pin})).rejects.toThrow(/physical repository binding/);
+},20000);

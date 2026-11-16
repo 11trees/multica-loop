@@ -562,6 +562,10 @@ export class EngineeringApplication {
           throw new DraftConflictError("Original Direct checkpoint changed before repair");
         }
         execution = current.attempts.find(attempt => attempt.id === original.attemptId);
+      } else if(this.business.current(actor.workspaceId,actor.issueId)||this.requirements.current(actor.workspaceId,actor.issueId)){
+        const checkpoint=this.business.repairCheckpoint(original) ?? this.requirements.repairCheckpoint(original);
+        if(!checkpoint)throw new DraftConflictError("Original workflow source is unavailable");
+        registeredPath=checkpoint.repositoryPath;execution=checkpoint.execution;
       } else {
         const current = this.current(actor.workspaceId, actor.issueId), role = current && this.activeRole(current);
         const draft = original.draftId ? await this.drafts.read(original.draftId) : undefined;

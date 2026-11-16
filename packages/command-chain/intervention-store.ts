@@ -12,7 +12,8 @@ const recordSchema = z.strictObject({ id: z.uuid(), workspaceId: z.uuid(), issue
   summary: text.max(4000), reason: text.max(8000), evidence: text.max(100000), requestedAt: z.iso.datetime(),
   snapshot: z.unknown(), snapshotHash: text, requestHash: text, observationId: text, receiptHash: text, kernelVersion: text.optional(), hostVersion: text.optional(),
 });
-type Record = z.infer<typeof recordSchema>;
+export type InterventionRecord = z.infer<typeof recordSchema>;
+type Record = InterventionRecord;
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value, (_, item) => item && typeof item === "object" && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item)).digest("hex");
 
 export function initializeInterventions(db: DatabaseSync) {

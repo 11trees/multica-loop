@@ -1,3 +1,5 @@
+import { inspectRepairCheckpoint } from "./repair-checkpoint";
+import type { InterventionRecord } from "./intervention-store";
 import { EngineeringTeamStore,type EngineeringTeamBinding } from "./team-store";
 import { createHash, randomUUID } from "node:crypto";
 import {existsSync} from "node:fs";
@@ -346,6 +348,13 @@ export class RequirementApplication {
     return this.publication(record);
   }
   private save(record:Record){const changed=this.db.prepare("UPDATE requirement_contract SET payload=? WHERE workspace_id=? AND issue_id=? AND revision=? AND NOT EXISTS (SELECT 1 FROM engineering_intervention WHERE workspace_id=? AND issue_id=?)").run(JSON.stringify(record),record.workspaceId,record.issueId,record.contextContract.binding.revision,record.workspaceId,record.issueId);if(changed.changes !== 1)throw new DraftConflictError("Requirement checkpoint changed or surrendered execution");}
+  repairCheckpoint(original:InterventionRecord){
+    const record=this.current(original.workspaceId,original.issueId);if(!record)return undefined;
+    const role=this.role(record),row=this.db.prepare("SELECT payload FROM requirement_execution WHERE workspace_id=? AND issue_id=? AND revision=? AND agent_id=? AND attempt_id=?").get(record.workspaceId,record.issueId,record.contextContract.binding.revision,original.agentId,original.attemptId);
+    if(!row)throw new DraftConflictError("Original requirement has no recorded execution");
+    const execution=z.object({repositoryPath:text}).parse(JSON.parse(String(row.payload)));
+    return inspectRepairCheckpoint(this.db,original,{chain:role.chain,agentId:role.agentId,draftId:role.draftId,revision:record.contextContract.binding.revision,repositoryPath:record.repositoryPath,contract:role.contract,executionPath:execution.repositoryPath});
+  }
   private role(record:Record){
     const feedback=this.activeFeedback(record);if(feedback?.policy){
       const verification=this.feedbackVerification(feedback);if(verification)return {chain:"feedback-verify",agentId:feedback.policy.verifierId,draftId:verification.entry.draftId,contract:verification.entry.contract,source:feedback.definitions.verify,profile:feedbackVerifyProfile,feedbackGroupId:verification.group.id,feedbackCommentId:verification.commentId};

@@ -133,6 +133,14 @@ original daemon repository binding. Callers cannot provide replacement paths.
 The result distinguishes registered repository from actual execution directory,
 and retains the original code, kernel and API versions and receipt hash.
 
+Business analysis and requirement-owned checkpoints (including active Review and
+Feedback roles) validate their own current role, contract and exact saved draft.
+They require the original native process repository binding and its execution
+mode; no missing mode or removed directory is inferred from the registered path.
+End to End context can inspect the requirement record after business handoff.
+These source reads perform no normal readonly repository validation, because
+repository drift may itself be the fault being reported.
+
 This is a read-only source description, not a takeover receipt. It reads saved
 bindings even if cleanup removed the directory; it neither recreates the path
 nor proves it still exists. The Go takeover coordinator must additionally verify

@@ -24,6 +24,12 @@ runtime update remain incomplete. Pending business handoffs remain blocked until
 verified recovery is connected. No text resolution or ordinary Continue action
 substitutes for verified repair or arbitration.
 
+Repair source inspection covers business and requirement-owned roles as well as
+Direct and delivery checkpoints. Frozen independent targets follow each native
+contract's actual facts, rather than requiring every workflow to use the delivery
+verification source/oracle shape. This prerequisite does not resume a surrendered
+checkpoint or create its successor native task.
+
 ## Agent protocol
 
 Read the current editable checkpoint with `engineering start` / `status`; Direct
@@ -96,6 +102,32 @@ real API, private worker, native task credentials, management CLI and shared UI,
 with fixture-native runs and no provider process. Screenshots at 1280 and 390
 pixels were inspected. No real-provider or packaged Desktop acceptance is claimed.
 The complete Admin repair path remains in the migration coverage audit.
+
+## Remaining verified business recovery
+
+Business recovery is not implemented yet. It needs a durable host-owned handoff
+intent binding the physically settled independent receipt, native candidate,
+every original observation and unchanged checkpoint. Recheck actual content,
+native project/cohort, current Team and saved human authority before acting.
+Management intent, the business checkpoint and the PostgreSQL fence/queue live in
+separate stores; retries must reuse a persisted identity and recover partial
+commits without opening admission before the handoff is ready.
+
+Resume the same frozen Team workflow in a new native dispatch cycle. Preserve
+original contracts, source publications, surrendered drafts, attempts, answers,
+budgets and failure history. A repaired commit needs an explicit derived binding
+for the resumed role, not silent substitution in old evidence. Retire old task
+authority and reject writers that read before surrender, including writers whose
+saved sequence or root record predates recovery. All native contract owners need
+their own current-checkpoint validation; Direct cannot stand in for business,
+requirement, Review or Feedback recovery.
+
+Fence release, continuation publication and their acknowledgements must be
+replayable across host replacement and stopped intent. Recovery only hands work
+back to ordinary execution; it cannot complete a Team phase or satisfy Done.
+Observe a new ordinary result application against the resumed dispatch before
+closing the management Case. Source changes, unfinished processes, a changed Team
+scope or unresolved human input must retain the hold instead of granting recovery.
 
 ![Direct handoff](assets/intervention-direct-1280.png)
 

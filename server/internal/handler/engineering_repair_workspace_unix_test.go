@@ -173,6 +173,7 @@ func TestEngineeringTakeoverBundledWorkersAndPrivateControl(t *testing.T) {
 	if state.Progress.WorkspaceVersion == nil || !strings.HasPrefix(*state.Progress.WorkspaceVersion, "workspace-content-v1:") {
 		t.Fatal("owned transport did not record the actual source version")
 	}
+	renew()
 	grant, err := f.h.PrepareEngineeringRepairWorkspace(ctx, allocated.Claim, json.RawMessage(`{"action":"workspace-write","reason":"Repair original source"}`))
 	if err != nil || !strings.Contains(string(grant), "baselineVersion") {
 		t.Fatal("native owned source did not grant scoped writes", err)
@@ -187,6 +188,7 @@ func TestEngineeringTakeoverBundledWorkersAndPrivateControl(t *testing.T) {
 	if err = json.Unmarshal(call(management, map[string]any{"action": "command", "claim": allocated.Claim, "payload": map[string]string{"action": "status"}}), &state); err != nil || state.Progress.WorkspaceVersion == nil || *state.Progress.WorkspaceVersion == originalVersion || state.Progress.TargetsHash != targetsHash {
 		t.Fatal("current content version did not follow actual source changes within the same owned cohort", err)
 	}
+	renew()
 	candidate, err := f.h.PrepareEngineeringRepairWorkspace(ctx, allocated.Claim, json.RawMessage(`{"action":"workspace-candidate","key":"actual"}`))
 	if err != nil || !strings.Contains(string(candidate), *state.Progress.WorkspaceVersion) {
 		t.Fatal("host did not capture actual repaired content", err)
@@ -197,12 +199,14 @@ func TestEngineeringTakeoverBundledWorkersAndPrivateControl(t *testing.T) {
 	if err = os.WriteFile(filepath.Join(repository, "uncommitted-repair.txt"), []byte("Changed after submitted version"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err = f.h.PrepareEngineeringRepairVerification(ctx, allocated.Claim); err == nil {
-		t.Fatal("host trusted cached progress instead of the actual submitted content version")
+	renew()
+	if err = f.h.PrepareEngineeringRepairVerification(ctx, allocated.Claim); err == nil || !strings.Contains(err.Error(), "actual repair version") {
+		t.Fatal("host did not reject the actual changed submitted version", err)
 	}
 	if err = os.WriteFile(filepath.Join(repository, "uncommitted-repair.txt"), []byte("Actual candidate source"), 0600); err != nil {
 		t.Fatal(err)
 	}
+	renew()
 	if err = f.h.PrepareEngineeringRepairVerification(ctx, allocated.Claim); err != nil {
 		t.Fatal(err)
 	}

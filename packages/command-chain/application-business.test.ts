@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { execFileSync } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
@@ -201,3 +201,46 @@ it("requires the entire initial End to End authorization before any business rec
   for(const input of [{...endToEndConfiguration(),auto_continue:false},{...endToEndConfiguration(),delivery:{roles:{...deliveryRoles,reviewer:roles.review},maxReworks:2}},{...endToEndConfiguration(),execution_resources:configuration().execution_resources}])await expect(invoke(human,"configure-business",input)).rejects.toThrow(/End to End|every frozen/);
   expect(await invoke(human,"overview")).toMatchObject({configured:false});
 });
+
+for(const target of stageOrder)it(`retains the exact ${target} repair source and original verification targets after readonly drift`,async()=>{
+ const {originalRepairTargets}=await import("./repair-verification-input");
+ await invoke(human,"configure-business",configuration());
+ for(const stage of stageOrder.slice(0,stageOrder.indexOf(target))){const previous=await start(stage);await previous.until(null);}
+ const session=await start(target),registered=await realpath(repository);
+ await writeFile(join(repository,"observed-drift.md"),"Readonly drift must remain reportable");
+ await invoke(session.owner,"intervention-request",{summary:"Original business fault",reason:"Runtime blocked",evidence:"Keep original idea and upstream facts"});
+ const originals=z.array(z.object({observationId:z.string(),snapshotHash:z.string(),snapshot:z.unknown()}).passthrough()).parse(await invoke({kind:"coordinator"},"repair-observations")),original=originals[0]!;
+ const pin={observation_id:original.observationId,snapshot_hash:original.snapshotHash,case_id:"REPAIR-business"};
+ await invoke(host,"repair-observation-ack",pin);
+ expect(await invoke(host,"repair-source",pin)).toMatchObject({agent_id:roles[target],attempt_id:session.owner.attemptId,registered_repository_path:registered,execution_repository_path:registered,mode:"in_place",code_version:git(["rev-parse","HEAD"])});
+ const observation={...original,origin:"business",evidence:{original}};
+ const targets=originalRepairTargets([observation]);
+ expect(targets).toEqual(expect.arrayContaining([expect.objectContaining({targetRef:`${original.observationId}:original-input`,original:"Reader continues the selected item"})]));
+ expect(targets.filter(item=>item.targetRef.includes(":upstream:"))).toHaveLength(stageOrder.indexOf(target));
+ const db=new DatabaseSync(database),row=db.prepare("SELECT payload FROM business_contract").get()!,changed=JSON.parse(String(row.payload));changed.activeDraftId=randomUUID();db.prepare("UPDATE business_contract SET payload=?").run(JSON.stringify(changed));db.close();
+ await expect(invoke(host,"repair-source",pin)).rejects.toThrow(/checkpoint|unavailable/);
+},20000);
+
+it("retains a removed business execution worktree as historical scope without recreating it",async()=>{
+ await invoke(human,"configure-business",configuration("worktree"));
+ const worktree=join(directory,"removed-worktree");git(["worktree","add","-qb","repair-source",worktree,"HEAD"]);
+ const session=await start("intent",actor("intent"),"worktree",worktree);
+ await invoke(session.owner,"intervention-request",{summary:"Original worktree fault",reason:"Workspace cleanup",evidence:"Original source remains registered"});
+ const [original]=z.array(z.object({observationId:z.string(),snapshotHash:z.string()})).parse(await invoke({kind:"coordinator"},"repair-observations"));
+ const pin={case_id:"REPAIR-worktree",observation_id:original!.observationId,snapshot_hash:original!.snapshotHash};await invoke(host,"repair-observation-ack",pin);
+ git(["worktree","remove","--force",worktree]);
+ expect(await invoke(host,"repair-source",pin)).toMatchObject({registered_repository_path:await realpath(repository),execution_repository_path:join(await realpath(directory),"removed-worktree"),mode:"worktree"});
+ await expect(readFile(join(worktree,"README.md"),"utf8")).rejects.toThrow();
+});
+it("inspects End to End delivery context after business handoff while retaining the approved business sources",async()=>{
+ const {originalRepairTargets}=await import("./repair-verification-input");
+ await invoke(human,"configure-business",endToEndConfiguration());for(const stage of stageOrder){const session=await start(stage);await session.until(null);}
+ const approved=await closure();await invoke(host,"business-handoff",handoffPayload(approved.version));
+ const owner={...actor("intent"),agentId:deliveryRoles.context};await invoke({...owner,kind:"daemon"},"bind",{work_dir:repository,mode:"in_place",overlays:[]});await invoke(owner,"start");
+ await invoke(owner,"intervention-request",{summary:"Context runtime fault",reason:"Cannot continue current context",evidence:"Keep approved specification and four stage sources"});
+ const [original]=z.array(z.object({observationId:z.string(),snapshotHash:z.string()}).passthrough()).parse(await invoke({kind:"coordinator"},"repair-observations"));
+ const pin={case_id:"REPAIR-end-to-end",observation_id:original!.observationId,snapshot_hash:original!.snapshotHash};await invoke(host,"repair-observation-ack",pin);
+ expect(await invoke(host,"repair-source",pin)).toMatchObject({chain:"context",agent_id:deliveryRoles.context,attempt_id:owner.attemptId});
+ const targets=originalRepairTargets([{...original!,origin:"business",evidence:{original}}]);const source=targets.find(item=>item.targetRef.endsWith(":approved-business-source"));
+ expect(source?.original).toMatchObject({specification,stages:expect.arrayContaining(stageOrder.map(stage=>expect.objectContaining({stage})))});
+},20000);

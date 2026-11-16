@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import { checkpointRepairTargets } from "./repair-original-targets";
 
 const text = z.string().trim().min(1);
 export const repairContentVersionSchema = text.regex(/^workspace-content-v1:[a-f0-9]{40,64}:[a-f0-9]{64}$/);
@@ -20,13 +21,7 @@ export function originalRepairTargets(raw: unknown[]) {
   for (const [index, observation] of originals.entries()) {
     const source = observation.evidence.original;
     if (source.observationId !== observation.observationId || source.workspaceId !== observation.workspaceId || source.issueId !== observation.issueId) throw new Error("Original observation identity does not match its frozen source");
-    if (source.chain === "direct") {
-      const direct = z.object({ direct: z.object({ input: text }) }).parse(source.snapshot);
-      targets.push({ targetRef: `${observation.observationId}:original-input`, observationId: observation.observationId, original: direct.direct.input });
-    } else {
-      const contract = z.object({ contract: z.object({ sources: z.array(z.object({ key: text, oracle: text }).passthrough()).min(1) }).passthrough() }).parse(source.snapshot).contract;
-      for (const item of contract.sources) targets.push({ targetRef: `${observation.observationId}:source:${item.key}`, observationId: observation.observationId, original: item });
-    }
+    for(const item of checkpointRepairTargets(source.chain,source.snapshot))targets.push({targetRef:`${observation.observationId}:${item.key}`,observationId:observation.observationId,original:item.original});
     targets.push({ targetRef: `${observation.observationId}:original-contract`, observationId: observation.observationId, original: { jsonPointer: `/originalObservations/${index}/evidence/original/snapshot` } });
     targets.push({ targetRef: `${observation.observationId}:original-failure`, observationId: observation.observationId, original: { jsonPointer: `/originalObservations/${index}/evidence/original` } });
   }

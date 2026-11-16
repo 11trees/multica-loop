@@ -42,9 +42,24 @@ native source/checkpoint and writer-inventory hash, expected content version,
 complete original observations and derived target references.
 
 Direct retains its full original input plus the full execution/failure snapshot.
-YAML checkpoints retain every frozen source key/oracle, the entire original
-contract/execution input and the original failure. Conflicting or missing target
-identities are rejected. The repairer's proposed reproduction, version commands,
+The thirteen native YAML definitions use their actual contract shapes:
+
+| Checkpoint | Frozen facts used for independent targets |
+| --- | --- |
+| Analysis, development, verification | Every source key and oracle |
+| Business intent, design, specification and specification review | Original idea, every published upstream result, prior/returned stage and specification comment |
+| Requirement context | Original requirement and the complete approved business source when present |
+| Delivery planning | Every source's content/reference and optional oracle, reproduction conclusion and scoped Feedback inputs |
+| Bug reproduction | Exact Existing Expected and the referenced context with its fingerprint |
+| Final review | Every subject and its required evidence references, every independent evidence record and any report correction |
+| Feedback triage | Every versioned comment, context, delivered unit and prior Feedback |
+| Feedback Verify | Exact comment, authoritative accepted work, context and every group acceptance |
+
+Every checkpoint additionally retains the entire original contract/execution
+snapshot and original failure. Business and context contracts do not invent a
+generic oracle; planning sources may legitimately omit one. Unknown native
+contract shapes and conflicting or missing identities are rejected.
+The repairer's proposed reproduction, version commands,
 acceptance checks and replacement targets are stored only in its submission;
 they are excluded from the independent input. No command is executed by this gate.
 
@@ -113,6 +128,16 @@ Artifact checks reject hard/symbolic links and detect permission/empty-directory
 changes. The bundled PostgreSQL/private-socket test hands the fence to the new
 Test generation and rejects a changed candidate before launch. These are controlled
 fixtures, not real-model acceptance.
+
+Controlled source tests also surrender every business stage, requirement context,
+planning and reproduction after readonly drift. They inspect the exact persisted
+checkpoint and native repository binding without reading the broken repository.
+Removed business execution worktrees remain historical paths without recreation.
+End to End delivery context selects its current requirement checkpoint even while
+the completed business record remains present, preserving all approved stage
+sources. Contract-shape tests cover all thirteen native YAML definitions plus
+Direct; they do not establish actual recovery or real-model verification for each
+workflow.
 
 ## Native execution and immutable receipts
 

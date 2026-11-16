@@ -1,4 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
+import { inspectRepairCheckpoint } from "./repair-checkpoint";
+import type { InterventionRecord } from "./intervention-store";
 import { existsSync } from "node:fs";
 import type { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
@@ -48,6 +50,11 @@ export class BusinessApplication {
   current(workspaceId: string, issueId: string): Record | undefined {
     const row = this.db.prepare("SELECT payload FROM business_contract WHERE workspace_id=? AND issue_id=? ORDER BY revision DESC LIMIT 1").get(workspaceId, issueId);
     return row ? recordSchema.parse(JSON.parse(String(row.payload))) : undefined;
+  }
+  repairCheckpoint(original:InterventionRecord){
+    const record=this.current(original.workspaceId,original.issueId);if(!record||!Object.values(businessProfiles).some(profile=>profile.id===original.chain))return undefined;
+    const entry=this.active(record),execution=this.execution(record,entry,original.agentId,original.attemptId);
+    return inspectRepairCheckpoint(this.db,original,{chain:businessProfiles[entry.stage].id,agentId:record.roles[entry.stage],draftId:entry.draftId,revision:record.revision,repositoryPath:record.repositoryPath,contract:entry.contract,executionPath:execution.repositoryPath});
   }
   private active(record: Record) { const entry = record.entries.find(item => item.draftId === record.activeDraftId && !item.superseded); if (!entry) throw new Error("Business checkpoint is unavailable"); return entry; }
   private save(record: Record) {
