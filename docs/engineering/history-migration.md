@@ -62,6 +62,9 @@ parameters, and an absent record returns `null`. SQLite integers use lossless
 Application configuration gets schema/count inventory and the configured
 workspace root only. Its database payload is excluded from the archive.
 Application runtime credentials need a separate explicit configuration migration.
+The [configuration retention tool](configuration-migration.md) now separately
+preserves the four known Agent Prompt/YAML tables and derives five-Team
+correspondence. It excludes runtime/account tables and installs no configuration.
 Historical business/management payloads remain private historical data; old
 credential hashes and private prompt/tool content may occur there. Record lookup
 omits top-level credential/token columns. No old token, lease, runtime selection,
