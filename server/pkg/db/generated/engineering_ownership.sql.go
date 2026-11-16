@@ -115,6 +115,41 @@ func (q *Queries) CreateEngineeringRepairFence(ctx context.Context, arg CreateEn
 	return i, err
 }
 
+const createEngineeringRepairHandoffReservation = `-- name: CreateEngineeringRepairHandoffReservation :one
+INSERT INTO engineering_repair_handoff(target_hash,workspace_id,project_id,task_id,payload)
+VALUES($1,$2,$3,$4,$5)
+ON CONFLICT(target_hash) DO NOTHING RETURNING target_hash, workspace_id, project_id, task_id, phase, payload, created_at
+`
+
+type CreateEngineeringRepairHandoffReservationParams struct {
+	TargetHash  string      `json:"target_hash"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ProjectID   pgtype.UUID `json:"project_id"`
+	TaskID      pgtype.UUID `json:"task_id"`
+	Payload     string      `json:"payload"`
+}
+
+func (q *Queries) CreateEngineeringRepairHandoffReservation(ctx context.Context, arg CreateEngineeringRepairHandoffReservationParams) (EngineeringRepairHandoff, error) {
+	row := q.db.QueryRow(ctx, createEngineeringRepairHandoffReservation,
+		arg.TargetHash,
+		arg.WorkspaceID,
+		arg.ProjectID,
+		arg.TaskID,
+		arg.Payload,
+	)
+	var i EngineeringRepairHandoff
+	err := row.Scan(
+		&i.TargetHash,
+		&i.WorkspaceID,
+		&i.ProjectID,
+		&i.TaskID,
+		&i.Phase,
+		&i.Payload,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createEngineeringRunGuard = `-- name: CreateEngineeringRunGuard :one
 INSERT INTO engineering_run_guard(controller_id,workspace_id,project_id,task_id,runtime_id,claim_at,provider,host_id,controller_pid,controller_marker,scope_kind,scope_id)
 SELECT $1,p.workspace_id,p.id,t.id,t.runtime_id,t.dispatched_at,$2,$3,$4,$5,CASE WHEN t.issue_id IS NOT NULL THEN 'issue' ELSE 'chat' END,COALESCE(t.issue_id,t.chat_session_id)
@@ -325,6 +360,25 @@ func (q *Queries) GetEngineeringRepairFence(ctx context.Context, arg GetEngineer
 		&i.Targets,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getEngineeringRepairHandoff = `-- name: GetEngineeringRepairHandoff :one
+SELECT target_hash, workspace_id, project_id, task_id, phase, payload, created_at FROM engineering_repair_handoff WHERE target_hash = $1
+`
+
+func (q *Queries) GetEngineeringRepairHandoff(ctx context.Context, targetHash string) (EngineeringRepairHandoff, error) {
+	row := q.db.QueryRow(ctx, getEngineeringRepairHandoff, targetHash)
+	var i EngineeringRepairHandoff
+	err := row.Scan(
+		&i.TargetHash,
+		&i.WorkspaceID,
+		&i.ProjectID,
+		&i.TaskID,
+		&i.Phase,
+		&i.Payload,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -653,6 +707,45 @@ func (q *Queries) ListEngineeringProjectWriterTasks(ctx context.Context, arg Lis
 			&i.CancelledByName,
 			&i.IssueSnapshot,
 			&i.WorkflowStep,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listEngineeringRepairHandoffReservations = `-- name: ListEngineeringRepairHandoffReservations :many
+SELECT target_hash, workspace_id, project_id, task_id, phase, payload, created_at FROM engineering_repair_handoff
+WHERE workspace_id = $1 AND project_id = $2 AND phase='reserved'
+ORDER BY target_hash FOR UPDATE
+`
+
+type ListEngineeringRepairHandoffReservationsParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ProjectID   pgtype.UUID `json:"project_id"`
+}
+
+func (q *Queries) ListEngineeringRepairHandoffReservations(ctx context.Context, arg ListEngineeringRepairHandoffReservationsParams) ([]EngineeringRepairHandoff, error) {
+	rows, err := q.db.Query(ctx, listEngineeringRepairHandoffReservations, arg.WorkspaceID, arg.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []EngineeringRepairHandoff{}
+	for rows.Next() {
+		var i EngineeringRepairHandoff
+		if err := rows.Scan(
+			&i.TargetHash,
+			&i.WorkspaceID,
+			&i.ProjectID,
+			&i.TaskID,
+			&i.Phase,
+			&i.Payload,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}

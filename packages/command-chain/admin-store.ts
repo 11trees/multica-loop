@@ -32,7 +32,7 @@ export class AdminStore {
       const tables = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all();
       if (tables.some(table => /^(engineering_|requirement_|business_contract$|direct_contract$|chain_drafts$)/.test(String(table.name))) || tables.length && !tables.some(table => table.name === "admin_control")) throw new Error("Admin storage cannot reuse a business or unrelated database");
       const version = Number(this.db.prepare("PRAGMA user_version").get()!.user_version);
-      if (version > 9) throw new Error("Admin database version is newer than this worker");
+      if (version > 10) throw new Error("Admin database version is newer than this worker");
       this.db.exec(`PRAGMA busy_timeout=1000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; BEGIN IMMEDIATE;
         CREATE TABLE IF NOT EXISTS admin_control(singleton INTEGER PRIMARY KEY CHECK(singleton=1),
           desired_intent TEXT NOT NULL DEFAULT 'stopped',intent_revision INTEGER NOT NULL DEFAULT 0,
@@ -46,9 +46,9 @@ export class AdminStore {
         CREATE INDEX IF NOT EXISTS admin_observation_issue ON admin_observation(workspace_id,issue_id);
         `);
       const lockedVersion=Number(this.db.prepare("PRAGMA user_version").get()!.user_version);
-      if(lockedVersion>9)throw new Error("Admin database version is newer than this worker");
+      if(lockedVersion>10)throw new Error("Admin database version is newer than this worker");
       initializeAdminExecution(this.db,lockedVersion);
-      this.db.exec("PRAGMA user_version=9; COMMIT");
+      this.db.exec("PRAGMA user_version=10; COMMIT");
       this.execution=new AdminExecutionStore(this.db,this.now,value=>this.requireSupervisor(value));
     } catch (error) { this.db.close(); throw error; }
   }
@@ -140,6 +140,7 @@ export const adminRequestSchema = z.discriminatedUnion("action", [
   z.strictObject({action:z.literal("handoff-pending"),authority:adminAuthoritySchema}),
   z.strictObject({action:z.literal("handoff-context"),authority:adminAuthoritySchema,case_id:text}),
   z.strictObject({action:z.literal("handoff-prepared"),authority:adminAuthoritySchema,case_id:text,payload:z.unknown()}),
+  z.strictObject({action:z.literal("handoff-reserved"),authority:adminAuthoritySchema,case_id:text,payload:z.unknown()}),
   z.strictObject({action:z.literal("repair-write-authorize"),claim:adminClaimSchema,reason:text.max(16000)}),
   z.strictObject({action:z.literal("repair-candidate-record"),claim:adminClaimSchema,key:text}),
   z.strictObject({action:z.literal("verification-check-start"),claim:adminClaimSchema,ordinal:z.number().int().nonnegative()}),
@@ -178,6 +179,7 @@ export function invokeAdmin(store: AdminStore, input: unknown) {
     case "handoff-pending": return store.execution.pendingHandoffs(request.authority);
     case "handoff-context": return store.execution.handoffContext(request.authority,request.case_id);
     case "handoff-prepared": return store.execution.recordHandoffPreparation(request.authority,request.case_id,request.payload);
+    case "handoff-reserved": return store.execution.recordHandoffReservation(request.authority,request.case_id,request.payload);
     case "repair-write-authorize": return store.execution.authorizeRepairWrite(request.claim,request.reason);
     case "repair-candidate-record": return store.execution.recordRepairCandidate(request.claim,request.key);
     case "verification-check-start": return store.execution.startIndependentCheck(request.claim,request.ordinal);

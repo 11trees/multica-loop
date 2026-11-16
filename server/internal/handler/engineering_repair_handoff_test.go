@@ -112,12 +112,12 @@ func TestEngineeringVerifiedHandoffPreparationRetainsNativeFence(t *testing.T) {
 				t.Fatal(err)
 			}
 			f.h.EngineeringTakeoverControl = &engineering.LocalControlClient{Socket: f.h.cfg.EngineeringDatabasePath + ".control.sock"}
-			err = f.h.ReconcileEngineeringRepairHandoffs(ctx, engineeringAdminAuthority{OwnerID: "current-host", Token: 2})
+			_, err = f.h.EngineeringTakeoverControl.Call(ctx, map[string]any{"action": "prepare-handoff", "authority": engineeringAdminAuthority{OwnerID: "current-host", Token: 2}, "case_id": "fixture-case"})
 			if mode == "ack-retry" {
 				if err == nil {
 					t.Fatal("interrupted acknowledgement unexpectedly succeeded")
 				}
-				err = f.h.ReconcileEngineeringRepairHandoffs(ctx, engineeringAdminAuthority{OwnerID: "current-host", Token: 2})
+				_, err = f.h.EngineeringTakeoverControl.Call(ctx, map[string]any{"action": "prepare-handoff", "authority": engineeringAdminAuthority{OwnerID: "current-host", Token: 2}, "case_id": "fixture-case"})
 				if err != nil || writes != 2 || acknowledged != 2 {
 					t.Fatal("handoff did not replay preparation after interrupted acknowledgement", err, writes, acknowledged)
 				}

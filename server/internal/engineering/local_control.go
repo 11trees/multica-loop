@@ -101,9 +101,9 @@ func (c *LocalControlClient) Call(ctx context.Context, input any) (json.RawMessa
 	var operation struct {
 		Action string `json:"action"`
 	}
-	if json.Unmarshal(body, &operation) == nil && operation.Action == "prepare-handoff" {
-		// Preparation includes two bounded 10-second content reads, plus native
-		// reconciliation and permission checks; keep room for both valid reads.
+	if json.Unmarshal(body, &operation) == nil && (operation.Action == "prepare-handoff" || operation.Action == "reserve-handoff") {
+		// Handoff includes bounded content reads, reconciliation and permission
+		// checks; reservation repeats authorization under the admission lock.
 		timeout = 40 * time.Second
 	}
 	response, err := (&http.Client{Transport: transport, Timeout: timeout}).Do(request)

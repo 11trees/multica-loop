@@ -7,6 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import { beforeEach, afterEach, it, expect } from "vitest";
 import { AdminStore } from "./admin-store";
 import { originalRepairTargets } from "./repair-verification-input";
+import { handoffReservationHash, handoffReservationSchema, type HandoffReservation } from "./repair-handoff";
 
 let directory:string,filename:string,store:AdminStore,now:number;
 const workspaceId=randomUUID(),issueId=randomUUID();
@@ -313,4 +314,43 @@ it("recompiles a settled receipt before preparing a native handoff",async()=>{
 it("keeps previous native handoff preparation but invalidates readiness for new original facts",async()=>{
  const h=await settledHandoff();store.execution.handoffContext(h.authority,h.claim.caseId);store.observe(h.authority,observation("after-handoff-preparation"));
  expect(store.execution.pendingHandoffs(h.authority)).toEqual([]);expect(()=>store.execution.handoffContext(h.authority,h.claim.caseId)).toThrow(/settled verified/);
+});
+
+async function reservedHandoff(){
+ const h=await settledHandoff(),context=store.execution.handoffContext(h.authority,h.claim.caseId),target=context.target,r=context.request,b=target.workspaceBinding;
+ const prepared={prepared:true as const,hash:"f".repeat(64),target_hash:context.target_hash,continuation:{workspace_id:workspaceId,issue_id:issueId,agent_id:randomUUID(),user_id:randomUUID(),task_id:randomUUID(),expected_revision:1,expected_sequence:4,reason:"repair_ready" as const},kind:"yaml" as const,draft_id:randomUUID()};
+ store.execution.recordHandoffPreparation(h.authority,h.claim.caseId,prepared);
+ const reservation:HandoffReservation={reserved:true,hash:"",case_id:h.claim.caseId,verification_attempt_id:target.verificationAttemptId,target_hash:context.target_hash,preparation_hash:prepared.hash,project_id:b.projectId,expected_version:target.expectedVersion,continuation:prepared.continuation,
+  fence:{attempt_id:r.claim.attemptId,generation:r.claim.generation,owner_id:r.claim.authority.ownerId,supervision_token:r.claim.authority.token,intent_revision:context.intent_revision,observation_id:target.observationId,source_attempt_id:b.sourceAttemptId,source_revision:prepared.continuation.expected_revision,snapshot_hash:target.snapshotHash,workspace_path:b.workspaceRoot,targets_hash:b.targetsHash}};
+ reservation.hash=handoffReservationHash(reservation);
+ return {...h,context,prepared,reservation};
+}
+it("retains the exact native reservation across management restart and supervisor replacement without resuming business",async()=>{
+ const h=await reservedHandoff();expect(store.execution.recordHandoffReservation(h.authority,h.claim.caseId,h.reservation)).toEqual(h.reservation);
+ store.close();store=new AdminStore(filename,()=>now);
+ expect(store.execution.handoffContext(h.authority,h.claim.caseId)).toMatchObject({reservation:h.reservation});expect(store.issue(workspaceId,issueId).status).toBe("verified");
+ store.execution.setIntent({intent:"stopped",request_id:"stop-reserved"});expect(()=>store.execution.recordHandoffReservation(h.authority,h.claim.caseId,h.reservation)).toThrow(/running intent/);
+ now+=30001;const successor=store.acquireSupervisor("reservation-successor",30000,true)!;store.execution.setIntent({intent:"running",request_id:"resume-reserved"});
+ expect(()=>store.execution.recordHandoffReservation(h.authority,h.claim.caseId,h.reservation)).toThrow(/authority/);
+ expect(store.execution.recordHandoffReservation(successor,h.claim.caseId,h.reservation)).toEqual(h.reservation);
+ expect(store.execution.claim(successor)).toBeNull();
+});
+it.each(["proposal","target","task","human","scope","version","owner","generation","cohort","source","snapshot","intent","observation"])("refuses a rehashed native reservation with changed %s",async changed=>{
+ const h=await reservedHandoff(),value=structuredClone(h.reservation);
+ if(changed==="proposal")value.preparation_hash="a".repeat(64);
+ if(changed==="target")value.target_hash="b".repeat(64);
+ if(changed==="task")value.continuation.task_id=randomUUID();
+ if(changed==="human")value.continuation.user_id=randomUUID();
+ if(changed==="scope")value.project_id=randomUUID();
+ if(changed==="version")value.expected_version=version.replaceAll("b","e");
+ if(changed==="owner")value.fence.owner_id="another-owner";
+ if(changed==="generation")value.fence.generation++;
+ if(changed==="cohort")value.fence.targets_hash="9".repeat(64);
+ if(changed==="source")value.fence.source_attempt_id="another-native:123";
+ if(changed==="snapshot")value.fence.snapshot_hash="another-snapshot";
+ if(changed==="intent")value.fence.intent_revision++;
+ if(changed==="observation")value.fence.observation_id="another-original";
+ value.hash=handoffReservationHash(value);expect(handoffReservationSchema.safeParse(value).success).toBe(true);
+ expect(()=>store.execution.recordHandoffReservation(h.authority,h.claim.caseId,value)).toThrow(/differs/);
+ expect(store.execution.handoffContext(h.authority,h.claim.caseId).reservation).toBeNull();
 });

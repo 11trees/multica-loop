@@ -1,12 +1,14 @@
-# Verified business handoff preparation
+# Verified business handoff preparation and reservation
 
-The independent host now prepares a successor after native repair verification.
-This stage records an intent and a proposed checkpoint. It does not activate the
-checkpoint, enqueue a native task, release the project fence or close the Case.
+The independent host prepares a successor and reserves its native task identity
+after repair verification. These stages retain an intent, proposed checkpoint and
+durable native reservation. They do not activate the checkpoint, enqueue a native
+task, release the project fence or close the Case.
 
 ## Verified management context
 
-Schema 9 adds `admin_handoff_preparation`. The host reads `handoff-pending` only
+Management schema 10 retains `admin_handoff_preparation` and adds a separate
+`admin_handoff_reservation` ledger. The host reads `handoff-pending` only
 under current running intent and obtains `handoff-context` with management
 authority. Agent commands expose neither action. A display status alone is
 insufficient: context recompiles the entire ordered native receipt, compares its
@@ -34,7 +36,8 @@ registered repository. In-place Direct and development can retain uncommitted
 work; the exact content version still has to match and preparation discards none
 of those changes.
 
-`engineering_repair_handoff` is the first durable handoff intent. It retains the
+Business SQLite's `engineering_repair_handoff` is the first durable handoff
+intent. It retains the
 exact old root payload/hash, target, frozen task Team snapshot, original human,
 and a deterministic new native task ID. YAML preparation stores a reconciled
 successor draft with a new ID, repair-derived binding and incremented sequence.
@@ -60,6 +63,39 @@ recorded proposal. The Case stays `verified`, its original intervention remains
 pending and the fence remains held. A recorded preparation is historical evidence,
 not a live execution permission.
 
+## Durable native reservation
+
+Independent discovery now follows preparation with the private `reserve-handoff`
+action. Reservation requires the acknowledged preparation and independently
+repeats source, physical cohort, frozen Team, human, role-resource and actual
+content checks. It compares the complete prepared successor with the saved
+acknowledgement; a new passing flag or a task ID from the caller cannot reserve
+work.
+
+PostgreSQL migration 667 adds its own `engineering_repair_handoff` table. Under
+the project admission lock and exact owned-fence lock, the API checks the writer
+inventory, absence of active tasks, fresh management intent and content, and
+absence of the proposed successor in the native task queue. It persists the
+target, project, stable task ID and full immutable reservation receipt with
+`phase='reserved'`. A project can have one outstanding reservation; another
+target, changed payload or preexisting successor fails without replacement.
+This record creates no `agent_task_queue` row.
+
+The receipt pins proposal/proof hashes, candidate content version, continuation
+identity/checkpoint, original source and the precise fence generation/cohort.
+Native and kernel implementations hash length-prefixed UTF-8 fields so Unicode
+paths and JSON escaping cannot change receipt identity. Management rechecks the
+receipt against the current verified context before acknowledging it in schema
+10. A crash after the PostgreSQL commit replays the same reservation after fresh
+authorization, including under a successor supervisor or a new running-intent
+revision. The original fence identity remains historical; current authorization
+is checked separately. Stopped intent or new original observations refuse reuse.
+
+Reserved records participate in the database admission and project/resource
+mutation guards. Even if a fence is absent, an outstanding reservation prevents
+controller/task admission and resource changes until publication is implemented.
+The normal reservation path retains its exact owned fence and business hold.
+
 ## Successor evidence and retired authority
 
 Preparation parses original and derived contracts through each native owner's
@@ -83,8 +119,8 @@ Apply the reconciled proposal through its workflow owner, preserving original
 contracts, source history, human decisions and bounded budgets. Revalidate
 code-bound upstream references before using the proposal as an active checkpoint.
 
-Activation needs a durable native reservation for the exact intent before the
-business hold is removed. Apply the new root/draft with source payload/sequence
+The durable native reservation is now available before any business hold is
+removed. Apply the new root/draft with source payload/sequence
 checks and retire old attempt authority; stale root writers and old draft writers
 must stay rejected after recovery. Keep the project fence through this step.
 Then publish the stable native task and release the matching fence in one native
@@ -94,7 +130,7 @@ replay. Do not expose a claimable task before its business checkpoint is ready.
 
 Observe a new ordinary result application before closing the management Case.
 Preparing or activating recovery cannot satisfy a Team phase or native Done.
-Business activation, native reservation/queue handoff, progress observation and
+Business activation, native queue publication, progress observation and
 closure remain unimplemented. Broader revocation, runtime/service identity and
 shared-path recovery retain their separate migration requirements.
 
@@ -120,3 +156,16 @@ finish execution without new observations. Development gates require new claims,
 review and captured commands. A separate test simulates absence of the active
 hold lookup while keeping surrender history, to verify permanent attempt
 revocation; this is not a business-release or native-queue acceptance run.
+
+Native reservation tests use PostgreSQL and the actual private control socket
+with isolated management/business ports. They retain the fence and prove no task
+was created, replay after interrupted acknowledgement, and refuse changed
+proposal/content/intent, late historical writers, preexisting task IDs and
+conflicting/corrupt reservations. A simulated missing-fence condition retains
+native admission and resource-mutation barriers. Management tests retain the
+receipt across restart/supervisor replacement, check rehashed but mismatched
+source fields, and preserve proposals during the schema-nine upgrade. A shared
+Unicode receipt witness is checked independently by Go and Node. These tests do
+not establish business activation or a complete real-provider recovery.
+An admission-wait test confirms a changed authorization cannot commit a native
+reservation after waiting for another transaction's project lock.

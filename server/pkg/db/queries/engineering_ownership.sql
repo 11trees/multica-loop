@@ -97,3 +97,16 @@ LEFT JOIN issue i ON i.id=t.issue_id LEFT JOIN chat_session c ON c.id=t.chat_ses
 WHERE COALESCE(i.project_id,c.project_id) = @project_id AND COALESCE(i.workspace_id,c.workspace_id) = @workspace_id
  AND (t.dispatched_at IS NOT NULL OR t.started_at IS NOT NULL OR t.status IN ('queued','dispatched','waiting_local_directory','running'))
 ORDER BY t.created_at,t.id;
+
+-- name: ListEngineeringRepairHandoffReservations :many
+SELECT * FROM engineering_repair_handoff
+WHERE workspace_id = @workspace_id AND project_id = @project_id AND phase='reserved'
+ORDER BY target_hash FOR UPDATE;
+
+-- name: GetEngineeringRepairHandoff :one
+SELECT * FROM engineering_repair_handoff WHERE target_hash = @target_hash;
+
+-- name: CreateEngineeringRepairHandoffReservation :one
+INSERT INTO engineering_repair_handoff(target_hash,workspace_id,project_id,task_id,payload)
+VALUES(@target_hash,@workspace_id,@project_id,@task_id,@payload)
+ON CONFLICT(target_hash) DO NOTHING RETURNING *;

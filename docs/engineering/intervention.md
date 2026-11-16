@@ -107,8 +107,11 @@ The complete Admin repair path remains in the migration coverage audit.
 
 [Verified handoff preparation](repair-handoff.md) now persists a host-owned intent
 and proposed successor binding the physically settled independent receipt,
-native candidate, every original observation and unchanged checkpoint. It keeps
-business held. Successor stages restart with fresh derived conclusions while
+native candidate, every original observation and unchanged checkpoint. A private
+native reservation now persists its stable task identity before activation,
+retains project admission barriers and replays interrupted management
+acknowledgement without creating a task. It keeps business held. Successor stages
+restart with fresh derived conclusions while
 retaining original obligations, scenarios and authenticated human choices. Old
 attempts and surrendered draft IDs remain revoked independently of active-hold
 lookup. Activation, queue handoff and closure remain incomplete. Recheck actual content,

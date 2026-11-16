@@ -43,6 +43,7 @@ func newControllerFixture(t *testing.T) controllerFixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
+		dbfx.Exec(t, "DELETE FROM engineering_repair_handoff WHERE project_id=$1", project)
 		dbfx.Exec(t, "DELETE FROM engineering_run_process WHERE controller_id IN (SELECT controller_id FROM engineering_run_guard WHERE task_id=$1)", task)
 		dbfx.Exec(t, "DELETE FROM engineering_run_guard WHERE task_id=$1", task)
 		dbfx.Exec(t, "DELETE FROM engineering_repair_fence WHERE project_id=$1", project)

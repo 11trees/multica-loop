@@ -13,9 +13,19 @@ import (
 
 type engineeringHandoffContext struct {
 	engineeringTakeoverCurrent
-	CurrentIntentRevision int64           `json:"current_intent_revision"`
-	Target                json.RawMessage `json:"target"`
-	TargetHash            string          `json:"target_hash"`
+	CurrentIntentRevision int64                          `json:"current_intent_revision"`
+	Target                json.RawMessage                `json:"target"`
+	TargetHash            string                         `json:"target_hash"`
+	Preparation           *engineeringHandoffPreparation `json:"preparation"`
+}
+
+type engineeringHandoffPreparation struct {
+	Prepared     bool                    `json:"prepared"`
+	Hash         string                  `json:"hash"`
+	TargetHash   string                  `json:"target_hash"`
+	Continuation engineeringContinuation `json:"continuation"`
+	Kind         string                  `json:"kind"`
+	DraftID      *string                 `json:"draft_id"`
 }
 
 func (h *Handler) controlEngineeringRepair(ctx context.Context, raw json.RawMessage) (any, error) {
@@ -28,13 +38,17 @@ func (h *Handler) controlEngineeringRepair(ctx context.Context, raw json.RawMess
 	if request.Action == "" {
 		return h.DrainEngineeringProject(ctx, raw)
 	}
-	if request.Action != "prepare-handoff" {
+	switch request.Action {
+	case "prepare-handoff":
+		return h.prepareEngineeringRepairHandoff(ctx, raw)
+	case "reserve-handoff":
+		return h.runEngineeringRepairHandoff(ctx, raw, true)
+	default:
 		return nil, fmt.Errorf("unknown native repair control action")
 	}
-	return h.prepareEngineeringRepairHandoff(ctx, raw)
 }
 
-// The independent host schedules preparation; no Agent can supply a native
+// The independent host prepares and reserves handoff; no Agent can supply a native
 // scope, passing verdict, directory, continuation identity or fence release.
 func (h *Handler) ReconcileEngineeringRepairHandoffs(ctx context.Context, authority engineeringAdminAuthority) error {
 	if h.EngineeringTakeoverControl == nil {
@@ -54,10 +68,16 @@ func (h *Handler) ReconcileEngineeringRepairHandoffs(ctx context.Context, author
 		if _, err = h.EngineeringTakeoverControl.Call(ctx, map[string]any{"action": "prepare-handoff", "authority": authority, "case_id": item.CaseID}); err != nil {
 			return err
 		}
+		if _, err = h.EngineeringTakeoverControl.Call(ctx, map[string]any{"action": "reserve-handoff", "authority": authority, "case_id": item.CaseID}); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 func (h *Handler) prepareEngineeringRepairHandoff(ctx context.Context, raw json.RawMessage) (any, error) {
+	return h.runEngineeringRepairHandoff(ctx, raw, false)
+}
+func (h *Handler) runEngineeringRepairHandoff(ctx context.Context, raw json.RawMessage, reserve bool) (any, error) {
 	var input struct {
 		Authority engineeringAdminAuthority `json:"authority"`
 		CaseID    string                    `json:"case_id"`
@@ -80,6 +100,9 @@ func (h *Handler) prepareEngineeringRepairHandoff(ctx context.Context, raw json.
 	if err != nil {
 		return nil, err
 	}
+	if reserve && initial.Preparation == nil {
+		return nil, fmt.Errorf("native reservation requires acknowledged handoff preparation")
+	}
 	pin, err := h.engineeringSourceForCurrent(ctx, initial.engineeringTakeoverCurrent)
 	if err != nil {
 		return nil, err
@@ -96,7 +119,7 @@ func (h *Handler) prepareEngineeringRepairHandoff(ctx context.Context, raw json.
 		if err != nil {
 			return err
 		}
-		if current.TargetHash != initial.TargetHash || current.CurrentIntentRevision != initial.CurrentIntentRevision {
+		if current.TargetHash != initial.TargetHash || current.CurrentIntentRevision != initial.CurrentIntentRevision || (reserve && !engineeringSameHandoffPreparation(current.Preparation, initial.Preparation)) {
 			return fmt.Errorf("handoff proof or intent changed")
 		}
 		fresh, err := h.engineeringSourceForCurrent(ctx, current.engineeringTakeoverCurrent)
@@ -137,12 +160,7 @@ func (h *Handler) prepareEngineeringRepairHandoff(ctx context.Context, raw json.
 	if err != nil {
 		return nil, err
 	}
-	var result struct {
-		Prepared     bool                    `json:"prepared"`
-		Hash         string                  `json:"hash"`
-		TargetHash   string                  `json:"target_hash"`
-		Continuation engineeringContinuation `json:"continuation"`
-	}
+	var result engineeringHandoffPreparation
 	if err = json.Unmarshal(prepared, &result); err != nil {
 		return nil, err
 	}
@@ -153,23 +171,48 @@ func (h *Handler) prepareEngineeringRepairHandoff(ctx context.Context, raw json.
 	if err = h.validateEngineeringRepairSuccessor(ctx, item); err != nil {
 		return nil, err
 	}
-	version, err := h.EngineeringWorker.Call(ctx, map[string]any{"action": "repair-workspace-version", "actor": actor, "payload": map[string]string{"case_id": input.CaseID, "observation_id": initial.Request.ObservationID, "snapshot_hash": initial.Request.SnapshotHash}})
-	if err != nil {
-		return nil, err
+	if reserve && !engineeringSameHandoffPreparation(initial.Preparation, &result) {
+		return nil, fmt.Errorf("acknowledged handoff proposal changed")
 	}
-	var actual struct {
-		Version string `json:"workspace_version"`
+	finalize := func() error {
+		version, err := h.EngineeringWorker.Call(ctx, map[string]any{"action": "repair-workspace-version", "actor": actor, "payload": map[string]string{"case_id": input.CaseID, "observation_id": initial.Request.ObservationID, "snapshot_hash": initial.Request.SnapshotHash}})
+		if err != nil {
+			return err
+		}
+		var actual struct {
+			Version string `json:"workspace_version"`
+		}
+		if json.Unmarshal(version, &actual) != nil || actual.Version != target.ExpectedVersion {
+			return fmt.Errorf("handoff actual candidate changed after preparation")
+		}
+		if err = validate(); err != nil {
+			return err
+		}
+		if err = h.validateEngineeringRepairSuccessor(ctx, item); err != nil {
+			return err
+		}
+		return nil
 	}
-	if json.Unmarshal(version, &actual) != nil || actual.Version != target.ExpectedVersion {
-		return nil, fmt.Errorf("handoff actual candidate changed after preparation")
+	if reserve {
+		reservation, err := h.reserveEngineeringRepairHandoff(ctx, initial, pin, result, finalize)
+		if err != nil {
+			return nil, err
+		}
+		return h.EngineeringAdminWorker.Call(ctx, map[string]any{"action": "handoff-reserved", "authority": input.Authority, "case_id": input.CaseID, "payload": reservation})
 	}
-	if err = validate(); err != nil {
-		return nil, err
-	}
-	if err = h.validateEngineeringRepairSuccessor(ctx, item); err != nil {
+	if err = finalize(); err != nil {
 		return nil, err
 	}
 	return h.EngineeringAdminWorker.Call(ctx, map[string]any{"action": "handoff-prepared", "authority": input.Authority, "case_id": input.CaseID, "payload": json.RawMessage(prepared)})
+}
+
+func engineeringSameHandoffPreparation(a, b *engineeringHandoffPreparation) bool {
+	left, err := json.Marshal(a)
+	if err != nil {
+		return false
+	}
+	right, err := json.Marshal(b)
+	return err == nil && string(left) == string(right)
 }
 func (h *Handler) validateEngineeringRepairSuccessor(ctx context.Context, item engineeringContinuation) error {
 	if err := h.requireFrozenTeamContinuation(ctx, item); err != nil {
