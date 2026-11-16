@@ -9,6 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/multica-ai/multica/server/internal/engineering"
 	"github.com/multica-ai/multica/server/internal/issuestatus"
+	"github.com/multica-ai/multica/server/internal/service"
 	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
@@ -193,7 +194,8 @@ func (h *Handler) RunEngineering(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var confirmed struct {
-		AgentID string `json:"agent_id"`
+		Recovery *service.EngineeringRecoveryExecution `json:"recovery_execution"`
+		AgentID  string                                `json:"agent_id"`
 	}
 	if json.Unmarshal(checked, &confirmed) != nil || confirmed.AgentID != selection.AgentID {
 		writeError(w, http.StatusServiceUnavailable, "engineering role changed while preparing the run")
@@ -207,7 +209,13 @@ func (h *Handler) RunEngineering(w http.ResponseWriter, r *http.Request) {
 	if selection.Chain == "direct" {
 		instruction = directRunInstruction
 	}
-	task, err := h.TaskService.EnqueueEngineeringRun(r.Context(), issue, agent.ID, parseUUID(userID), instruction)
+	if confirmed.Recovery != nil {
+		if err := validateEngineeringRecoverySelection(confirmed.Recovery, engineeringContinuation{WorkspaceID: uuidToString(issue.WorkspaceID), IssueID: uuidToString(issue.ID), AgentID: uuidToString(agent.ID), UserID: userID, ExpectedRevision: payload.ExpectedRevision, ExpectedSequence: payload.ExpectedSequence}); err != nil {
+			engineeringControlError(w, err)
+			return
+		}
+	}
+	task, err := h.TaskService.EnqueueEngineeringRun(r.Context(), issue, agent.ID, parseUUID(userID), instruction, confirmed.Recovery)
 	if err != nil {
 		writeError(w, http.StatusConflict, err.Error())
 		return

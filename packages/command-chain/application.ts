@@ -1,3 +1,4 @@
+import {assertRepairExecutionBinding,initializeRepairExecutions,prepareRepairExecutionHint,bindRepairExecutionHint,repairExecutionHintSchema} from "./repair-execution";
 import { initializeRepairHandoffs,prepareRepairHandoff } from "./repair-handoff-store";
 import { initializeRepairApplications, readStagedRepair, stagedPreparation, reservedRepairProposal, persistStagedRepair } from "./repair-stage-store";
 import {initializeRepairProgress,readRepairProgress} from "./repair-progress-store";
@@ -37,6 +38,7 @@ const coordinator = z.strictObject({ kind: z.literal("coordinator") });
 const actor = z.discriminatedUnion("kind", [human, task, daemon, host, coordinator, teamManager]);
 export const applicationRequestSchema = z.strictObject({
   actor,
+  recovery_execution:repairExecutionHintSchema.optional(),
   action: z.enum(["team-feedback-scope", "team-routing", "team-delivery-scope", "team-review", "team-lookup", "team-start", "team-profile", "team-bind", "team-binding", "execution-permission", "process", "process-scope", "intervention-request", "repair-handoff-prepare", "repair-handoff-stage", "repair-handoff-ready", "repair-business-progress", "repair-workspace-version", "repair-source", "repair-observations", "repair-observation-ack", "configure-direct","direct-run","direct-submit","direct-scope","direct-completed","business-handoff","end-to-end-scope","business-scope","business-read","business-comment","business-comment-intent","business-comment-ack","business-comment-resolved","business-comment-protected","configure-business", "configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations", "verified-binding", "publication", "publication-ack", "delivery-policy", "activate-unit", "accept-unit", "parent-scope", "review-inputs", "configure-review", "review-ack", "begin-feedback", "cancel-feedback", "feedback-restored", "authorize-feedback-work", "prepare-feedback-verification", "prepare-feedback-report"]),
   payload: z.unknown().optional(),
   host_version: z.string().optional(),
@@ -121,6 +123,7 @@ export class EngineeringApplication {
     initializeRepairHandoffs(this.db);
     initializeRepairApplications(this.db);
     initializeRepairProgress(this.db);
+    initializeRepairExecutions(this.db);
     this.processes=new EngineeringProcessStore(this.db);
     this.drafts = new SqliteDraftStore(database);
     this.direct=new DirectApplication(this.db);
@@ -148,6 +151,7 @@ export class EngineeringApplication {
     if(record.draftId===draft.id){same(record.contract);if(!record.verificationExecution)return undefined;if(JSON.stringify(execution)!==JSON.stringify(record.verificationExecution))throw new DraftConflictError("Applied recovery verification runtime changed");return compileVerificationConclusion(draft,record.contract);}
     throw new DraftConflictError("Recovery result has no engineering-owned application");
   }
+  private recoveryActiveDraftId(workspaceId:string,issueId:string){if(this.direct.current(workspaceId,issueId))return null;const business=this.business.current(workspaceId,issueId);if(business&&!business.delivery?.handedOff)return business.activeDraftId;const requirement=this.requirements.repairActiveDraftId(workspaceId,issueId);if(requirement)return requirement;const record=this.current(workspaceId,issueId);return record?this.activeRole(record).draftId:undefined;}
   private current(workspaceId: string, issueId: string): Record | undefined {
     const row = this.db.prepare("SELECT payload FROM engineering_contract WHERE workspace_id = ? AND issue_id = ? ORDER BY revision DESC LIMIT 1").get(workspaceId, issueId);
     return row ? recordSchema.parse(JSON.parse(String(row.payload))) : undefined;
@@ -731,6 +735,7 @@ export class EngineeringApplication {
         }
       }
     }
+    if(request.recovery_execution){if(actor.kind!=="daemon"||action!=="bind")throw new Error("Only the native runtime bind can project recovery task context");bindRepairExecutionHint(this.db,actor,request.recovery_execution,this.recoveryActiveDraftId(actor.workspaceId,actor.issueId));}
     let pending = this.interventions.pending(actor.workspaceId, actor.issueId);
     const surrendered = actor.kind === "task" || actor.kind === "daemon" ? this.interventions.surrendered(actor.workspaceId, actor.issueId, actor.attemptId) : undefined;
     const retired=(actor.kind==="task"||actor.kind==="daemon")&&this.interventions.retired(actor.workspaceId,actor.issueId,actor.attemptId);
@@ -776,7 +781,12 @@ export class EngineeringApplication {
       const frozen = original.snapshot as Awaited<ReturnType<EngineeringApplication["invokeWorkflow"]>>;
       return { ...frozen, intervention: this.interventions.view(original), agent_action: "end_execution" };
     }
+    if(actor.kind==="daemon"&&action==="bind")assertRepairExecutionBinding(this.db,actor,this.recoveryActiveDraftId(actor.workspaceId,actor.issueId));
     const result = await this.invokeWorkflow(request);
+    if(actor.kind==="human"&&action==="prepare-run"){
+      const selected=z.object({agent_id:z.uuid()}).parse(result),checkpoint=z.object({expected_revision:z.number().int().positive(),expected_sequence:z.number().int().nonnegative()}).parse(request.payload),hint=prepareRepairExecutionHint(this.db,actor,selected.agent_id,checkpoint.expected_revision,checkpoint.expected_sequence,this.recoveryActiveDraftId(actor.workspaceId,actor.issueId));
+      if(hint)return {...result,recovery_execution:hint};
+    }
     if(action==="bind"&&actor.kind==="daemon"){
       const binding=z.object({bound:z.literal(true),repository_path:text}).parse(result),mode=z.object({mode:z.enum(["in_place","worktree"])}).parse(request.payload).mode;
       this.processes.bind({workspaceId:actor.workspaceId,issueId:actor.issueId,agentId:actor.agentId,attemptId:actor.attemptId},actor.projectId,binding.repository_path,mode);

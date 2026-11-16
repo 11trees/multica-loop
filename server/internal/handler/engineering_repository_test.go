@@ -42,8 +42,11 @@ func TestEngineeringRepositoryCredentialBoundary(t *testing.T) {
 	if len(recorder.inputs) != 0 {
 		t.Fatal("untrusted binding reached worker")
 	}
-	testutil.Call(t, handler.ServeHTTP, request(token, body)).Want(http.StatusOK)
+	testutil.Call(t, handler.ServeHTTP, request(token, strings.TrimSuffix(body, "}")+`,"recovery_execution":{"hash":"forged"}}`)).Want(http.StatusOK)
 	input := recorder.inputs[0]
+	if _, exists := input["recovery_execution"]; exists {
+		t.Fatal("daemon request supplied native recovery authority")
+	}
 	actor := input["actor"].(map[string]any)
 	if input["action"] != "bind" || actor["kind"] != "daemon" || actor["agentId"] != agentID || actor["issueId"] != issueID || actor["attemptId"] == "" {
 		t.Fatalf("wrong host binding scope: %+v", input)

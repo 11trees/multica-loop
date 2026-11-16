@@ -203,8 +203,10 @@ and running intent, then calls private `observe-handoff`. Observation reads the
 already acknowledged immutable native publication. It does not repeat staging
 against a root that ordinary work has advanced.
 
-The native host requires the fixed task to have an actual completed timestamp
-and dispatch claim. It rechecks issue/workspace/project, publication and reservation
+The native host requires the actual recovery execution to be terminal
+(`completed` or `failed`), with a completed timestamp and exact dispatch claim.
+A native failure is retained; it does not invalidate a separately applied business
+result, and it is never rewritten into native success. It rechecks issue/workspace/project, publication and reservation
 identity, absence of a new project fence/reservation, and the exact claim's
 controllers and process-exit receipts through the native cleanup rules. Other
 ordinary tasks may already be running; they cannot substitute for this task's
@@ -224,6 +226,26 @@ captured command receipts are recompiled or compared against their owner facts;
 ordinary work may already have moved the current role or removed its worktree.
 This observes an accepted historical result, not current repository delivery.
 
+A validated human `prepare-run` can continue the same prepared stage after
+answers or an explicit restart. The business worker persists a hash-bound
+`recovery_execution` hint with the original entry task, application/readiness
+hashes, frozen human/role, current draft and checkpoint. The normal native
+enqueue stores it atomically in task context, retaining shared attribution,
+resource validation and scheduler notification. An authenticated repository bind
+loads this context from PostgreSQL; daemon request fields cannot provide it.
+Copied entry context requires official native retry ancestry with unchanged
+issue/role/runtime/human at every hop. The business owner must still own the
+exact prepared draft; a different stage, unanswered waiting state or changed
+contract refuses binding. Unlinked native tasks cannot consume that stage.
+
+The first entry task remains the publication anchor. A later execution result
+additionally records `entry_task_id` and `execution_hint_hash`, while `task_id`
+and `attempt_id` name the actual new native execution. Both native and business
+proofs must agree with that task's saved context. Original v1 entry-result
+receipts retain their hash; continuation receipts use the v2 hash prefix.
+This links normal work without reopening a completed stage or inheriting its
+result. Terminal checkpoint tasks are never re-enqueued.
+
 The business worker saves immutable `engineering_repair_business_progress` for
 the target. A native reclaim before application keeps the stable task ID but
 binds the new actual claim only after the previous claim's physical exit. It
@@ -232,7 +254,7 @@ draft writes, runtime binds and process reservations; physical exit recording
 remains available. Applied progress cannot be reassigned to another claim.
 
 The native observation envelope binds business result/event hashes to the exact
-completed task, claim, publication and controller/process fact hash. Management
+terminal task, actual claim, publication and controller/process fact hash. Management
 checks that envelope against the fully recompiled verified context and all
 original observations, then stores `admin_business_progress` while the Case stays
 `observing`. The host reads native and business facts again. Only an identical
@@ -324,7 +346,10 @@ commands and preserve their immutable proof across restart. All four business
 stages and requirement context/planning use their normal owner application after
 recovery; next-stage advancement does not lose the prior proof. Missing owner
 settlement, corrupted results/events, unfinished provider allocations and retired
-native claims are refused. A scoped later run on the same issue does not replace
+native claims are refused. A real human question/answer flow resumes the same
+repaired draft through a new task, and a Direct human restart also records the
+actual new execution. Business stages and requirement context expose matching
+stage hints; stale hints cannot bind after the owner advances. A scoped later run on the same issue does not replace
 or block the observed result. Late draft writes are rejected even before the new
 claim resumes the draft. These business-store tests use synthetic host repair
 proofs, not a complete provider-driven recovery.
@@ -333,10 +358,23 @@ PostgreSQL/private socket observation tests use simulated management/business
 ports and real task/claim/controller/cleanup rows. They cover queued/running or
 cancelled work, absent results, unknown physical cleanup, changed claims/results,
 stop between observation and closure, new fences/reservations, later ordinary
-work and lost progress/closure acknowledgements. Management tests separately
+work and lost progress/closure acknowledgements. Native continuation tests check
+atomic task-context persistence and stable-ID replay; recovery observation tests
+accept valid continuations and entry retries while refusing missing contexts,
+wrong hint/draft identities and copied entry context without retry ancestry.
+An applied result may close after native failure while preserving that failure;
+a failed run with no business result remains observing. Management tests separately
 require saved plus freshly matching progress, retain closed proof over restart,
 refuse mismatched rehashed scopes and stale supervisors, and requeue new originals.
 The schema-twelve upgrade preserves publications and leaves the new progress
 ledger empty. Shared UTF-8 witnesses check native/Node result and cleanup hashes.
 These layers establish controlled observation/closure behavior; they do not
 establish a real-provider or packaged end-to-end recovery acceptance run.
+
+The same-stage continuation change passed 449 existing plus 6 new command-chain
+cases (455 distinct tests across 35 files), kernel type/lint/build checks,
+the engineering handler race suite, the final Direct/recovery race focus,
+recovery-context service tests, local-control tests and Go vet. Native handlers
+ran serially because their integration fixture shares a workspace slug. These
+checks use temporary repositories, synthetic host/provider ports and actual
+local shell/database operations; no real provider acceptance is implied.

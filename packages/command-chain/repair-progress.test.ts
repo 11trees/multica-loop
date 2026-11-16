@@ -12,3 +12,8 @@ it("requires a YAML draft fingerprint and keeps Direct's explicit result separat
  for(const wrong of [{...value,draft_hash:null},{...value,draft_id:null}])expect(()=>repairBusinessProgressSchema.parse({...wrong,hash:repairBusinessProgressHash(wrong)})).toThrow(/draft differs/);
  const direct={...value,chain:"direct" as const,draft_id:null,draft_hash:null,sequence:0};expect(repairBusinessProgressSchema.parse({...direct,hash:repairBusinessProgressHash(direct)})).toMatchObject({chain:"direct",draft_id:null});
 });
+
+it("matches native continuation hashes while retaining its entry, current task and native failure",async()=>{
+ const value=JSON.parse(await readFile(new URL("./test-helpers/repair-continuation-progress.json",import.meta.url),"utf8")),parsed=repairRecoveryProgressSchema.parse(value);expect(parsed.business.entry_task_id).not.toBe(parsed.business.task_id);expect(parsed.native.status).toBe("failed");
+ for(const field of ["entry_task_id","execution_hint_hash"] as const){const changed={...parsed.business};delete changed[field];expect(()=>repairBusinessProgressSchema.parse({...changed,hash:repairBusinessProgressHash(changed)})).toThrow(/both entry/);}
+});

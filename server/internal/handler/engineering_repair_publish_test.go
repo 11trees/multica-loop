@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/multica-ai/multica/server/internal/engineering"
+	"github.com/multica-ai/multica/server/internal/service"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
@@ -287,6 +288,10 @@ func TestEngineeringRepairPublication(t *testing.T) {
 				}
 				if task.AgentID != native.AgentID || task.RuntimeID != native.RuntimeID || uuidToString(task.OriginatorUserID) != testUserID {
 					t.Fatal("successor lost frozen native identity")
+				}
+				hint, e := service.EngineeringRecoveryFromContext(task.Context)
+				if e != nil || hint == nil || hint.EntryTaskID != item.TaskID || hint.Kind != "entry" || hint.TargetHash != targetHash {
+					t.Fatal("native recovery lost its entry lineage", e)
 				}
 				if mode == "ack-retry" && task.Status != "cancelled" {
 					t.Fatal("terminal successor re-enqueued")

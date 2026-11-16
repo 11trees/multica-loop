@@ -332,6 +332,11 @@ func (h *Handler) publishEngineeringRepairHandoff(ctx context.Context, raw json.
 	if n != 1 {
 		return nil, fmt.Errorf("publication fence changed")
 	}
+	hint := engineeringEntryRecoveryHint(ready, application.DraftID)
+	plan.Params.EngineeringRecovery, err = json.Marshal(hint)
+	if err != nil {
+		return nil, err
+	}
 	task, err := q.CreateAgentTask(ctx, plan.Params)
 	if err != nil {
 		return nil, err

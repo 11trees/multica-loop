@@ -20,7 +20,7 @@ import (
 // Native task/claim/cleanup rows and private control are real. Independent
 // management and owner-applied business receipts have their own Node tests.
 func TestEngineeringRecoveryProgress(t *testing.T) {
-	for _, mode := range []string{"success", "empty-result", "queued", "running", "cancelled", "missing-controller", "unfinished-controller", "wrong-claim", "wrong-task", "missing-event", "unapplied-result", "changed-result", "stopped-after-record", "new-fence", "new-reservation", "progress-ack-retry", "close-ack-lost", "later-work"} {
+	for _, mode := range []string{"success", "direct-continuation", "continuation", "entry-retry", "entry-unlinked", "continuation-missing-context", "continuation-wrong-hint", "continuation-wrong-draft", "failed-applied", "failed-no-result", "empty-result", "queued", "running", "cancelled", "missing-controller", "unfinished-controller", "wrong-claim", "wrong-task", "missing-event", "unapplied-result", "changed-result", "stopped-after-record", "new-fence", "new-reservation", "progress-ack-retry", "close-ack-lost", "later-work"} {
 		t.Run(mode, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
@@ -57,6 +57,9 @@ func TestEngineeringRecoveryProgress(t *testing.T) {
 				if mode == "cancelled" {
 					status = "cancelled"
 				}
+				if strings.HasPrefix(mode, "failed-") {
+					status = "failed"
+				}
 				dbfx.Exec(t, "UPDATE agent_task_queue SET status=$2,completed_at=now() WHERE id=$1", taskID, status)
 			}
 			item := engineeringContinuation{WorkspaceID: testWorkspaceID, IssueID: f.issue, TaskID: taskID, AgentID: uuidToString(task.AgentID), UserID: testUserID, ExpectedRevision: 1, ExpectedSequence: 5, Reason: "repair_ready"}
@@ -71,6 +74,9 @@ func TestEngineeringRecoveryProgress(t *testing.T) {
 			dbfx.Exec(t, "UPDATE engineering_repair_handoff SET phase='published' WHERE target_hash=$1", target)
 			draftID, draftHash := uuid.NewString(), strings.Repeat("f", 64)
 			a := engineeringHandoffApplication{Staged: true, HoldRetained: true, Hash: strings.Repeat("e", 64), TargetHash: target, PreparationHash: r.PreparationHash, ReservationHash: r.Hash, ExpectedVersion: version, Continuation: item, DraftID: &draftID}
+			if mode == "direct-continuation" {
+				a.DraftID = nil
+			}
 			ready := engineeringHandoffReady{Ready: true, TargetHash: target, ReservationHash: r.Hash, ApplicationHash: a.Hash, ExpectedVersion: version, Continuation: item}
 			ready.Hash = engineeringHandoffReadyHash(ready)
 			publication := engineeringHandoffPublication{Published: true, CaseID: r.CaseID, VerificationAttemptID: r.VerificationAttemptID, TargetHash: target, ReservationHash: r.Hash, ApplicationHash: a.Hash, ReadyHash: ready.Hash, TaskID: taskID, WorkspaceID: testWorkspaceID, IssueID: f.issue, AgentID: item.AgentID, UserID: testUserID, RuntimeID: uuidToString(task.RuntimeID)}
@@ -90,6 +96,66 @@ func TestEngineeringRecoveryProgress(t *testing.T) {
 			current["application"] = a
 			current["publication"] = published
 			business := engineeringBusinessProgress{Applied: true, CaseID: r.CaseID, VerificationAttemptID: r.VerificationAttemptID, TargetHash: target, ApplicationHash: a.Hash, ReadyHash: ready.Hash, WorkspaceID: testWorkspaceID, IssueID: f.issue, TaskID: taskID, AgentID: item.AgentID, AttemptID: taskID + ":" + strconv.FormatInt(task.DispatchedAt.Time.UnixMicro(), 10), Chain: "verification", DraftID: &draftID, DraftHash: &draftHash, ResultID: "new-ordinary-result", ResultHash: strings.Repeat("1", 64), CompletionEventHash: strings.Repeat("2", 64), Revision: 1, Sequence: 10}
+
+			if mode == "direct-continuation" || strings.HasPrefix(mode, "continuation") || strings.HasPrefix(mode, "entry-") {
+				hint := engineeringEntryRecoveryHint(ready, a.DraftID)
+				hint.Kind = "continuation"
+				hint.Sequence++
+				if strings.HasPrefix(mode, "entry-") {
+					hint.Kind = "entry"
+					hint.Sequence = item.ExpectedSequence
+				}
+				hint.Hash = hint.Digest()
+				contextJSON, _ := json.Marshal(map[string]any{"engineering_recovery": hint})
+				cols := testutil.Cols{"issue_id": f.issue, "runtime_id": uuidToString(task.RuntimeID), "originator_user_id": testUserID, "accountable_user_id": testUserID, "status": "running", "dispatched_at": testutil.Raw("now()"), "started_at": testutil.Raw("now()"), "context": json.RawMessage(contextJSON)}
+				if mode == "entry-retry" {
+					cols["retry_of_task_id"] = taskID
+				}
+				actualID := dbfx.Task(t, uuidToString(task.AgentID), cols)
+				actual, e := f.h.Queries.GetAgentTask(ctx, parseUUID(actualID))
+				if e != nil {
+					t.Fatal(e)
+				}
+				ctrl := parseUUID(uuid.NewString())
+				if _, e = store.RecordController(ctx, actual, parseUUID(testWorkspaceID), ownership.ControllerRequest{Operation: "begin", ControllerID: ctrl, Provider: "codex", HostID: "continuation-fixture", PID: 44, Marker: "fixture-continuation"}); e != nil {
+					t.Fatal(e)
+				}
+				yes := true
+				if _, e = store.RecordController(ctx, actual, parseUUID(testWorkspaceID), ownership.ControllerRequest{Operation: "end", ControllerID: ctrl, HostID: "continuation-fixture", NoProviderStarted: &yes}); e != nil {
+					t.Fatal(e)
+				}
+				dbfx.Exec(t, "UPDATE agent_task_queue SET status='completed',completed_at=now() WHERE id=$1", actualID)
+				business.EntryTaskID = taskID
+				business.ExecutionHintHash = hint.Hash
+				business.TaskID = actualID
+				business.AttemptID = actualID + ":" + strconv.FormatInt(actual.DispatchedAt.Time.UnixMicro(), 10)
+				if mode == "continuation-missing-context" {
+					dbfx.Exec(t, "UPDATE agent_task_queue SET context=NULL WHERE id=$1", actualID)
+				}
+				if mode == "continuation-wrong-hint" {
+					business.ExecutionHintHash = strings.Repeat("9", 64)
+				}
+				if mode == "continuation-wrong-draft" {
+					wrong := uuid.NewString()
+					hint.DraftID = &wrong
+					hint.Hash = hint.Digest()
+					business.ExecutionHintHash = hint.Hash
+					value, _ := json.Marshal(map[string]any{"engineering_recovery": hint})
+					dbfx.Exec(t, "UPDATE agent_task_queue SET context=$2 WHERE id=$1", actualID, string(value))
+				}
+				validated, ve := f.h.engineeringRecoveryForTask(ctx, actual, testWorkspaceID)
+				if mode == "direct-continuation" || mode == "continuation" || mode == "entry-retry" {
+					if ve != nil || validated == nil || validated.Hash != hint.Hash {
+						t.Fatal("native continuation could not bind", ve)
+					}
+				}
+			}
+			if mode == "direct-continuation" {
+				business.Chain = "direct"
+				business.Sequence = 0
+				business.DraftID = nil
+				business.DraftHash = nil
+			}
 			business.Hash = engineeringBusinessProgressHash(business)
 			reads, records, closes := 0, 0, 0
 			closed, stopped := false, false
@@ -151,7 +217,7 @@ func TestEngineeringRecoveryProgress(t *testing.T) {
 					return nil, fmt.Errorf("observation attempted to change workflow %v", input["action"])
 				}
 				reads++
-				if mode == "empty-result" {
+				if mode == "empty-result" || mode == "failed-no-result" {
 					return json.RawMessage(`{"progress":null}`), nil
 				}
 				p := business
@@ -201,8 +267,8 @@ func TestEngineeringRecoveryProgress(t *testing.T) {
 				}
 				err = f.h.ReconcileEngineeringRecoveryProgress(ctx, authority)
 			}
-			success := mode == "success" || mode == "progress-ack-retry" || mode == "close-ack-lost" || mode == "later-work"
-			waiting := mode == "queued" || mode == "empty-result" || mode == "running" || mode == "cancelled" || mode == "missing-controller" || mode == "unfinished-controller"
+			success := mode == "direct-continuation" || mode == "continuation" || mode == "entry-retry" || mode == "failed-applied" || mode == "success" || mode == "progress-ack-retry" || mode == "close-ack-lost" || mode == "later-work"
+			waiting := mode == "failed-no-result" || mode == "queued" || mode == "empty-result" || mode == "running" || mode == "cancelled" || mode == "missing-controller" || mode == "unfinished-controller"
 			if (success || waiting) && err != nil {
 				t.Fatal(err)
 			}
@@ -211,6 +277,16 @@ func TestEngineeringRecoveryProgress(t *testing.T) {
 			}
 			if closed != success || success && closes != 1 {
 				t.Fatal("Case closure did not reflect ordinary application and fresh cleanup", closed, closes, mode)
+			}
+			if mode == "failed-applied" {
+				actual, e := f.h.Queries.GetAgentTask(ctx, parseUUID(taskID))
+				if e != nil || actual.Status != "failed" {
+					t.Fatal("business progress rewrote native process failure", e)
+				}
+				var proof engineeringRecoveryProgress
+				if json.Unmarshal(saved, &proof) != nil || proof.Native.Status != "failed" {
+					t.Fatal("recovery hid its native failure")
+				}
 			}
 			if success && reads < 2 {
 				t.Fatal("Case closed without a second business read")
@@ -247,5 +323,23 @@ func TestEngineeringRecoveryHashMatchesKernel(t *testing.T) {
 	value.Native.AttemptID += "1"
 	if engineeringBusinessProgressHash(value.Business) == value.Business.Hash || engineeringNativeProgressHash(value.Native) == value.Native.Hash {
 		t.Fatal("recovery digest omitted the completed checkpoint or current native claim")
+	}
+}
+
+func TestEngineeringRecoveryContinuationHashMatchesKernel(t *testing.T) {
+	raw, err := os.ReadFile("../../../packages/command-chain/test-helpers/repair-continuation-progress.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var value engineeringRecoveryProgress
+	if err = json.Unmarshal(raw, &value); err != nil {
+		t.Fatal(err)
+	}
+	if value.Business.EntryTaskID == value.Business.TaskID || value.Native.Status != "failed" || engineeringBusinessProgressHash(value.Business) != value.Business.Hash || engineeringNativeProgressHash(value.Native) != value.Native.Hash {
+		t.Fatal("native and kernel continuation progress hashes differ")
+	}
+	value.Business.EntryTaskID = value.Business.TaskID
+	if engineeringBusinessProgressHash(value.Business) == value.Business.Hash {
+		t.Fatal("continuation lost its fixed entry identity")
 	}
 }

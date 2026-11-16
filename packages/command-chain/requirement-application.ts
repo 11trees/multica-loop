@@ -404,6 +404,7 @@ export class RequirementApplication {
     const execution=z.object({repositoryPath:text}).parse(JSON.parse(String(row.payload)));
     return inspectRepairCheckpoint(this.db,original,{chain:role.chain,agentId:role.agentId,draftId:role.draftId,revision:record.contextContract.binding.revision,repositoryPath:record.repositoryPath,contract:role.contract,executionPath:execution.repositoryPath});
   }
+  repairActiveDraftId(workspaceId:string,issueId:string){const record=this.current(workspaceId,issueId);return record?this.role(record).draftId:undefined;}
   private role(record:Record){
     const feedback=this.activeFeedback(record);if(feedback?.policy){
       const verification=this.feedbackVerification(feedback);if(verification)return {chain:"feedback-verify",agentId:feedback.policy.verifierId,draftId:verification.entry.draftId,contract:verification.entry.contract,source:feedback.definitions.verify,profile:feedbackVerifyProfile,feedbackGroupId:verification.group.id,feedbackCommentId:verification.commentId};

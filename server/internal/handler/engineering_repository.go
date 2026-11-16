@@ -58,10 +58,19 @@ func (h *Handler) BindEngineeringRepository(w http.ResponseWriter, r *http.Reque
 	if issue.ProjectID.Valid {
 		actor["projectId"] = uuidToString(issue.ProjectID)
 	}
-	result, err := h.EngineeringWorker.Call(r.Context(), map[string]any{
+	hint, err := h.engineeringRecoveryForTask(r.Context(), task, scope.WorkspaceID)
+	if err != nil {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
+	input := map[string]any{
 		"actor":  actor,
 		"action": "bind", "payload": map[string]any{"work_dir": request.WorkDir, "mode": request.Mode, "overlays": request.Overlays},
-	})
+	}
+	if hint != nil {
+		input["recovery_execution"] = hint
+	}
+	result, err := h.EngineeringWorker.Call(r.Context(), input)
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, err.Error())
 		return

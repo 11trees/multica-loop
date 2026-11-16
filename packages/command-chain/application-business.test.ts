@@ -1,5 +1,6 @@
 // @vitest-environment node
 import {hostHandoffTargetFixture,hostHandoffReservationFixture} from "./test-helpers/repair-handoff-fixture";
+import {repairExecutionHintSchema} from "./repair-execution";
 import {handoffReadySchema} from "./repair-handoff";
 import { execFileSync } from "node:child_process";
 import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
@@ -256,8 +257,8 @@ it.each(stageOrder)("observes newly applied %s recovery after the business owner
  await invoke(human,"configure-business",configuration());for(const previous of stageOrder.slice(0,stageOrder.indexOf(stage))){const session=await start(previous);await session.until(null);}
  const interrupted=await start(stage,actor(stage,`${randomUUID()}:123456`));await invoke(interrupted.owner,"intervention-request",{summary:"Original stage failure",reason:"Reconcile this exact stage",evidence:"Keep upstream obligations"});const [original]=z.array(z.record(z.string(),z.unknown())).parse(await invoke({kind:"coordinator"},"repair-observations"));if(!original)throw new Error("Missing original stage");
  const caseId=`REPAIR-${stage}`;await invoke(host,"repair-observation-ack",{case_id:caseId,observation_id:original.observationId,snapshot_hash:original.snapshotHash});const target=await hostHandoffTargetFixture(original,{...human,projectId,repositoryPath:await realpath(repository),caseId}),reservation=hostHandoffReservationFixture(target,await invoke(host,"repair-handoff-prepare",target)),application=await invoke(host,"repair-handoff-stage",reservation),ready=handoffReadySchema.parse(await invoke(host,"repair-handoff-ready",application)),pin={target_hash:ready.target_hash,application_hash:ready.application_hash,ready_hash:ready.hash};
- const recovered=await start(stage,actor(stage,`${ready.continuation.task_id}:999999`));expect(await invoke(host,"repair-business-progress",pin)).toEqual({progress:null});await recovered.until(null);
- const observed=await invoke(host,"repair-business-progress",pin);expect(observed).toMatchObject({progress:{applied:true,attempt_id:recovered.owner.attemptId,draft_id:recovered.state.draft!.id,chain:recovered.state.draft!.definition.id}});
+ const recovered=await start(stage,actor(stage,`${ready.continuation.task_id}:999999`));expect(await invoke(host,"repair-business-progress",pin)).toEqual({progress:null});const selected=await invoke(human,"prepare-run",{expected_revision:ready.continuation.expected_revision,expected_sequence:recovered.state.draft!.sequence});expect(selected).toMatchObject({recovery_execution:{kind:"continuation",entry_task_id:ready.continuation.task_id,draft_id:recovered.state.draft!.id}});await recovered.until(null);
+ const observed=await invoke(host,"repair-business-progress",pin);const hint=z.object({recovery_execution:repairExecutionHintSchema}).parse(selected).recovery_execution;await expect(app.invoke({actor:{...recovered.owner,kind:"daemon",attemptId:`${randomUUID()}:1111111`},action:"bind",payload:{work_dir:repository,mode:"in_place",overlays:[]},recovery_execution:hint})).rejects.toThrow(/active stage|editable stage/);expect(observed).toMatchObject({progress:{applied:true,attempt_id:recovered.owner.attemptId,draft_id:recovered.state.draft!.id,chain:recovered.state.draft!.definition.id}});
  app.close();app=open();expect(await invoke(host,"repair-business-progress",pin)).toEqual(observed);await expect(invoke(interrupted.owner,"start")).rejects.toThrow(/surrendered/);
  if(stage==="review")await expect(invoke(host,"completion")).rejects.toThrow(/Read.*specification/);
 },60000);

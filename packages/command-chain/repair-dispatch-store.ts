@@ -1,3 +1,4 @@
+import {entryRepairExecutionHint,repairExecutionHintForTask} from "./repair-execution";
 import type { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
 import { DraftConflictError } from "./runtime";
@@ -12,11 +13,12 @@ export function readyRepairDispatch(db:DatabaseSync,original:InterventionRecord,
  const row=db.prepare("SELECT payload FROM engineering_repair_dispatch WHERE target_hash=?").get(value.target_hash);
  if(row&&row.payload!==encoded)throw new DraftConflictError("Business dispatch identity cannot be replaced");
  if(!row)db.prepare("INSERT INTO engineering_repair_dispatch(target_hash,observation_id,workspace_id,issue_id,task_id,state,payload) VALUES(?,?,?,?,?,'ready',?)").run(value.target_hash,original.observationId,c.workspace_id,c.issue_id,c.task_id,encoded);
+ entryRepairExecutionHint(db,value,application.draft_id);
  return value;
 }
 export function repairDispatchForTask(db:DatabaseSync,workspaceId:string,issueId:string,taskId:string){
- const row=db.prepare("SELECT payload,state,observation_id,attempt_id FROM engineering_repair_dispatch WHERE workspace_id=? AND issue_id=? AND task_id=?").get(workspaceId,issueId,taskId);if(!row)return undefined;
- return {ready:handoffReadySchema.parse(JSON.parse(String(row.payload))),state:z.enum(["ready","active"]).parse(row.state),observationId:String(row.observation_id),attemptId:row.attempt_id===null?null:String(row.attempt_id)};
+ const row=db.prepare("SELECT payload,state,observation_id,attempt_id FROM engineering_repair_dispatch WHERE workspace_id=? AND issue_id=? AND (task_id=? OR target_hash=(SELECT target_hash FROM engineering_repair_execution WHERE task_id=? AND workspace_id=? AND issue_id=?))").get(workspaceId,issueId,taskId,taskId,workspaceId,issueId);if(!row)return undefined;
+ return {ready:handoffReadySchema.parse(JSON.parse(String(row.payload))),state:z.enum(["ready","active"]).parse(row.state),hint:repairExecutionHintForTask(db,workspaceId,issueId,taskId),observationId:String(row.observation_id),attemptId:row.attempt_id===null?null:String(row.attempt_id)};
 }
 /** Only an authenticated native claim for the fixed published task can bind. */
 export function activateRepairDispatch(db:DatabaseSync,original:InterventionRecord,task:{workspaceId:string;issueId:string;agentId:string;projectId?:string;attemptId:string}){
@@ -29,7 +31,7 @@ export function activateRepairDispatch(db:DatabaseSync,original:InterventionReco
  }catch(error){db.exec("ROLLBACK");throw error;}
 }
 
-/** A native reclaim keeps the fixed task, but its authenticated claim changes. */
+/** Reclaims and host-linked continuations replace the exact bound claim. */
 export function refreshRepairDispatchClaim(db:DatabaseSync,task:{workspaceId:string;issueId:string;agentId:string;projectId?:string;attemptId:string}){
  const dispatch=repairDispatchForTask(db,task.workspaceId,task.issueId,task.attemptId.split(":")[0]!);
  if(!dispatch||dispatch.state!=="active"||dispatch.attemptId===task.attemptId)return;

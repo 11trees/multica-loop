@@ -8,6 +8,7 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { repairHandoffTargetSchema,handoffProposalSchema,handoffReadySchema,handoffApplicationSchema,handoffHash } from "./repair-handoff";
+import {repairExecutionHintSchema,repairExecutionHintHash} from "./repair-execution";
 import {repairBusinessProgressSchema} from "./repair-progress";
 import {draftSchema} from "./runtime";
 import { readRepairWorkspaceVersion } from "./repair-workspace-version";
@@ -333,4 +334,31 @@ it("permanently rejects a recovery writer that read before native claim replacem
   await expect(invoke({...h.successor,kind:"daemon"},"process",{operation:"reserve",allocation_id:randomUUID(),runtime_id:randomUUID(),host_id:"retired-native",provider:"codex"})).rejects.toThrow(/Surrendered/);
   await finishRecoveredVerification(replacement);expect(await invoke(host,"repair-business-progress",h.pin)).toMatchObject({progress:{attempt_id:replacement.attemptId}});
  }finally{drafts.close();}
+});
+
+it("continues a repaired draft through an authenticated human answer and a fresh native task",async()=>{
+ const h=await recoveredProgress("verification");let state=z.object({draft:draftSchema}).parse(await invoke(h.successor,"start"));
+ const command=async(command:unknown)=>{state=z.object({draft:draftSchema}).parse(await invoke(h.successor,"command",{expected_sequence:state.draft.sequence,command}));};
+ await command({type:"phase.complete"});await command({type:"runtime-input.put",key:"entry",title:"Test entry",question:"Which entry?",why:"Need a real entry",recommendation:"Use the local fixture"});await command({type:"phase.complete"});
+ const checkpoint=()=>({expected_revision:1,expected_sequence:state.draft.sequence});
+ await expect(invoke(human,"prepare-run",checkpoint())).rejects.toThrow(/every pending question/);
+ state=z.object({draft:draftSchema}).parse(await invoke(human,"answer",{expected_sequence:state.draft.sequence,request_id:state.draft.runtimeInputs[0]!.id,answer:"Use the isolated local entry"}));
+ const selected=z.object({recovery_execution:repairExecutionHintSchema}).parse(await invoke(human,"prepare-run",checkpoint())),hint=selected.recovery_execution;
+ expect(hint).toMatchObject({kind:"continuation",entry_task_id:h.ready.continuation.task_id,draft_id:state.draft.id,sequence:state.draft.sequence});
+ const next={...h.successor,attemptId:`${randomUUID()}:1111111`},daemon={...next,kind:"daemon" as const},bind={work_dir:repository,mode:"in_place",overlays:[]};
+ await expect(invoke(daemon,"bind",bind)).rejects.toThrow(/continuation context/);
+ const wrong={...hint,draft_id:randomUUID()};await expect(app.invoke({actor:daemon,action:"bind",payload:bind,recovery_execution:{...wrong,hash:repairExecutionHintHash(wrong)}})).rejects.toThrow(/host-prepared hint/);
+ const db=new DatabaseSync(database),allocation=randomUUID();db.prepare("INSERT INTO engineering_process VALUES(?,?,?,?,?,?)").run(allocation,human.workspaceId,human.issueId,h.successor.attemptId,"running","{}");
+ await expect(app.invoke({actor:daemon,action:"bind",payload:bind,recovery_execution:hint})).rejects.toThrow(/physical exit/);db.prepare("UPDATE engineering_process SET status='exited' WHERE allocation_id=?").run(allocation);
+ await app.invoke({actor:daemon,action:"bind",payload:bind,recovery_execution:hint});await expect(invoke(h.successor,"start")).rejects.toThrow(/replaced/);
+ state=z.object({draft:draftSchema}).parse(await invoke(next,"start"));
+ const finish=async(command:unknown)=>{state=z.object({draft:draftSchema}).parse(await invoke(next,"command",{expected_sequence:state.draft.sequence,command}));};
+ await finish({type:"artifact.put",ref:"verification.scenarios",key:"original",content:"channel: frontend\ntitle: Reader visible\nsetup: Open reader\nsteps: Reload reader\nexpected: Title remains visible\ncoverageRefs: [original]"});await finish({type:"phase.complete"});await finish({type:"artifact.put",ref:"verification.results",key:"original",content:"status: passed\nevidence: Controlled new observation"});await finish({type:"phase.complete"});await finish({type:"artifact.put",ref:"verification.evidence-review",content:"summary: Compared the new result with frozen Expected"});await finish({type:"phase.complete"});await finish({type:"phase.complete"});
+ const observed=await invoke(host,"repair-business-progress",h.pin);expect(observed).toMatchObject({progress:{task_id:next.attemptId.split(":")[0],entry_task_id:h.ready.continuation.task_id,execution_hint_hash:hint.hash,attempt_id:next.attemptId,draft_id:state.draft.id}});
+ app.close();app=new EngineeringApplication(database,definition);expect(await invoke(host,"repair-business-progress",h.pin)).toEqual(observed);db.close();
+});
+
+it("links a human-restarted Direct recovery to its actual new native task without inheriting a result",async()=>{
+ const h=await recoveredProgress("direct");await invoke(h.successor,"direct-run");const overview=z.object({revision:z.number(),sequence:z.number()}).parse(await invoke(human,"overview")),hint=z.object({recovery_execution:repairExecutionHintSchema}).parse(await invoke(human,"prepare-run",{expected_revision:overview.revision,expected_sequence:overview.sequence})).recovery_execution;
+ expect(hint).toMatchObject({kind:"continuation",draft_id:null,entry_task_id:h.ready.continuation.task_id});const next={...h.successor,attemptId:`${randomUUID()}:1111111`};await app.invoke({actor:{...next,kind:"daemon"},action:"bind",payload:{work_dir:repository,mode:"in_place",overlays:[]},recovery_execution:hint});await invoke(next,"direct-run");await invoke(next,"direct-submit",{summary:"Fresh Direct result"});expect(await invoke(host,"repair-business-progress",h.pin)).toMatchObject({progress:{task_id:next.attemptId.split(":")[0],entry_task_id:h.ready.continuation.task_id,execution_hint_hash:hint.hash,chain:"direct",draft_id:null}});
 });

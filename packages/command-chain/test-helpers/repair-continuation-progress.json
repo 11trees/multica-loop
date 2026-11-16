@@ -1,0 +1,41 @@
+{
+  "business": {
+    "applied": true,
+    "case_id": "REPAIR-原始任务",
+    "verification_attempt_id": "independent-核验",
+    "target_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "application_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "ready_hash": "1479320c9cb6fc79f89aab0495d9fcc02cdc264b94afc2d7e2dc3443041dca4d",
+    "workspace_id": "11111111-1111-4111-a111-111111111111",
+    "issue_id": "22222222-2222-4222-a222-222222222222",
+    "task_id": "66666666-6666-4666-a666-666666666666",
+    "agent_id": "33333333-3333-4333-a333-333333333333",
+    "attempt_id": "66666666-6666-4666-a666-666666666666:654321",
+    "chain": "verification",
+    "draft_id": "99999999-9999-4999-a999-999999999999",
+    "draft_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+    "result_id": "原生结果-1",
+    "result_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+    "completion_event_hash": "3333333333333333333333333333333333333333333333333333333333333333",
+    "revision": 1,
+    "sequence": 15,
+    "hash": "f5ae73db6f8d34861a04bc0527082ca5c8269a13713961479387b047257b28bc",
+    "entry_task_id": "55555555-5555-4555-a555-555555555555",
+    "execution_hint_hash": "67d40bdf481eeb26e90e182339f48c8467cd018c42045da0408d8fdd825b5e9b"
+  },
+  "native": {
+    "publication_hash": "3ccf8261f6fe9855cc5ce8650d2937aafad20765709e68e066e06386584a6916",
+    "progress_hash": "f5ae73db6f8d34861a04bc0527082ca5c8269a13713961479387b047257b28bc",
+    "task_id": "66666666-6666-4666-a666-666666666666",
+    "attempt_id": "66666666-6666-4666-a666-666666666666:654321",
+    "workspace_id": "11111111-1111-4111-a111-111111111111",
+    "issue_id": "22222222-2222-4222-a222-222222222222",
+    "agent_id": "33333333-3333-4333-a333-333333333333",
+    "user_id": "44444444-4444-4444-a444-444444444444",
+    "runtime_id": "88888888-8888-4888-a888-888888888888",
+    "project_id": "77777777-7777-4777-a777-777777777777",
+    "status": "failed",
+    "controllers_hash": "4444444444444444444444444444444444444444444444444444444444444444",
+    "hash": "af67b5f054b76388a487e809f9d928b865e7a0a0abf1ef8b9171a924ac458649"
+  }
+}

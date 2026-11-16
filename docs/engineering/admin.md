@@ -137,8 +137,11 @@ Task-specific readiness and atomic native publication now create the fixed task
 and release its exact fence together. Only that authenticated task can open its
 checkpoint on native bind. Publication acknowledgements replay the native ledger
 and enter `observing`. A host observer now requires a newly applied ordinary
-result, exact completed native claim and confirmed scoped cleanup, saves immutable
-progress and rereads it before closing. Ordinary workflow and Done gates remain
+result, exact terminal native claim and confirmed scoped cleanup, saves immutable
+progress and rereads it before closing. Host-prepared native task context links
+human-answer continuations and same-stage restarts to the original publication
+and actual new execution. A separately applied result can close after native
+failure while preserving that failure; a failed process without a result cannot. Ordinary workflow and Done gates remain
 independent. Recovery stall/failure/cohort-change sampling remains unconnected.
 See [the verification protocol](repair-verification.md).
 Diagnosis and external-wait prerequisites remain unconnected. No investigation

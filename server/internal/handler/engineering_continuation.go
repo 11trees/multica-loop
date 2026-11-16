@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/multica-ai/multica/server/internal/issuestatus"
 	"github.com/multica-ai/multica/server/internal/projectaccess"
+	"github.com/multica-ai/multica/server/internal/service"
 	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
@@ -169,8 +170,9 @@ func (h *Handler) dispatchEngineeringContinuation(ctx context.Context, item engi
 		return err
 	}
 	var selection struct {
-		AgentID     string                   `json:"agent_id"`
-		ReviewUnits *[]engineeringReviewUnit `json:"review_units"`
+		Recovery    *service.EngineeringRecoveryExecution `json:"recovery_execution"`
+		AgentID     string                                `json:"agent_id"`
+		ReviewUnits *[]engineeringReviewUnit              `json:"review_units"`
 	}
 	if json.Unmarshal(selected, &selection) != nil || selection.AgentID != item.AgentID {
 		return fmt.Errorf("engineering role changed before continuation")
@@ -183,6 +185,11 @@ func (h *Handler) dispatchEngineeringContinuation(ctx context.Context, item engi
 			return err
 		}
 	}
-	_, err = h.TaskService.EnqueueEngineeringContinuation(ctx, issue, agentID, userID, taskID, "Continue the configured engineering chain with multica engineering start. Preserve its frozen inputs and current phase.")
+	if selection.Recovery != nil {
+		if err := validateEngineeringRecoverySelection(selection.Recovery, item); err != nil {
+			return err
+		}
+	}
+	_, err = h.TaskService.EnqueueEngineeringContinuation(ctx, issue, agentID, userID, taskID, "Continue the configured engineering chain with multica engineering start. Preserve its frozen inputs and current phase.", selection.Recovery)
 	return err
 }

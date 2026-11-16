@@ -27,6 +27,8 @@ type engineeringBusinessProgress struct {
 	WorkspaceID           string  `json:"workspace_id"`
 	IssueID               string  `json:"issue_id"`
 	TaskID                string  `json:"task_id"`
+	EntryTaskID           string  `json:"entry_task_id,omitempty"`
+	ExecutionHintHash     string  `json:"execution_hint_hash,omitempty"`
 	AgentID               string  `json:"agent_id"`
 	AttemptID             string  `json:"attempt_id"`
 	Chain                 string  `json:"chain"`
@@ -65,7 +67,11 @@ func engineeringOptionalText(p *string) string {
 	return *p
 }
 func engineeringBusinessProgressHash(p engineeringBusinessProgress) string {
-	return engineeringHandoffFieldsHash("multica:repair-business-progress:1", p.CaseID, p.VerificationAttemptID, p.TargetHash, p.ApplicationHash, p.ReadyHash, p.WorkspaceID, p.IssueID, p.TaskID, p.AgentID, p.AttemptID, p.Chain, engineeringOptionalText(p.DraftID), engineeringOptionalText(p.DraftHash), p.ResultID, p.ResultHash, p.CompletionEventHash, strconv.Itoa(p.Revision), strconv.Itoa(p.Sequence))
+	prefix := []string{"multica:repair-business-progress:1"}
+	if p.EntryTaskID != "" {
+		prefix = []string{"multica:repair-business-progress:2", p.EntryTaskID, p.ExecutionHintHash}
+	}
+	return engineeringHandoffFieldsHash(append(prefix, []string{p.CaseID, p.VerificationAttemptID, p.TargetHash, p.ApplicationHash, p.ReadyHash, p.WorkspaceID, p.IssueID, p.TaskID, p.AgentID, p.AttemptID, p.Chain, engineeringOptionalText(p.DraftID), engineeringOptionalText(p.DraftHash), p.ResultID, p.ResultHash, p.CompletionEventHash, strconv.Itoa(p.Revision), strconv.Itoa(p.Sequence)}...)...)
 }
 func engineeringNativeProgressHash(p engineeringNativeProgress) string {
 	return engineeringHandoffFieldsHash("multica:repair-native-progress:1", p.PublicationHash, p.ProgressHash, p.TaskID, p.AttemptID, p.WorkspaceID, p.IssueID, p.AgentID, p.UserID, p.RuntimeID, p.ProjectID, p.Status, p.ControllersHash)
@@ -94,7 +100,7 @@ func (h *Handler) ReconcileEngineeringRecoveryProgress(ctx context.Context, auth
 	return errors.Join(failures...)
 }
 
-// A completed process is insufficient: both reads must find the same new,
+// A terminal process is insufficient: both reads must find the same new,
 // owner-applied ordinary result, exact claim and confirmed physical cleanup.
 func (h *Handler) observeEngineeringRepairHandoff(ctx context.Context, raw json.RawMessage) (any, error) {
 	var input engineeringPublicationRequest
@@ -149,7 +155,24 @@ func (h *Handler) readEngineeringRecoveryProgress(ctx context.Context, input eng
 	if !p.Published || engineeringHandoffPublicationHash(p) != p.Hash || validateEngineeringHandoffReady(published.Ready, current, application) != nil || p.CaseID != input.CaseID || p.TargetHash != current.TargetHash || p.VerificationAttemptID != r.VerificationAttemptID || p.TaskID != r.Continuation.TaskID || p.WorkspaceID != r.Continuation.WorkspaceID || p.IssueID != r.Continuation.IssueID || p.AgentID != r.Continuation.AgentID || p.UserID != r.Continuation.UserID || p.RuntimeID != current.Request.Inspection.RuntimeID || p.ReadyHash != published.Ready.Hash || p.ApplicationHash != application.Hash || p.ReservationHash != r.Hash || uuidToString(row.TaskID) != p.TaskID || uuidToString(row.ProjectID) != r.ProjectID || uuidToString(row.WorkspaceID) != p.WorkspaceID {
 		return nil, fmt.Errorf("invalid recovery publication identity")
 	}
-	taskID, err := util.ParseUUID(p.TaskID)
+	response, err := h.EngineeringWorker.Call(ctx, map[string]any{"action": "repair-business-progress", "actor": map[string]string{"kind": "host", "workspaceId": p.WorkspaceID, "issueId": p.IssueID}, "payload": map[string]string{"target_hash": p.TargetHash, "application_hash": p.ApplicationHash, "ready_hash": p.ReadyHash}})
+	if err != nil {
+		return nil, err
+	}
+	var result struct {
+		Progress *engineeringBusinessProgress `json:"progress"`
+	}
+	if err = json.Unmarshal(response, &result); err != nil {
+		return nil, err
+	}
+	if result.Progress == nil {
+		return nil, nil
+	}
+	b := result.Progress
+	if (b.EntryTaskID == "") != (b.ExecutionHintHash == "") || b.EntryTaskID != "" && b.EntryTaskID == b.TaskID || !b.Applied || engineeringBusinessProgressHash(*b) != b.Hash || b.CaseID != p.CaseID || b.VerificationAttemptID != p.VerificationAttemptID || b.TargetHash != p.TargetHash || b.ApplicationHash != p.ApplicationHash || b.ReadyHash != p.ReadyHash || (b.EntryTaskID == "" && b.TaskID != p.TaskID || b.EntryTaskID != "" && (b.EntryTaskID != p.TaskID || len(b.ExecutionHintHash) != 64)) || b.WorkspaceID != p.WorkspaceID || b.IssueID != p.IssueID || b.AgentID != p.AgentID || b.Revision != r.Continuation.ExpectedRevision || engineeringOptionalText(b.DraftID) != engineeringOptionalText(application.DraftID) || b.ResultID == "" || len(b.ResultHash) != 64 || len(b.CompletionEventHash) != 64 {
+		return nil, fmt.Errorf("business result is not this published native execution")
+	}
+	taskID, err := util.ParseUUID(b.TaskID)
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +203,7 @@ func (h *Handler) readEngineeringRecoveryProgress(ctx context.Context, input eng
 	if uuidToString(task.IssueID) != p.IssueID || uuidToString(task.AgentID) != p.AgentID || uuidToString(task.RuntimeID) != p.RuntimeID || uuidToString(task.OriginatorUserID) != p.UserID {
 		return nil, fmt.Errorf("observed native task identity changed")
 	}
-	if task.Status != "completed" || !task.CompletedAt.Valid || !task.DispatchedAt.Valid {
+	if task.Status != "completed" && task.Status != "failed" || !task.CompletedAt.Valid || !task.DispatchedAt.Valid {
 		return nil, nil
 	}
 	issue, err := q.GetIssueInWorkspace(ctx, db.GetIssueInWorkspaceParams{WorkspaceID: workspaceID, ID: task.IssueID})
@@ -222,7 +245,19 @@ func (h *Handler) readEngineeringRecoveryProgress(ctx context.Context, input eng
 		return nil, err
 	}
 	claim := task.DispatchedAt.Time.UnixMicro()
-	attemptID := p.TaskID + ":" + strconv.FormatInt(claim, 10)
+	attemptID := b.TaskID + ":" + strconv.FormatInt(claim, 10)
+	if b.AttemptID != attemptID {
+		return nil, fmt.Errorf("business result changed its native claim")
+	}
+	if b.TaskID != p.TaskID {
+		hint, e := h.engineeringRecoveryForTask(ctx, task, p.WorkspaceID)
+		if e != nil {
+			return nil, e
+		}
+		if hint == nil || hint.Hash != b.ExecutionHintHash || hint.EntryTaskID != p.TaskID || hint.TargetHash != p.TargetHash || engineeringOptionalText(hint.DraftID) != engineeringOptionalText(b.DraftID) || hint.Revision != b.Revision || b.Chain != "direct" && hint.Sequence > b.Sequence {
+			return nil, fmt.Errorf("business result has no matching native continuation context")
+		}
+	}
 	facts := struct {
 		Controllers []db.EngineeringRunGuard   `json:"controllers"`
 		Processes   []db.EngineeringRunProcess `json:"processes"`
@@ -247,23 +282,6 @@ func (h *Handler) readEngineeringRecoveryProgress(ctx context.Context, input eng
 	if len(facts.Controllers) == 0 {
 		return nil, nil
 	}
-	response, err := h.EngineeringWorker.Call(ctx, map[string]any{"action": "repair-business-progress", "actor": map[string]string{"kind": "host", "workspaceId": p.WorkspaceID, "issueId": p.IssueID}, "payload": map[string]string{"target_hash": p.TargetHash, "application_hash": p.ApplicationHash, "ready_hash": p.ReadyHash}})
-	if err != nil {
-		return nil, err
-	}
-	var result struct {
-		Progress *engineeringBusinessProgress `json:"progress"`
-	}
-	if err = json.Unmarshal(response, &result); err != nil {
-		return nil, err
-	}
-	if result.Progress == nil {
-		return nil, nil
-	}
-	b := result.Progress
-	if !b.Applied || engineeringBusinessProgressHash(*b) != b.Hash || b.CaseID != p.CaseID || b.VerificationAttemptID != p.VerificationAttemptID || b.TargetHash != p.TargetHash || b.ApplicationHash != p.ApplicationHash || b.ReadyHash != p.ReadyHash || b.TaskID != p.TaskID || b.AttemptID != attemptID || b.WorkspaceID != p.WorkspaceID || b.IssueID != p.IssueID || b.AgentID != p.AgentID || b.Revision != r.Continuation.ExpectedRevision || engineeringOptionalText(b.DraftID) != engineeringOptionalText(application.DraftID) || b.ResultID == "" || len(b.ResultHash) != 64 || len(b.CompletionEventHash) != 64 {
-		return nil, fmt.Errorf("business result is not this published native execution")
-	}
 	if b.Chain == "direct" {
 		if b.DraftID != nil || b.DraftHash != nil || b.Sequence != 0 {
 			return nil, fmt.Errorf("Direct recovery result has an invalid completion identity")
@@ -280,7 +298,7 @@ func (h *Handler) readEngineeringRecoveryProgress(ctx context.Context, input eng
 	}
 	blob, _ := json.Marshal(facts)
 	digest := sha256.Sum256(blob)
-	native := engineeringNativeProgress{PublicationHash: p.Hash, ProgressHash: b.Hash, TaskID: p.TaskID, AttemptID: attemptID, WorkspaceID: p.WorkspaceID, IssueID: p.IssueID, AgentID: p.AgentID, UserID: p.UserID, RuntimeID: p.RuntimeID, ProjectID: r.ProjectID, Status: "completed", ControllersHash: hex.EncodeToString(digest[:])}
+	native := engineeringNativeProgress{PublicationHash: p.Hash, ProgressHash: b.Hash, TaskID: b.TaskID, AttemptID: attemptID, WorkspaceID: p.WorkspaceID, IssueID: p.IssueID, AgentID: p.AgentID, UserID: p.UserID, RuntimeID: p.RuntimeID, ProjectID: r.ProjectID, Status: task.Status, ControllersHash: hex.EncodeToString(digest[:])}
 	native.Hash = engineeringNativeProgressHash(native)
 	if err = tx.Commit(ctx); err != nil {
 		return nil, err
