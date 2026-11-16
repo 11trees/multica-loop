@@ -106,3 +106,46 @@ remote execution and a complete model-driven Bug Fix remain unaccepted.
 ![Human condition on a narrow viewport](assets/reproduction-awaiting-facts-narrow.png)
 
 ![Planning with retained reproduction evidence](assets/reproduction-plan.png)
+
+## Controlled native Bug Fix Team acceptance
+
+The separate [Team lifecycle scenario](../../e2e/engineering-team-bug-fix.spec.ts)
+creates a native task through the browser with only project/Team selection. An
+isolated fixture-owned Team uses the `bug_fix` preset and seven separate roles;
+the five built-in user Teams and their runtime settings are preserved.
+
+The scenario records a working fresh state, pauses on missing reproduction
+conditions, accepts an authenticated human choice in the narrow UI, then
+reinvestigates the saved state against unchanged Existing Expected. The actual
+Continue click fails before the repair. Native scheduling publishes one child,
+runs analysis/development and separate Test, accepts its real Git commit, and
+starts the frozen final reviewer. Independent Chrome observations verify both
+states after repair. Existing Expected and reproduction evidence reach Review.
+Premature child/parent Done remains blocked; reading the exact report through
+the narrow UI closes the native parent while preserving Team assignment. The
+parent queue contains only context, two reproduction runs, planning and Review.
+
+The `child_done` system wakeup records child completion without adding a generic
+leader run that would block the Team reviewer. Query polling also continues
+through unit acceptance, automatic Review and the final run's exit until reading.
+Backend regression covers workflow ownership, ordinary wakeups and unavailable
+routing with pending facts; shared query tests cover the polling boundary.
+
+This is a controlled local in-place acceptance with real API, PostgreSQL, SQLite,
+temporary Git and Chrome. Native claims, role conclusions and trusted receipt
+submission are fixture supplied; no installed model/provider is invoked. Native
+worktree/process lifecycle, real-provider diagnosis, packaged clients, remote
+execution and historical cutover remain separate acceptance work. The protocol
+scenario's two dependent units and storage reopen in both repository modes are
+documented under [Bug Fix Team protocol acceptance](requirement-review.md#bug-fix-team-protocol-acceptance).
+Fixture completion updates task rows directly, so screenshots may retain older
+run-log badges. Assertions read the complete native parent queue and guarded Done.
+
+![Team reproduction waiting for an authenticated choice](assets/team-bug-awaiting-human-390.png)
+
+![Native Team report awaiting exact reading](assets/team-bug-report-1280.png)
+
+![Exact report reading through the narrow interface](assets/team-bug-report-reading-390.png)
+
+The actual page observations are retained as [saved-state failure](assets/team-bug-reproduced.png)
+and [independent post-repair verification](assets/team-bug-independent-verification.png).

@@ -101,6 +101,11 @@ from the snapshot. Context and (for bugs) reproduction gates remain mandatory;
 completed plans dispatch Team publication, native child completion and independent
 final review through the established host proof paths. The ordinary native queue
 cannot add an unrelated Agent or generic Squad leader run to Team-owned work.
+The native `child_done` system wakeup retains completed-child facts in the
+timeline without starting or merging a competing leader run. If Team routing
+cannot be read, those facts remain pending for retry. The engineering panel
+continues polling between accepted units, automatic final review and exact
+report reading, including after a native role run has finished.
 Stable continuation task IDs preserve repeat-start behavior. Agent permissions
 and native project/goal scope are revalidated before continuation.
 
@@ -169,6 +174,16 @@ settings; its feedback dialog uses a controlled report response to verify
 layout and comment-only request shape, not a native full-lifecycle claim.
 Shared component regression tests and Web/Desktop type checks cover the changed
 entry points.
+
+The [controlled native Bug Fix Team scenario](reproduction.md#controlled-native-bug-fix-team-acceptance)
+also covers browser create/start, authenticated reproduction conditions, a real
+repair commit, one published native child, independent Chrome verification,
+automatic final Review and exact reading before native parent Done. Its isolated
+Team uses the same `bug_fix` preset; role conclusions and queue claims are
+controlled, and the user's five built-in Teams remain unconfigured. Native
+child-done wakeup regression preserves completion facts without a competing leader
+run. Shared query regression keeps automatic Team progress observable until the
+current report is read.
 
 These tests use controlled native fixtures, never a real provider. Full Team
 lifecycle acceptance for every preset, installed Desktop, independent Mobile,

@@ -7,6 +7,7 @@
 import "./env";
 import { createHash, randomUUID } from "node:crypto";
 import pg from "pg";
+import type {TeamDefinition} from "../packages/command-chain/team";
 
 // `||` (not `??`) so an empty `NEXT_PUBLIC_API_URL=` in .env still falls
 // back to localhost. dotenv sets unset-vs-empty both as "" — treating them
@@ -313,6 +314,13 @@ export class TestApiClient {
       const result = await client.query<{id:string}>("SELECT id FROM agent_task_queue WHERE issue_id=$1 AND agent_id=$2 AND status='queued' ORDER BY created_at DESC LIMIT 1", [issueId,agentId]);
       return result.rows[0]?.id ?? null;
     } finally { await client.end(); }
+  }
+
+  async engineeringRunStates(issueId:string){
+    if(!this.createdIssueIds.includes(issueId))throw new Error("Not an owned engineering fixture issue");
+    const client=new pg.Client(DATABASE_URL);await client.connect();
+    try{return (await client.query("SELECT id,agent_id,status,created_at,started_at,completed_at FROM agent_task_queue WHERE issue_id=$1 ORDER BY created_at",[issueId])).rows}
+    finally{await client.end()}
   }
 
   async finishEngineeringRun(taskId: string,status: "completed"|"failed" = "completed") {
@@ -690,9 +698,13 @@ export class TestApiClient {
     const response=await this.authedFetch(`/api/squads/${teamId}/members`,{method:"POST",body:JSON.stringify({member_type:"agent",member_id:agentId,role:"member"})});if(!response.ok)throw new Error("Team Agent fixture membership failed");
   }
   async configureWorkflowTeamFixture(teamId:string,agentId:string){
-    if(!this.createdTeamIds.includes(teamId) || !this.engineeringRuns.some(run=>run.agentId===agentId))throw new Error("Not an owned Team fixture");
-    const response=await this.authedFetch(`/api/squads/${teamId}/engineering`,{method:"PUT",body:JSON.stringify({expected_revision:0,definition:{workflow:"direct",roles:{executor:agentId},decision_mode:"balanced",max_reworks:2}})});
-    if(!response.ok)throw new Error("Team fixture configuration failed");
+    return this.configureWorkflowTeamDefinitionFixture(teamId,{workflow:"direct",roles:{executor:agentId},decision_mode:"balanced",max_reworks:2});
+  }
+  async configureWorkflowTeamDefinitionFixture(teamId:string,definition:TeamDefinition){
+    const agents=[...Object.values(definition.roles),...Object.values(definition.feedback??{})];
+    if(!this.createdTeamIds.includes(teamId) || agents.some(id=>!this.engineeringRuns.some(run=>run.agentId===id)))throw new Error("Not an owned Team fixture");
+    const response=await this.authedFetch(`/api/squads/${teamId}/engineering`,{method:"PUT",body:JSON.stringify({expected_revision:0,definition})});
+    if(!response.ok)throw new Error(`Team fixture configuration failed: ${response.status}`);
   }
   async trackWorkflowTeamIssueFixture(teamId:string,projectId:string,issueId:string){
     if(!this.createdTeamIds.includes(teamId) || !this.createdProjectIds.includes(projectId))throw new Error("Not an owned Team project fixture");

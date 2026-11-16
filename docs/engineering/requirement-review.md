@@ -180,8 +180,11 @@ combined delivered commit. Early completion, reviewer override and Agent-owned
 reading acknowledgement remain rejected.
 
 This is a protocol integration test with fixture-supplied conclusions and command
-receipts, real temporary Git repositories and SQLite. It does not establish native
-PostgreSQL scheduling/Done for the entire Bug Fix path, model diagnosis quality or
-actual browser truth of the declared delivery evidence. Those acceptance items
-remain separate. Existing frozen Review sources are not rewritten by updating the
+receipts, real temporary Git repositories and SQLite. Its evidence is distinct
+from the [controlled native Team lifecycle](reproduction.md#controlled-native-bug-fix-team-acceptance),
+which now covers browser creation, authenticated reproduction facts, one native
+delivery, independent Chrome observations, automatic Review and exact reading
+before PostgreSQL Done. The native scenario uses in-place execution; native
+worktree/process lifecycle, model diagnosis quality and packaged clients remain
+unaccepted. Existing frozen Review sources are not rewritten by updating the
 default YAML.

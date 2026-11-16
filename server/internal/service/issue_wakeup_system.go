@@ -520,6 +520,25 @@ func (s *IssueWakeupService) dispatchSystem(ctx context.Context, prev db.IssueWa
 		}
 		return nil
 	}
+	if len(receipts) > 0 && s.Tasks.EngineeringTeamOwnsIssue != nil {
+		owned, err := s.Tasks.EngineeringTeamOwnsIssue(ctx, issue)
+		if err != nil {
+			return err
+		}
+		if owned {
+			// The Team scheduler advances frozen roles from accepted units.
+			// Keep child completion facts without starting a competing leader run.
+			if err = q.ConsumeWakeupReceipts(ctx, db.ConsumeWakeupReceiptsParams{Ids: receiptIDs(receipts)}); err != nil {
+				return err
+			}
+			facts := childDoneFacts(receipts)
+			facts["outcome"], facts["reason"] = "none", "team_workflow"
+			if err = note(wakeupActivityTriggered, facts); err != nil {
+				return err
+			}
+			return commit()
+		}
+	}
 	// Facts a claimed run took along count once that run starts; until then
 	// they wait with it, and they come back if it ends without starting.
 	receipts, _, taken, err := takenReceipts(ctx, q, receipts)
