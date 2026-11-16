@@ -268,6 +268,7 @@ for(const kind of ["direct","yaml"] as const)it(`authorizes only the frozen ${ki
  app.close();app=new EngineeringApplication(database,definition);expect(await invoke(host,"repair-handoff-ready",application)).toEqual(ready);
  expect(await invoke(host,"execution-permission")).toEqual({allowed:false});expect(await invoke(host,"execution-permission",{task_id:randomUUID()})).toEqual({allowed:false});expect(await invoke(host,"execution-permission",{task_id:ready.continuation.task_id})).toEqual({allowed:true});
  expect(await invoke({kind:"coordinator"},"continuations")).toEqual([]);await expect(invoke(human,"abandon",{})).rejects.toThrow(/surrendered/);
+ const readinessPin={target_hash:ready.target_hash,application_hash:ready.application_hash,ready_hash:ready.hash};expect(await invoke(host,"repair-dispatch-readiness",readinessPin)).toMatchObject({state:"eligible",reason:"prepared-entry",task_id:ready.continuation.task_id});await expect(invoke(owner,"repair-dispatch-readiness",readinessPin)).rejects.toThrow(/native host/);
  const successor={...owner,attemptId:`${ready.continuation.task_id}:999999`};
  await expect(invoke(successor,kind==="direct"?"direct-run":"start")).rejects.toThrow(/surrendered/);
  await invoke({...successor,kind:"daemon"},"bind",{work_dir:repository,mode:"in_place",overlays:[]});
@@ -393,7 +394,7 @@ it("refuses stale recovery checkpoint holds and excludes human questions and com
  let state=z.object({draft:draftSchema}).parse(await invoke(h.successor,"start"));
  await expect(invoke(host,"repair-recovery-hold",{...h.pin,native})).rejects.toThrow(/changed before/);const db=new DatabaseSync(database);expect(db.prepare("SELECT count(*) AS n FROM engineering_intervention").get()!.n).toBe(1);
  const command=async(command:unknown)=>{state=z.object({draft:draftSchema}).parse(await invoke(h.successor,"command",{expected_sequence:state.draft.sequence,command}));};await command({type:"phase.complete"});await command({type:"runtime-input.put",key:"entry",title:"Entry",question:"Which entry?",why:"Need real input",recommendation:"Use isolated entry"});await command({type:"phase.complete"});
- expect(await invoke(host,"repair-recovery-checkpoint",h.pin)).toEqual({checkpoint:null,reason:"waiting-for-answers"});await expect(invoke(host,"repair-recovery-hold",{...h.pin,native})).rejects.toThrow(/changed before/);db.close();
+ expect(await invoke(host,"repair-dispatch-readiness",h.pin)).toMatchObject({state:"waiting",reason:"human-answers-pending"});expect(await invoke(host,"repair-recovery-checkpoint",h.pin)).toEqual({checkpoint:null,reason:"waiting-for-answers"});await expect(invoke(host,"repair-recovery-hold",{...h.pin,native})).rejects.toThrow(/changed before/);db.close();
 });
 
 it("captures recovery provenance through the bundled private worker without recording an Agent view or RUN",async()=>{

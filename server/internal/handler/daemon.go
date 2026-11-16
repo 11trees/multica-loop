@@ -2138,7 +2138,7 @@ func (h *Handler) ClaimTasksByRuntime(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "max_tasks must not be negative")
 		return
 	}
-	if req.MaxTasks == 0 {
+	if req.MaxTasks == 0 && h.EngineeringWorker == nil {
 		writeMeasuredJSON(w, http.StatusOK, map[string]any{"tasks": []AgentTaskResponse{}})
 		return
 	}
@@ -2225,12 +2225,18 @@ func (h *Handler) ClaimTasksByRuntime(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.MaxTasks == 0 {
+		h.observeEngineeringDaemonCapacity(runtimeByID, 0)
+		writeMeasuredJSON(w, http.StatusOK, map[string]any{"tasks": []AgentTaskResponse{}})
+		return
+	}
 	claimed, err := h.TaskService.ClaimTasksForRuntimes(r.Context(), authorized, maxTasks)
 	if err != nil {
 		slog.Warn("claim tasks failed", append(logger.RequestAttrs(r), "error", err)...)
 		writeError(w, http.StatusInternalServerError, "failed to claim tasks")
 		return
 	}
+	h.observeEngineeringDaemonCapacity(runtimeByID, maxTasks-len(claimed))
 
 	out := make([]AgentTaskResponse, 0, len(claimed))
 	for i := range claimed {
@@ -4448,6 +4454,12 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to claim task")
 		return
 	}
+
+	freeSlots := 0
+	if task == nil {
+		freeSlots = 1
+	}
+	h.observeEngineeringDaemonCapacity(map[string]db.AgentRuntime{uuidToString(runtime.ID): runtime}, freeSlots)
 
 	if task == nil {
 		slog.Debug("no task to claim", "runtime_id", runtimeID)

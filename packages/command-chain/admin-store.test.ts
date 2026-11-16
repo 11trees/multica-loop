@@ -34,7 +34,7 @@ it("isolates workspaces and prevents recursively creating an Admin Case for its 
 it("refuses business, unrelated and newer databases before management schema creation",()=>{
  const business=join(directory,"business.sqlite"),db=new DatabaseSync(business);db.exec("CREATE TABLE engineering_contract(id TEXT)");db.close();expect(()=>new AdminStore(business)).toThrow(/business or unrelated/);
  const check=new DatabaseSync(business);expect(check.prepare("SELECT name FROM sqlite_master WHERE name='admin_control'").get()).toBeUndefined();check.close();
- const newer=join(directory,"newer.sqlite"),future=new DatabaseSync(newer);future.exec("CREATE TABLE admin_control(singleton INTEGER);PRAGMA user_version=14");future.close();expect(()=>new AdminStore(newer)).toThrow(/newer/);
+ const newer=join(directory,"newer.sqlite"),future=new DatabaseSync(newer);future.exec("CREATE TABLE admin_control(singleton INTEGER);PRAGMA user_version=15");future.close();expect(()=>new AdminStore(newer)).toThrow(/newer/);
 });
 it("upgrades an existing observation database without rewriting its Case or granting execution",()=>{
  const authority=store.acquireSupervisor("existing-host")!,original=observation(),repair=store.observe(authority,original);
@@ -53,21 +53,21 @@ it("upgrades schema two with pending Cases while keeping Admin stopped and prese
  expect(store.observe(authority,original)).toEqual(repair);
  expect(store.control()).toMatchObject({desired_intent:"stopped",intent_revision:0});
  expect(store.execution.pendingTakeovers(authority)).toEqual([]);
- const check=new DatabaseSync(filename);expect(check.prepare("PRAGMA user_version").get()!.user_version).toBe(13);expect(check.prepare("SELECT count(*) AS n FROM admin_observation").get()!.n).toBe(1);check.close();
+ const check=new DatabaseSync(filename);expect(check.prepare("PRAGMA user_version").get()!.user_version).toBe(14);expect(check.prepare("SELECT count(*) AS n FROM admin_observation").get()!.n).toBe(1);check.close();
 });
 
 it("upgrades schema three with separate physical progress storage and preserves original Cases",()=>{
  const authority=store.acquireSupervisor("schema-three")!,original=observation(),repair=store.observe(authority,original);
  store.close();const prior=new DatabaseSync(filename);prior.exec("DROP TABLE admin_takeover_progress;PRAGMA user_version=3");prior.close();
  store=new AdminStore(filename,()=>now);expect(store.observe(authority,original)).toEqual(repair);expect(store.control()).toMatchObject({desired_intent:"stopped",intent_revision:0});
- const check=new DatabaseSync(filename);expect(check.prepare("PRAGMA user_version").get()!.user_version).toBe(13);expect(check.prepare("SELECT count(*) AS n FROM admin_takeover_progress").get()!.n).toBe(0);check.close();
+ const check=new DatabaseSync(filename);expect(check.prepare("PRAGMA user_version").get()!.user_version).toBe(14);expect(check.prepare("SELECT count(*) AS n FROM admin_takeover_progress").get()!.n).toBe(0);check.close();
 });
 
 it("upgrades schema four without changing original Cases or creating verification work",()=>{
  const authority=store.acquireSupervisor("schema-four")!,original=observation(),repair=store.observe(authority,original);
  store.close();const prior=new DatabaseSync(filename);prior.exec("DROP TABLE admin_verification_input;PRAGMA user_version=4");prior.close();
  store=new AdminStore(filename,()=>now);expect(store.observe(authority,original)).toEqual(repair);expect(store.control()).toMatchObject({desired_intent:"stopped",intent_revision:0});
- const check=new DatabaseSync(filename);expect(check.prepare("PRAGMA user_version").get()!.user_version).toBe(13);expect(check.prepare("SELECT count(*) AS n FROM admin_verification_input").get()!.n).toBe(0);check.close();
+ const check=new DatabaseSync(filename);expect(check.prepare("PRAGMA user_version").get()!.user_version).toBe(14);expect(check.prepare("SELECT count(*) AS n FROM admin_verification_input").get()!.n).toBe(0);check.close();
  expect(store.execution.active()).toEqual([]);expect(store.execution.configuration()).toBeNull();
 });
 
@@ -75,28 +75,28 @@ it("upgrades schema five to retain a single active slot including never-launched
  const authority=store.acquireSupervisor("schema-five")!,original=observation(),repair=store.observe(authority,original);
  store.close();const prior=new DatabaseSync(filename);prior.exec("DROP TABLE admin_verification_plan;DROP INDEX admin_one_live_attempt;CREATE UNIQUE INDEX admin_one_live_attempt ON admin_attempt((1)) WHERE status IN ('launching','running');PRAGMA user_version=5");prior.close();
  store=new AdminStore(filename,()=>now);expect(store.observe(authority,original)).toEqual(repair);expect(store.control()).toMatchObject({desired_intent:"stopped",intent_revision:0});
- const check=new DatabaseSync(filename);expect(check.prepare("PRAGMA user_version").get()!.user_version).toBe(13);expect(String(check.prepare("SELECT sql FROM sqlite_master WHERE name='admin_one_live_attempt'").get()!.sql)).toContain("waiting");check.close();expect(store.execution.active()).toEqual([]);
+ const check=new DatabaseSync(filename);expect(check.prepare("PRAGMA user_version").get()!.user_version).toBe(14);expect(String(check.prepare("SELECT sql FROM sqlite_master WHERE name='admin_one_live_attempt'").get()!.sql)).toContain("waiting");check.close();expect(store.execution.active()).toEqual([]);
 });
 
 it("upgrades schema six with empty native receipts while retaining original Cases and stopped intent",()=>{
  const authority=store.acquireSupervisor("schema-six")!,original=observation(),repair=store.observe(authority,original);
  store.close();const prior=new DatabaseSync(filename);prior.exec("DROP TABLE admin_verification_check;DROP TABLE admin_verification_receipt;PRAGMA user_version=6");prior.close();
  store=new AdminStore(filename,()=>now);expect(store.observe(authority,original)).toEqual(repair);expect(store.control()).toMatchObject({desired_intent:"stopped",intent_revision:0});
- const check=new DatabaseSync(filename);expect(check.prepare("PRAGMA user_version").get()!.user_version).toBe(13);expect(check.prepare("SELECT count(*) AS n FROM admin_verification_check").get()!.n).toBe(0);expect(check.prepare("SELECT count(*) AS n FROM admin_verification_receipt").get()!.n).toBe(0);check.close();
+ const check=new DatabaseSync(filename);expect(check.prepare("PRAGMA user_version").get()!.user_version).toBe(14);expect(check.prepare("SELECT count(*) AS n FROM admin_verification_check").get()!.n).toBe(0);expect(check.prepare("SELECT count(*) AS n FROM admin_verification_receipt").get()!.n).toBe(0);check.close();
 });
 
 it("upgrades schema seven by retaining old inputs and originals while requeueing unbound prepared repairs",()=>{
  const authority=store.acquireSupervisor("schema-seven")!,original=observation(),repair=store.observe(authority,original);
  store.close();const prior=new DatabaseSync(filename);prior.exec("DROP TABLE admin_repair_write;DROP TABLE admin_repair_candidate;PRAGMA user_version=7");prior.prepare("UPDATE admin_case SET status='verification-prepared' WHERE case_id=?").run(repair.caseId);prior.prepare("INSERT INTO admin_verification_input VALUES(?,?)").run("legacy-seven",JSON.stringify({original:"retained old input"}));prior.close();
  store=new AdminStore(filename,()=>now);expect(store.issue(workspaceId,issueId)).toMatchObject({status:"queued",observation_count:1,desired_intent:"stopped"});
- const check=new DatabaseSync(filename);expect(check.prepare("PRAGMA user_version").get()!.user_version).toBe(13);expect(check.prepare("SELECT payload FROM admin_verification_input WHERE attempt_id='legacy-seven'").get()!.payload).toBe(JSON.stringify({original:"retained old input"}));expect(check.prepare("SELECT count(*) AS n FROM admin_repair_write").get()!.n).toBe(0);check.close();
+ const check=new DatabaseSync(filename);expect(check.prepare("PRAGMA user_version").get()!.user_version).toBe(14);expect(check.prepare("SELECT payload FROM admin_verification_input WHERE attempt_id='legacy-seven'").get()!.payload).toBe(JSON.stringify({original:"retained old input"}));expect(check.prepare("SELECT count(*) AS n FROM admin_repair_write").get()!.n).toBe(0);check.close();
 });
 
 it("upgrades schema eight with an empty handoff ledger while preserving original Cases and stopped intent",()=>{
  const authority=store.acquireSupervisor("schema-eight")!,original=observation(),repair=store.observe(authority,original);
  store.close();const previous=new DatabaseSync(filename);previous.exec("DROP TABLE admin_handoff_preparation;PRAGMA user_version=8");previous.close();
  store=new AdminStore(filename,()=>now);expect(store.observe(authority,original)).toEqual(repair);expect(store.control().desired_intent).toBe("stopped");
- const check=new DatabaseSync(filename);expect(check.prepare("PRAGMA user_version").get()!.user_version).toBe(13);expect(check.prepare("SELECT count(*) AS n FROM admin_handoff_preparation").get()!.n).toBe(0);check.close();
+ const check=new DatabaseSync(filename);expect(check.prepare("PRAGMA user_version").get()!.user_version).toBe(14);expect(check.prepare("SELECT count(*) AS n FROM admin_handoff_preparation").get()!.n).toBe(0);check.close();
 });
 
 it("upgrades schema nine without discarding handoff proposals or enabling execution",()=>{
@@ -104,22 +104,26 @@ it("upgrades schema nine without discarding handoff proposals or enabling execut
  store.close();const previous=new DatabaseSync(filename);previous.exec("DROP TABLE admin_handoff_reservation;PRAGMA user_version=9");
  const proposal=JSON.stringify({retained:"Exact historical proposal"});previous.prepare("INSERT INTO admin_handoff_preparation VALUES(?,?,?)").run(repair.caseId,"verified",proposal);previous.close();
  store=new AdminStore(filename,()=>now);expect(store.control().desired_intent).toBe("stopped");expect(store.observe(authority,original)).toEqual(repair);
- const check=new DatabaseSync(filename);expect(check.prepare("PRAGMA user_version").get()!.user_version).toBe(13);expect(check.prepare("SELECT payload FROM admin_handoff_preparation").get()!.payload).toBe(proposal);expect(check.prepare("SELECT count(*) AS n FROM admin_handoff_reservation").get()!.n).toBe(0);check.close();
+ const check=new DatabaseSync(filename);expect(check.prepare("PRAGMA user_version").get()!.user_version).toBe(14);expect(check.prepare("SELECT payload FROM admin_handoff_preparation").get()!.payload).toBe(proposal);expect(check.prepare("SELECT count(*) AS n FROM admin_handoff_reservation").get()!.n).toBe(0);check.close();
 });
 it("upgrades schema ten without discarding native reservations or enabling execution",()=>{
  const authority=store.acquireSupervisor("schema-ten")!,original=observation(),repair=store.observe(authority,original);
  store.close();const previous=new DatabaseSync(filename);previous.exec("DROP TABLE admin_handoff_application;PRAGMA user_version=10");const payload=JSON.stringify({retained:"Historical native reservation"});previous.prepare("INSERT INTO admin_handoff_reservation VALUES(?,?,?)").run(repair.caseId,"verified",payload);previous.close();
  store=new AdminStore(filename,()=>now);expect(store.control().desired_intent).toBe("stopped");expect(store.observe(authority,original)).toEqual(repair);
- const check=new DatabaseSync(filename);expect(check.prepare("PRAGMA user_version").get()!.user_version).toBe(13);expect(check.prepare("SELECT payload FROM admin_handoff_reservation").get()!.payload).toBe(payload);expect(check.prepare("SELECT count(*) AS n FROM admin_handoff_application").get()!.n).toBe(0);check.close();
+ const check=new DatabaseSync(filename);expect(check.prepare("PRAGMA user_version").get()!.user_version).toBe(14);expect(check.prepare("SELECT payload FROM admin_handoff_reservation").get()!.payload).toBe(payload);expect(check.prepare("SELECT count(*) AS n FROM admin_handoff_application").get()!.n).toBe(0);check.close();
 });
 it("upgrades schema eleven preserving staged business receipts and stopped intent",()=>{
  const authority=store.acquireSupervisor("schema-eleven")!,original=observation(),repair=store.observe(authority,original);
  store.close();const previous=new DatabaseSync(filename);previous.exec("DROP TABLE admin_handoff_publication;PRAGMA user_version=11");const payload=JSON.stringify({retained:"Exact staged business witness"});previous.prepare("INSERT INTO admin_handoff_application VALUES(?,?,?)").run(repair.caseId,"verified",payload);previous.close();
  store=new AdminStore(filename,()=>now);expect(store.issue(workspaceId,issueId)).toMatchObject({case_id:repair.caseId});expect(store.control().desired_intent).toBe("stopped");
- const check=new DatabaseSync(filename);expect(check.prepare("PRAGMA user_version").get()!.user_version).toBe(13);expect(check.prepare("SELECT payload FROM admin_handoff_application").get()!.payload).toBe(payload);expect(check.prepare("SELECT count(*) AS n FROM admin_handoff_publication").get()!.n).toBe(0);check.close();
+ const check=new DatabaseSync(filename);expect(check.prepare("PRAGMA user_version").get()!.user_version).toBe(14);expect(check.prepare("SELECT payload FROM admin_handoff_application").get()!.payload).toBe(payload);expect(check.prepare("SELECT count(*) AS n FROM admin_handoff_publication").get()!.n).toBe(0);check.close();
 });
 it("upgrades schema twelve retaining native publication receipts while creating an empty progress ledger",()=>{
  const authority=store.acquireSupervisor("schema-twelve")!,original=observation(),repair=store.observe(authority,original);
  store.close();const previous=new DatabaseSync(filename);previous.exec("DROP TABLE admin_business_progress;PRAGMA user_version=12");const payload=JSON.stringify({retained:"Exact native publication"});previous.prepare("INSERT INTO admin_handoff_publication VALUES(?,?,?)").run(repair.caseId,"verified",payload);previous.close();
- store=new AdminStore(filename,()=>now);expect(store.control().desired_intent).toBe("stopped");const db=new DatabaseSync(filename);expect(db.prepare("PRAGMA user_version").get()!.user_version).toBe(13);expect(db.prepare("SELECT payload FROM admin_handoff_publication").get()!.payload).toBe(payload);expect(db.prepare("SELECT count(*) AS n FROM admin_business_progress").get()!.n).toBe(0);db.close();
+ store=new AdminStore(filename,()=>now);expect(store.control().desired_intent).toBe("stopped");const db=new DatabaseSync(filename);expect(db.prepare("PRAGMA user_version").get()!.user_version).toBe(14);expect(db.prepare("SELECT payload FROM admin_handoff_publication").get()!.payload).toBe(payload);expect(db.prepare("SELECT count(*) AS n FROM admin_business_progress").get()!.n).toBe(0);db.close();
+});
+
+it("upgrades schema thirteen retaining publications while dispatch observation starts empty and stopped",()=>{
+ const authority=store.acquireSupervisor("schema-thirteen")!,repair=store.observe(authority,observation());store.close();const old=new DatabaseSync(filename);old.exec("DROP TABLE admin_recovery_watch;PRAGMA user_version=13");const payload=JSON.stringify({retained:"Native handoff"});old.prepare("INSERT INTO admin_handoff_publication VALUES(?,?,?)").run(repair.caseId,"verified",payload);old.close();store=new AdminStore(filename,()=>now);expect(store.control().desired_intent).toBe("stopped");const db=new DatabaseSync(filename);expect(db.prepare("PRAGMA user_version").get()!.user_version).toBe(14);expect(db.prepare("SELECT payload FROM admin_handoff_publication").get()!.payload).toBe(payload);expect(db.prepare("SELECT count(*) AS n FROM admin_recovery_watch").get()!.n).toBe(0);db.close();
 });

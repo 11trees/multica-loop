@@ -48,6 +48,8 @@ func (h *Handler) controlEngineeringRepair(ctx context.Context, raw json.RawMess
 		return h.runEngineeringRepairHandoff(ctx, raw, true)
 	case "stage-handoff":
 		return h.stageEngineeringRepairHandoff(ctx, raw)
+	case "observe-readiness":
+		return h.observeEngineeringRecoveryReadiness(ctx, raw)
 	case "observe-handoff":
 		return h.observeEngineeringRepairHandoff(ctx, raw)
 	case "publication-status":

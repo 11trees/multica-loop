@@ -127,3 +127,52 @@ DELETE FROM engineering_repair_fence WHERE workspace_id = @workspace_id AND proj
  AND case_id = @case_id AND attempt_id = @attempt_id AND generation = @generation
  AND owner_id = @owner_id AND supervision_token = @supervision_token AND intent_revision = @intent_revision
  AND observation_id = @observation_id AND source_attempt_id = @source_attempt_id AND source_revision = @source_revision AND snapshot_hash = @snapshot_hash AND phase='owned';
+
+-- name: GetEngineeringNextClaimableTask :one
+-- Read-only selection for recovery observation. Keep eligibility and ordering
+-- in sync with ClaimAgentTask; capacity and daemon slots are checked by service.
+SELECT * FROM agent_task_queue WHERE id = (
+    SELECT atq.id FROM agent_task_queue atq
+    WHERE atq.agent_id = @agent_id
+      AND atq.runtime_id = @runtime_id
+      AND atq.status = 'queued'
+      AND (atq.context->>'wakeup_id' IS NULL OR EXISTS (SELECT 1 FROM issue_wakeup w WHERE w.id=(atq.context->>'wakeup_id')::uuid AND w.disabled_at IS NULL AND w.revision=(atq.context->>'wakeup_revision')::bigint))
+      AND EXISTS (
+          SELECT 1
+          FROM agent a
+          JOIN agent_runtime r ON r.id = atq.runtime_id
+          WHERE a.id = atq.agent_id
+            -- A task's persisted runtime is not authority after an agent rebind.
+            AND a.runtime_id = atq.runtime_id
+            -- Queued private-runtime rows are claimable so the handler can
+            -- settle an owner mismatch through the existing FailTask path
+            -- before daemon delivery. Public runtimes remain shareable across
+            -- agent owners; dispatched reclaim keeps its owner fence below.
+            AND (
+                r.visibility = 'public'
+                OR r.visibility = 'private'
+            )
+            AND r.status = 'online'
+            AND COALESCE(r.last_seen_at, r.updated_at) >=
+                now() - make_interval(secs => @runtime_stale_secs::double precision)
+      )
+      AND NOT EXISTS (
+          SELECT 1 FROM agent_task_queue active
+          WHERE active.agent_id = atq.agent_id
+            AND active.status IN ('dispatched', 'running', 'waiting_local_directory')
+            AND (
+              (atq.issue_id IS NOT NULL AND active.issue_id = atq.issue_id)
+              OR (atq.chat_session_id IS NOT NULL AND active.chat_session_id = atq.chat_session_id)
+              OR (
+                atq.issue_id IS NULL
+                AND atq.chat_session_id IS NULL
+                AND atq.autopilot_run_id IS NULL
+                AND active.issue_id IS NULL
+                AND active.chat_session_id IS NULL
+                AND active.autopilot_run_id IS NULL
+              )
+            )
+      )
+    ORDER BY atq.priority DESC, atq.created_at ASC, atq.id ASC
+    LIMIT 1
+);

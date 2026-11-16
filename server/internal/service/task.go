@@ -38,6 +38,7 @@ import (
 )
 
 type TaskService struct {
+	EngineeringCapacity      *EngineeringDispatchCapacity
 	EngineeringTeamOwnsIssue func(context.Context, db.Issue) (bool, error)
 
 	// RecordMemberActivity enables the member_delegation_day ledger, which
@@ -338,7 +339,7 @@ func NewTaskService(q *db.Queries, tx TxStarter, hub *realtime.Hub, bus *events.
 	if len(wakeups) > 0 {
 		wakeup = wakeups[0]
 	}
-	return &TaskService{Queries: q, TxStarter: tx, Hub: hub, Bus: bus, Wakeup: wakeup}
+	return &TaskService{Queries: q, TxStarter: tx, Hub: hub, Bus: bus, Wakeup: wakeup, EngineeringCapacity: NewEngineeringDispatchCapacity()}
 }
 
 var trivialDoneMarkers = []string{

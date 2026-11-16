@@ -141,6 +141,9 @@ func (h *Handler) runEngineeringAdmin(ctx context.Context, interval time.Duratio
 				if err := h.ReconcileEngineeringRepairHandoffs(ctx, *current); err != nil && ctx.Err() == nil {
 					slog.WarnContext(ctx, "engineering Admin verified handoff preparation waiting", "error", err)
 				}
+				if err := h.ReconcileEngineeringRecoveryReadiness(ctx, *current); err != nil && ctx.Err() == nil {
+					slog.WarnContext(ctx, "engineering Admin dispatch observation waiting", "error", err)
+				}
 				if err := h.ReconcileEngineeringRecoveryProgress(ctx, *current); err != nil && ctx.Err() == nil {
 					slog.WarnContext(ctx, "engineering Admin recovery observation waiting", "error", err)
 				}
@@ -292,4 +295,15 @@ func (h *Handler) deliverEngineeringRepairObservation(ctx context.Context, autho
 		return fmt.Errorf("Admin observation delivery was not acknowledged")
 	}
 	return nil
+}
+
+func (h *Handler) observeEngineeringDaemonCapacity(runtimes map[string]db.AgentRuntime, slots int) {
+	if h.EngineeringWorker == nil || h.TaskService == nil || h.TaskService.EngineeringCapacity == nil {
+		return
+	}
+	rows := make([]db.AgentRuntime, 0, len(runtimes))
+	for _, runtime := range runtimes {
+		rows = append(rows, runtime)
+	}
+	h.TaskService.EngineeringCapacity.Observe(rows, slots, time.Now())
 }

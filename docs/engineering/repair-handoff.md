@@ -9,8 +9,9 @@ ready business checkpoint; the Case enters observation rather than closure.
 
 ## Verified management context
 
-Management schema 13 retains preparation, reservation, application and publication
-ledgers and adds `admin_business_progress`. The host reads `handoff-pending` only
+Management schema 14 retains preparation, reservation, application, publication
+and business-progress ledgers, and adds the separate `admin_recovery_watch`
+observation interval. The host reads `handoff-pending` only
 under current running intent and obtains `handoff-context` with management
 authority. Agent commands expose neither action. A display status alone is
 insufficient: context recompiles the entire ordered native receipt, compares its
@@ -325,8 +326,10 @@ repair can prepare a new successor without deleting either original failure.
 
 Observation of a normally applied recovery result and its guarded Case closure
 are connected. Bound terminal executions without a result now create an
-immutable host business hold and reopen their original Case. Runnable-dispatch
-stall sampling, pre-bind/preparation failures, source/cohort changes and recovery
+immutable host business hold and reopen their original Case. Readonly runnable-
+dispatch sampling and durable eligible-time evidence are connected through the
+[Admin observer](admin.md#dispatch-readiness-observation). Automatic stall
+takeback, pre-bind/preparation failure holds, source/cohort changes and recovery
 of completed drafts without owner settlement still require migration. Waiting
 alone does not synthesize a successful result, fault or Case closure. Broader revocation,
 runtime/service identity, external dependency and shared-path recovery retain
@@ -448,3 +451,17 @@ and lost hold/observation/acknowledgement replies. Unknown controller cleanup
 remains unknown and logical holds create no native fence. Management storage
 retains the same Case and prior proof across replay. These controlled layers do
 not establish provider-driven or packaged recovery acceptance.
+
+Readonly dispatch observation passed 465 existing plus 13 new command-chain
+cases (478 distinct tests across 38 files), kernel type/lint/build checks, the
+engineering handler race suite, local-control checks and Go vet. Real SQLite
+tests preserve schema-thirteen publications through the schema-fourteen upgrade
+and prove interval restart, same-source/intent continuity, duplicate replay,
+expiry/reordering refusal and no failure or closure authority. Shared UTF-8
+witnesses match Go and Node. PostgreSQL/private-socket fixtures verify native
+readiness without claiming or cancelling work; covered positive previews agree
+with normal native queue claims, including machine-wide runtime priority and
+Agent/runtime caps. Authenticated batch zero/idle polls and singular idle polls
+record capacity without preparing a provider task. Unknown cleanup, stale
+capacity, human waits and changed ownership retain waiting/reset boundaries.
+No automatic stall takeback or real-provider acceptance is established.

@@ -1,0 +1,17 @@
+{
+  "case_id": "REPAIR-原始任务",
+  "verification_attempt_id": "independent-核验",
+  "target_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "workspace_id": "11111111-1111-4111-a111-111111111111",
+  "issue_id": "22222222-2222-4222-a222-222222222222",
+  "task_id": "55555555-5555-4555-a555-555555555555",
+  "publication_hash": "3ccf8261f6fe9855cc5ce8650d2937aafad20765709e68e066e06386584a6916",
+  "project_id": "77777777-7777-4777-a777-777777777777",
+  "runtime_id": "88888888-8888-4888-a888-888888888888",
+  "business_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "source_key": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "readiness": "runnable",
+  "reason": "原生队列具备派发条件",
+  "observed_at": 1794825000000,
+  "hash": "5d12befe18d6ad1c565bcb7eb7879b26af1a10fee0781627ea19d01cc65a4d06"
+}

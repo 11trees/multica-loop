@@ -1,4 +1,5 @@
 // @vitest-environment node
+import {repairReadinessObservationHash,type RepairReadinessObservation} from "./repair-readiness";
 import {repairBusinessProgressHash,repairNativeProgressHash,repairRecoveryProgressSchema,type RepairRecoveryProgress} from "./repair-progress";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -426,4 +427,28 @@ it("reopens the published Case for a new host-frozen business fault and retains 
  if(before.observation_count===undefined||before.original_version===undefined)throw new Error("Published repair fixture is unavailable");
  expect(store.observe(h.authority,event)).toMatchObject({caseId:h.claim.caseId,status:"queued"});expect(store.issue(workspaceId,issueId)).toMatchObject({status:"queued",observation_count:before.observation_count+1,original_version:before.original_version});expect(store.execution.observingHandoffs(h.authority)).toEqual([]);expect(()=>store.execution.handoffContext(h.authority,h.claim.caseId)).toThrow(/settled verified/);
  store.close();store=new AdminStore(filename,()=>now);expect(store.observe(h.authority,event)).toMatchObject({caseId:h.claim.caseId,status:"queued"});expect(store.issue(workspaceId,issueId).observation_count).toBe(before.observation_count+1);const db=new DatabaseSync(filename);expect(db.prepare("SELECT payload FROM admin_handoff_publication").get()!.payload).toBe(JSON.stringify(h.value));expect(db.prepare("SELECT count(*) AS n FROM admin_business_progress").get()!.n).toBe(0);db.close();
+});
+
+function dispatchObservation(h:Awaited<ReturnType<typeof publicationFixture>>,readiness:RepairReadinessObservation["readiness"]="runnable",source="a".repeat(64)){
+ const p=h.value.publication,body={case_id:h.claim.caseId,verification_attempt_id:p.verification_attempt_id,target_hash:p.target_hash,publication_hash:p.hash,workspace_id:workspaceId,issue_id:issueId,project_id:h.reservation.project_id,runtime_id:p.runtime_id,task_id:p.task_id,business_hash:"b".repeat(64),source_key:source,readiness,reason:"native-readonly-inspection",observed_at:now};return {...body,hash:repairReadinessObservationHash(body)};
+}
+it("persists only fresh same-source runnable time across restart without creating failure or closure authority",async()=>{
+ const h=await publicationFixture();store.execution.recordHandoffPublication(h.authority,h.claim.caseId,h.value);store.renewSupervisor(h.authority,3600000);let value=store.execution.recordRecoveryReadiness(h.authority,h.claim.caseId,dispatchObservation(h));expect(value.stall_due).toBe(false);
+ for(let i=1;i<=20;i++){now+=60000;value=store.execution.recordRecoveryReadiness(h.authority,h.claim.caseId,dispatchObservation(h));}
+ expect(value.watch.eligibleElapsedMs).toBe(1200000);expect(value.stall_due).toBe(true);expect(store.issue(workspaceId,issueId).status).toBe("observing");store.close();store=new AdminStore(filename,()=>now);expect(store.execution.readRecoveryReadiness(h.authority,h.claim.caseId)).toEqual(value);
+ const same=dispatchObservation(h);now+=1000;expect(store.execution.recordRecoveryReadiness(h.authority,h.claim.caseId,same).watch.eligibleElapsedMs).toBe(1200000);now+=120001;expect(store.execution.readRecoveryReadiness(h.authority,h.claim.caseId)?.stall_due).toBe(false);
+ const db=new DatabaseSync(filename);expect(db.prepare("SELECT count(*) AS n FROM admin_business_progress").get()!.n).toBe(0);expect(db.prepare("SELECT count(*) AS n FROM admin_observation").get()!.n).toBe(2);db.close();
+});
+it("resets dispatch intervals on waiting, source changes, outages and a new run intent",async()=>{
+ const h=await publicationFixture();store.execution.recordHandoffPublication(h.authority,h.claim.caseId,h.value);store.renewSupervisor(h.authority,3600000);
+ store.execution.recordRecoveryReadiness(h.authority,h.claim.caseId,dispatchObservation(h));now+=60000;expect(store.execution.recordRecoveryReadiness(h.authority,h.claim.caseId,dispatchObservation(h)).watch.eligibleElapsedMs).toBe(60000);
+ now+=10000;expect(store.execution.recordRecoveryReadiness(h.authority,h.claim.caseId,dispatchObservation(h,"waiting")).watch.eligibleElapsedMs).toBe(0);now+=10000;expect(store.execution.recordRecoveryReadiness(h.authority,h.claim.caseId,dispatchObservation(h)).watch.eligibleElapsedMs).toBe(0);
+ now+=60000;store.execution.recordRecoveryReadiness(h.authority,h.claim.caseId,dispatchObservation(h));now+=1;expect(store.execution.recordRecoveryReadiness(h.authority,h.claim.caseId,dispatchObservation(h,"runnable","c".repeat(64))).watch.eligibleElapsedMs).toBe(0);
+ now+=120001;expect(store.execution.recordRecoveryReadiness(h.authority,h.claim.caseId,dispatchObservation(h)).watch.eligibleElapsedMs).toBe(0);store.execution.setIntent({intent:"stopped",request_id:"pause-watch"});expect(()=>store.execution.recordRecoveryReadiness(h.authority,h.claim.caseId,dispatchObservation(h))).toThrow(/running intent/);store.execution.setIntent({intent:"running",request_id:"resume-watch"});expect(store.execution.recordRecoveryReadiness(h.authority,h.claim.caseId,dispatchObservation(h)).watch.eligibleElapsedMs).toBe(0);
+});
+it("refuses expired, reordered, cross-publication and stopped readiness observations",async()=>{
+ const h=await publicationFixture();store.execution.recordHandoffPublication(h.authority,h.claim.caseId,h.value);store.renewSupervisor(h.authority,3600000);const first=dispatchObservation(h);store.execution.recordRecoveryReadiness(h.authority,h.claim.caseId,first);now+=1000;store.execution.recordRecoveryReadiness(h.authority,h.claim.caseId,dispatchObservation(h));
+ const reordered={...first,reason:"late"};reordered.hash=repairReadinessObservationHash(reordered);expect(()=>store.execution.recordRecoveryReadiness(h.authority,h.claim.caseId,reordered)).toThrow(/out of order/);
+ now+=130000;
+ for(const changed of [{...dispatchObservation(h),observed_at:now+1},{...dispatchObservation(h),observed_at:now-120001},{...dispatchObservation(h),publication_hash:"f".repeat(64)}])expect(()=>store.execution.recordRecoveryReadiness(h.authority,h.claim.caseId,{...changed,hash:repairReadinessObservationHash(changed)})).toThrow(/expired|differs/);
 });

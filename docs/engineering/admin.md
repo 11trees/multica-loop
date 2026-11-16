@@ -81,7 +81,7 @@ A native task or an investigation invocation cannot use these management command
 
 ## Investigation and physical ownership
 
-The management database schema is version 11. It freezes one invocation generation,
+The management database schema is version 14. It freezes one invocation generation,
 session identity, runtime revision and recovery method per allocation. A durable
 fair queue rotates Cases, with at most one active investigation, independent
 preparation or native verification invocation globally.
@@ -145,11 +145,43 @@ failure while preserving that failure; a failed process without a result cannot.
 independent. A bound terminal recovery without an applied result now freezes
 its current editable checkpoint and reopens the same Case through the durable
 business outbox. Queued/deferred retries and human questions remain waiting;
-unknown process exits retain their takeover barriers. Runnable-stall, pre-bind
-and cohort-change recovery remain unconnected.
+unknown process exits retain their takeover barriers. Readonly dispatch sampling
+and durable eligible-time evidence are connected; automatic stall takeback,
+pre-bind failure holds and cohort-change recovery remain unconnected.
 See [the verification protocol](repair-verification.md).
 Diagnosis and external-wait prerequisites remain unconnected. No investigation
 receipt closes the Case or resumes business.
+
+## Dispatch readiness observation
+
+The independent host samples each published, observing recovery through the
+private API control socket. Host-only business reads pin the original application,
+ready grant, current root, exact prepared stage, frozen role and human questions.
+They create no Agent view, RUN receipt, queue claim or business hold. A staged
+entry can be observed before its first bind; its original intervention remains held.
+
+The native side rechecks publication, issue lifecycle, Team/human authority,
+project/runtime mapping, retry lineage and recorded controller cleanup. Machine
+capacity comes only from authenticated native claim polls and expires after 30
+seconds; an online heartbeat alone does not establish a free slot. The readonly
+queue preview checks native priority, per-Agent/per-runtime concurrency, issue
+serialization, wakeup validity and project barriers across the polled runtime
+set. Dispatched claim preparation or reclaim remains a waiting barrier.
+
+Management schema 14 saves the exact native observation and current interval in
+`admin_recovery_watch`, separately from immutable business-result progress.
+Only adjacent runnable samples for the same source and start/stop intent count
+toward the 20-minute threshold. Human/resource/capacity waits, active execution,
+paused/ended/failed work, source changes, clock rollback or a sample gap over two
+minutes reset that interval. Duplicate observations do not add elapsed time;
+reordered or expired observations cannot update it. Restart retains the record,
+but elapsed offline time is not counted beyond the allowed sample gap.
+
+The private due flag is recalculated against current intent and freshness. It is
+observation evidence only: no consumer currently turns it into a business hold,
+native fence, cancellation, retry or Case closure. Automatic takeback still needs
+a fresh, owner-validated prepared/unbound checkpoint surrender and durable outbox
+handoff. This is distinct from the existing bound terminal-failure recovery path.
 
 ## Native visibility
 
@@ -210,8 +242,9 @@ probes and runtime updates remain unconnected. Verified business handoff now
 connects controlled task publication, resume, ordinary-result observation and
 guarded Case closure. Bound terminal failures without applied results now
 reopen the same Case while retaining its history and physical barriers.
-Runnable-stall sampling, pre-bind failures and cohort-change recovery still
-require implementation. Real-provider, Linux runtime and packaged
+Readonly runnable-stall sampling is connected. Automatic takeback from that
+evidence, pre-bind failure holds and cohort-change recovery still require
+implementation. Real-provider, Linux runtime and packaged
 acceptance remain unverified. The complete migration stays active.
 
 

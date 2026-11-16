@@ -1,3 +1,4 @@
+import {readRepairDispatchReadiness} from "./repair-readiness-store";
 import {readRecoveryCheckpoint} from "./repair-recovery-store";
 import {repairRecoveryFaultSchema} from "./repair-recovery-fault";
 import {assertRepairExecutionBinding,initializeRepairExecutions,prepareRepairExecutionHint,bindRepairExecutionHint,repairExecutionHintSchema} from "./repair-execution";
@@ -41,7 +42,7 @@ const actor = z.discriminatedUnion("kind", [human, task, daemon, host, coordinat
 export const applicationRequestSchema = z.strictObject({
   actor,
   recovery_execution:repairExecutionHintSchema.optional(),
-  action: z.enum(["team-feedback-scope", "team-routing", "team-delivery-scope", "team-review", "team-lookup", "team-start", "team-profile", "team-bind", "team-binding", "execution-permission", "process", "process-scope", "intervention-request", "repair-handoff-prepare", "repair-handoff-stage", "repair-handoff-ready", "repair-business-progress", "repair-recovery-checkpoint", "repair-recovery-hold", "repair-workspace-version", "repair-source", "repair-observations", "repair-observation-ack", "configure-direct","direct-run","direct-submit","direct-scope","direct-completed","business-handoff","end-to-end-scope","business-scope","business-read","business-comment","business-comment-intent","business-comment-ack","business-comment-resolved","business-comment-protected","configure-business", "configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations", "verified-binding", "publication", "publication-ack", "delivery-policy", "activate-unit", "accept-unit", "parent-scope", "review-inputs", "configure-review", "review-ack", "begin-feedback", "cancel-feedback", "feedback-restored", "authorize-feedback-work", "prepare-feedback-verification", "prepare-feedback-report"]),
+  action: z.enum(["team-feedback-scope", "team-routing", "team-delivery-scope", "team-review", "team-lookup", "team-start", "team-profile", "team-bind", "team-binding", "execution-permission", "process", "process-scope", "intervention-request", "repair-handoff-prepare", "repair-handoff-stage", "repair-handoff-ready", "repair-business-progress", "repair-recovery-checkpoint", "repair-dispatch-readiness", "repair-recovery-hold", "repair-workspace-version", "repair-source", "repair-observations", "repair-observation-ack", "configure-direct","direct-run","direct-submit","direct-scope","direct-completed","business-handoff","end-to-end-scope","business-scope","business-read","business-comment","business-comment-intent","business-comment-ack","business-comment-resolved","business-comment-protected","configure-business", "configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations", "verified-binding", "publication", "publication-ack", "delivery-policy", "activate-unit", "accept-unit", "parent-scope", "review-inputs", "configure-review", "review-ack", "begin-feedback", "cancel-feedback", "feedback-restored", "authorize-feedback-work", "prepare-feedback-verification", "prepare-feedback-report"]),
   payload: z.unknown().optional(),
   host_version: z.string().optional(),
 });
@@ -587,6 +588,15 @@ export class EngineeringApplication {
     if (action === "repair-observations") {
       if (actor.kind !== "coordinator") throw new Error("Only the host can read pending Admin observations");
       return this.interventions.observations();
+    }
+    if(action==="repair-dispatch-readiness"){
+      if(actor.kind!=="host")throw new Error("Only the native host can inspect recovery dispatch readiness");
+      this.db.exec("BEGIN IMMEDIATE");try{const value=readRepairDispatchReadiness(this.db,actor,request.payload,(prepared,draft)=>{
+        const p=prepared.proposal;if(p.checkpoint.kind!=="yaml")throw new DraftConflictError("Native dispatch checkpoint changed its protocol");
+        if(p.rootKind==="business"){this.business.assertRepairSuccessor(actor.workspaceId,actor.issueId,p.checkpoint);this.business.repairFailureSnapshot(actor.workspaceId,actor.issueId,draft,p.continuation.agent_id);}
+        else if(p.rootKind==="requirement"){this.requirements.assertRepairSuccessor(actor.workspaceId,actor.issueId,p.checkpoint);this.requirements.repairFailureSnapshot(actor.workspaceId,actor.issueId,draft,p.continuation.agent_id);}
+        else{const original=this.interventions.original(actor.workspaceId,actor.issueId,p.target.observationId);if(!original)throw new DraftConflictError("Recovery dispatch lost its original source");this.assertEngineeringRepairSuccessor(original,p.checkpoint);}
+      });this.db.exec("COMMIT");return value;}catch(error){this.db.exec("ROLLBACK");throw error;}
     }
     if(action==="repair-recovery-checkpoint"||action==="repair-recovery-hold"){
       if(actor.kind!=="host")throw new Error("Only the native host can freeze a failed recovery execution");

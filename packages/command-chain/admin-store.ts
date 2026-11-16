@@ -32,7 +32,7 @@ export class AdminStore {
       const tables = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all();
       if (tables.some(table => /^(engineering_|requirement_|business_contract$|direct_contract$|chain_drafts$)/.test(String(table.name))) || tables.length && !tables.some(table => table.name === "admin_control")) throw new Error("Admin storage cannot reuse a business or unrelated database");
       const version = Number(this.db.prepare("PRAGMA user_version").get()!.user_version);
-      if (version > 13) throw new Error("Admin database version is newer than this worker");
+      if (version > 14) throw new Error("Admin database version is newer than this worker");
       this.db.exec(`PRAGMA busy_timeout=1000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; BEGIN IMMEDIATE;
         CREATE TABLE IF NOT EXISTS admin_control(singleton INTEGER PRIMARY KEY CHECK(singleton=1),
           desired_intent TEXT NOT NULL DEFAULT 'stopped',intent_revision INTEGER NOT NULL DEFAULT 0,
@@ -46,9 +46,9 @@ export class AdminStore {
         CREATE INDEX IF NOT EXISTS admin_observation_issue ON admin_observation(workspace_id,issue_id);
         `);
       const lockedVersion=Number(this.db.prepare("PRAGMA user_version").get()!.user_version);
-      if(lockedVersion>13)throw new Error("Admin database version is newer than this worker");
+      if(lockedVersion>14)throw new Error("Admin database version is newer than this worker");
       initializeAdminExecution(this.db,lockedVersion);
-      this.db.exec("PRAGMA user_version=13; COMMIT");
+      this.db.exec("PRAGMA user_version=14; COMMIT");
       this.execution=new AdminExecutionStore(this.db,this.now,value=>this.requireSupervisor(value));
     } catch (error) { this.db.close(); throw error; }
   }
@@ -139,6 +139,8 @@ export const adminRequestSchema = z.discriminatedUnion("action", [
   z.strictObject({action:z.literal("state")}),
   z.strictObject({action:z.literal("handoff-pending"),authority:adminAuthoritySchema}),
   z.strictObject({action:z.literal("handoff-observing"),authority:adminAuthoritySchema}),
+  z.strictObject({action:z.literal("handoff-watch"),authority:adminAuthoritySchema,case_id:text,payload:z.unknown()}),
+  z.strictObject({action:z.literal("handoff-watch-read"),authority:adminAuthoritySchema,case_id:text}),
   z.strictObject({action:z.literal("handoff-progress"),authority:adminAuthoritySchema,case_id:text,payload:z.unknown()}),
   z.strictObject({action:z.literal("handoff-close"),authority:adminAuthoritySchema,case_id:text,payload:z.unknown()}),
   z.strictObject({action:z.literal("handoff-context"),authority:adminAuthoritySchema,case_id:text}),
@@ -183,6 +185,8 @@ export function invokeAdmin(store: AdminStore, input: unknown) {
   switch (request.action) {
     case "handoff-pending": return store.execution.pendingHandoffs(request.authority);
     case "handoff-observing": return store.execution.observingHandoffs(request.authority);
+    case "handoff-watch": return store.execution.recordRecoveryReadiness(request.authority,request.case_id,request.payload);
+    case "handoff-watch-read": return store.execution.readRecoveryReadiness(request.authority,request.case_id);
     case "handoff-progress": return store.execution.recordBusinessProgress(request.authority,request.case_id,request.payload);
     case "handoff-close": return store.execution.closeObservedHandoff(request.authority,request.case_id,request.payload);
     case "handoff-context": return store.execution.handoffContext(request.authority,request.case_id);
