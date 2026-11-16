@@ -1,14 +1,15 @@
-# Verified business handoff preparation and reservation
+# Verified business handoff staging
 
-The independent host prepares a successor and reserves its native task identity
-after repair verification. These stages retain an intent, proposed checkpoint and
-durable native reservation. They do not activate the checkpoint, enqueue a native
-task, release the project fence or close the Case.
+The independent host prepares a successor, reserves its native task identity and
+stages its business checkpoint after repair verification. Business staging writes
+a new draft and its owner's pointers atomically while retaining the intervention
+hold and native reservation. It does not enqueue a task, open execution, release
+the project fence or close the Case.
 
 ## Verified management context
 
-Management schema 10 retains `admin_handoff_preparation` and adds a separate
-`admin_handoff_reservation` ledger. The host reads `handoff-pending` only
+Management schema 11 retains preparation/reservation ledgers and adds
+`admin_handoff_application`. The host reads `handoff-pending` only
 under current running intent and obtains `handoff-context` with management
 authority. Agent commands expose neither action. A display status alone is
 insufficient: context recompiles the entire ordered native receipt, compares its
@@ -111,26 +112,64 @@ frozen end-execution receipt and replay the same immutable intervention; they
 cannot bind a repository, reserve/bind another process or advance the current
 workflow. Physical exit recording remains available. Draft saves also reject the
 surrendered draft ID independently of the supplied workspace/issue binding.
-These guards do not implement business activation or release any current hold.
+These guards remain active during business staging and release no current hold.
 
-## Activation still required
+## Held business staging
 
-Apply the reconciled proposal through its workflow owner, preserving original
-contracts, source history, human decisions and bounded budgets. Revalidate
-code-bound upstream references before using the proposal as an active checkpoint.
+Independent discovery follows reservation with private `stage-handoff`. The API
+reads the management context and exact PostgreSQL reservation itself, validates
+the stable task is still absent, checks the original native source/fence/cohort,
+physical quiescence, actual content, frozen Team and human/role resources, and
+passes only that saved reservation to host-only `repair-handoff-stage`.
 
-The durable native reservation is now available before any business hold is
-removed. Apply the new root/draft with source payload/sequence
-checks and retire old attempt authority; stale root writers and old draft writers
-must stay rejected after recovery. Keep the project fence through this step.
-Then publish the stable native task and release the matching fence in one native
+The business worker requires the exact acknowledged proposal, current task Team
+snapshot and original root bytes. One SQLite transaction inserts the new YAML
+draft, changes the current owner's pointers, applies any Feedback batch sidecar
+with byte comparison, and saves `engineering_repair_handoff_application`.
+Direct updates its version/base and clears the active old attempt, preserving
+input and attempt history. Business supersedes the unfinished entry and appends
+its successor. Engineering and requirement keep their revision and bounded
+budgets while advancing a recovery epoch. Context/planning/reproduction preserve
+original source obligations; pending planning and the first managed unit use the
+repaired base. Recovered verification uses new observations; old delivery runtime
+metadata does not certify the repaired version. Review, Feedback and accepted
+work histories remain frozen. A changed accepted requirement-work commit keeps
+the hold and requires normal independent verification/evidence reconciliation.
+
+The immutable application witness pins before/after root hashes, the successor
+draft, exact Feedback sidecars, original execution/physical-binding bytes and
+the reserved continuation. Late root writes and runtime binds compare the
+recovery epoch or existing monotonic version; old draft writes remain rejected.
+A failed root/sidecar write or changed content rolls back the entire business
+transaction. Preparation/staging retries reuse the saved proposal and new draft
+identity, including after restart.
+
+Host repair-source reads validate the applied witness, both draft generations,
+original bindings, current root/sidecars and frozen Team before returning the
+original provenance with explicit `checkpoint_state='staged'`, target and
+application hashes. This bridge retains the original failure version separately
+from current content identity. Removing a binding or changing either generation
+refuses the bridge; staging does not silently accept a changed checkpoint.
+
+After the business commit, the API rechecks actual content, exact lineage,
+native reservation/source/cohort, physical cleanup and human/Team authority,
+then acknowledges the full application receipt in management schema 11. A lost
+acknowledgement replays the same applied checkpoint under fresh running intent.
+The Case remains `verified`, the original intervention remains pending, and
+both reservation and project fence remain held.
+
+## Native publication still required
+
+Staging is complete while business execution stays held. Revalidate code-bound
+upstream references and coordinate removal of the business hold with native
+publication. Publish the stable task and release the matching fence in one native
 transaction after validating the applied business receipt. A crash after business
 activation must leave native admission blocked until that final transaction can
 replay. Do not expose a claimable task before its business checkpoint is ready.
 
 Observe a new ordinary result application before closing the management Case.
 Preparing or activating recovery cannot satisfy a Team phase or native Done.
-Business activation, native queue publication, progress observation and
+Business execution release, native queue publication, progress observation and
 closure remain unimplemented. Broader revocation, runtime/service identity and
 shared-path recovery retain their separate migration requirements.
 
@@ -166,6 +205,21 @@ native admission and resource-mutation barriers. Management tests retain the
 receipt across restart/supervisor replacement, check rehashed but mismatched
 source fields, and preserve proposals during the schema-nine upgrade. A shared
 Unicode receipt witness is checked independently by Go and Node. These tests do
-not establish business activation or a complete real-provider recovery.
+not establish released business execution or a complete real-provider recovery.
 An admission-wait test confirms a changed authorization cannot commit a native
 reservation after waiting for another transaction's project lock.
+
+Held-staging tests cover Direct and all thirteen native YAML definitions through
+their business owner. The late Review/Feedback owner fixtures use typed synthetic
+accepted-work evidence; they test pointer/sidecar consistency, not a new full
+delivery acceptance run. Real temporary Git content is used throughout. Root and
+Feedback-sidecar failure injection proves transaction rollback and same-identity
+retry. Restart, unchanged original receipts, changed draft content, missing
+bindings and a delayed old runtime bind are checked. Separate PostgreSQL/private
+socket tests exercise the complete preparation/reservation/staging control chain
+with isolated management/business ports, retaining both barriers and refusing
+changed version/proposal/lineage, released-hold replies, late writers, stopped
+intent and existing tasks. Management tests preserve application receipts across
+restart/supervisor replacement, reject mismatched rehashed scopes, and retain
+previous ledgers during the schema-ten upgrade. None of these checks opens a
+native dispatch or establishes a real-provider recovery acceptance result.

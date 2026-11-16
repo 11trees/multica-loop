@@ -1,5 +1,8 @@
 // @vitest-environment node
 import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { DatabaseSync } from "node:sqlite";
+import { z } from "zod";
 import { mkdtemp,readFile,rm,writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,6 +10,7 @@ import { afterEach,beforeEach,expect,it } from "vitest";
 import { EngineeringApplication,type ApplicationRequest } from "./application";
 import { compileAnalysisConclusion } from "./analysis";
 import { decisionGraphErrors,decisionProposalSchema,decisionStateSchema } from "./decisions";
+import { hostHandoffTargetFixture, hostHandoffReservationFixture } from "./test-helpers/repair-handoff-fixture";
 
 const human={kind:"human" as const,userId:"019a0000-0000-7000-8000-000000000001",workspaceId:"019a0000-0000-7000-8000-000000000002",issueId:"019a0000-0000-7000-8000-000000000003"};
 const analyst="019a0000-0000-7000-8000-000000000004",developer="019a0000-0000-7000-8000-000000000005",verifier="019a0000-0000-7000-8000-000000000006";
@@ -25,6 +29,17 @@ beforeEach(async()=>{
 afterEach(async()=>{app.close();await rm(directory,{recursive:true,force:true});});
 async function invoke(owner:ApplicationRequest["actor"],action:ApplicationRequest["action"],payload?:unknown){const result=await app.invoke({actor:owner,action,payload});if(!("draft" in result) || !("rework" in result))throw new Error("Expected chain state");return result;}
 const configure=(extra={})=>invoke(human,"configure",{expected_revision:0,agent_id:verifier,developer_agent_id:developer,analyst_agent_id:analyst,repository_path:repository,sources,unit,auto_continue:true,...extra});
+it("stages analysis recovery while retaining the original delivery unit and bounded rework policy",async()=>{
+ await configure({max_reworks:2});const owner={...actor(analyst),projectId:randomUUID()},host={kind:"host" as const,workspaceId:human.workspaceId,issueId:human.issueId};
+ await app.invoke({actor:{...owner,kind:"daemon"},action:"bind",payload:{work_dir:repository,mode:"in_place",overlays:[]}});const before=await invoke(owner,"start");
+ await app.invoke({actor:owner,action:"intervention-request",payload:{summary:"Original analysis fault",reason:"Reconcile source",evidence:"Preserve unit obligations"}});
+ const [original]=z.array(z.object({observationId:z.string(),snapshotHash:z.string()}).passthrough()).parse(await app.invoke({actor:{kind:"coordinator"},action:"repair-observations"}));if(!original)throw new Error("Missing analysis fixture");
+ const pin={case_id:"REPAIR-analysis",observation_id:original.observationId,snapshot_hash:original.snapshotHash};await app.invoke({actor:host,action:"repair-observation-ack",payload:pin});
+ const source=z.object({registered_repository_path:z.string()}).parse(await app.invoke({actor:host,action:"repair-source",payload:pin})),target=await hostHandoffTargetFixture(original,{...human,projectId:owner.projectId,repositoryPath:source.registered_repository_path,caseId:pin.case_id});
+ const reservation=hostHandoffReservationFixture(target,await app.invoke({actor:host,action:"repair-handoff-prepare",payload:target}));expect(await app.invoke({actor:host,action:"repair-handoff-stage",payload:reservation})).toMatchObject({staged:true,root_kind:"engineering",hold_retained:true});
+ const db=new DatabaseSync(database),after=JSON.parse(String(db.prepare("SELECT payload FROM engineering_contract").get()!.payload));expect(after).toMatchObject({repairEpoch:1,reworkLimit:2,reworkRound:0,analysis:{contract:{unit}}});db.close();
+ const frozen=await app.invoke({actor:owner,action:"read"});expect(frozen).toMatchObject({draft:{id:before.draft!.id},agent_action:"end_execution"});expect(await app.invoke({actor:host,action:"repair-source",payload:pin})).toMatchObject({checkpoint_state:"staged"});
+});
 async function start(owner=actor(analyst)){
   await app.invoke({actor:{...owner,kind:"daemon"},action:"bind",payload:{work_dir:repository,mode:"in_place",overlays:[]}});
   let state=await invoke(owner,"start");

@@ -1,9 +1,10 @@
 import { initializeRepairHandoffs,prepareRepairHandoff } from "./repair-handoff-store";
-import { repairHandoffTargetSchema } from "./repair-handoff";
+import { initializeRepairApplications, readStagedRepair, stagedPreparation, reservedRepairProposal, persistStagedRepair } from "./repair-stage-store";
+import { repairHandoffTargetSchema, handoffReservationSchema, handoffHash, type HandoffYamlCheckpoint, type HandoffRootChange } from "./repair-handoff";
 import { readRepairWorkspaceVersion } from "./repair-workspace-version";
 import { EngineeringTeamStore } from "./team-store";
 import { EngineeringProcessStore } from "./process-store";
-import { InterventionStore, interventionInstructions } from "./intervention-store";
+import { InterventionStore, interventionInstructions, type InterventionRecord } from "./intervention-store";
 import { DirectApplication } from "./direct-application";
 import { RequirementApplication, type RequirementDefinitions } from "./requirement-application";
 import { BusinessApplication, type BusinessDefinitions } from "./business-application";
@@ -16,7 +17,7 @@ import { parseCommandChainDefinition, type CommandChainProfile } from "./definit
 import { CommandChainEngine, DraftConflictError, chainCommandSchema, draftSchema, type ChainDraft } from "./runtime";
 import { SqliteDraftStore } from "./sqlite-store";
 import { compileVerificationConclusion, createVerificationHandlers, verificationContractSchema, createVerificationRecheck } from "./verification";
-import { commandReceiptSchema, createDevelopmentHandlers, compileDevelopmentConclusion, type CommandReceipt } from "./development";
+import { commandReceiptSchema, developmentContractSchema, createDevelopmentHandlers, compileDevelopmentConclusion, type CommandReceipt } from "./development";
 import { git, repositorySnapshot as snapshot, repositoryFingerprint, repositoryCommonDirectory, repositoryBranch, captureRepositoryOverlays } from "./repository";
 import { artifactBlock } from "./artifacts";
 import { decisionProposalSchema, decisionPolicies } from "./decisions";
@@ -34,7 +35,7 @@ const coordinator = z.strictObject({ kind: z.literal("coordinator") });
 const actor = z.discriminatedUnion("kind", [human, task, daemon, host, coordinator, teamManager]);
 export const applicationRequestSchema = z.strictObject({
   actor,
-  action: z.enum(["team-feedback-scope", "team-routing", "team-delivery-scope", "team-review", "team-lookup", "team-start", "team-profile", "team-bind", "team-binding", "execution-permission", "process", "process-scope", "intervention-request", "repair-handoff-prepare", "repair-workspace-version", "repair-source", "repair-observations", "repair-observation-ack", "configure-direct","direct-run","direct-submit","direct-scope","direct-completed","business-handoff","end-to-end-scope","business-scope","business-read","business-comment","business-comment-intent","business-comment-ack","business-comment-resolved","business-comment-protected","configure-business", "configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations", "verified-binding", "publication", "publication-ack", "delivery-policy", "activate-unit", "accept-unit", "parent-scope", "review-inputs", "configure-review", "review-ack", "begin-feedback", "cancel-feedback", "feedback-restored", "authorize-feedback-work", "prepare-feedback-verification", "prepare-feedback-report"]),
+  action: z.enum(["team-feedback-scope", "team-routing", "team-delivery-scope", "team-review", "team-lookup", "team-start", "team-profile", "team-bind", "team-binding", "execution-permission", "process", "process-scope", "intervention-request", "repair-handoff-prepare", "repair-handoff-stage", "repair-workspace-version", "repair-source", "repair-observations", "repair-observation-ack", "configure-direct","direct-run","direct-submit","direct-scope","direct-completed","business-handoff","end-to-end-scope","business-scope","business-read","business-comment","business-comment-intent","business-comment-ack","business-comment-resolved","business-comment-protected","configure-business", "configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations", "verified-binding", "publication", "publication-ack", "delivery-policy", "activate-unit", "accept-unit", "parent-scope", "review-inputs", "configure-review", "review-ack", "begin-feedback", "cancel-feedback", "feedback-restored", "authorize-feedback-work", "prepare-feedback-verification", "prepare-feedback-report"]),
   payload: z.unknown().optional(),
   host_version: z.string().optional(),
 });
@@ -52,12 +53,14 @@ const configuration = z.strictObject({
   sources: verificationContractSchema.shape.sources,
 });
 const executionSchema = z.strictObject({
+  repairEpoch:sequence.default(0),
   repositoryPath: text, mode: z.enum(["in_place", "worktree"]), branchRef: z.string(),
   agentId: z.uuid(), attemptId: text,
   overlays: z.array(z.strictObject({ path: text, hash: text, executable: z.boolean(), originalHash: text.nullable(), originalExecutable: z.boolean() })),
 });
 type Execution = z.infer<typeof executionSchema>;
 const recordSchema = z.strictObject({
+  repairEpoch:sequence.default(0),
   ...scope, agentId: z.uuid(), repositoryPath: text, draftId: z.uuid(),
   createdBy: z.uuid(), definitionSource: text, autoContinue: z.boolean().optional().default(false),
   rootRevision: z.number().int().positive().optional(), reworkRound: sequence.optional().default(0), reworkLimit: sequence.max(10).optional().default(0),
@@ -114,6 +117,7 @@ export class EngineeringApplication {
     )`);
     this.interventions = new InterventionStore(this.db,kernelVersion);
     initializeRepairHandoffs(this.db);
+    initializeRepairApplications(this.db);
     this.processes=new EngineeringProcessStore(this.db);
     this.drafts = new SqliteDraftStore(database);
     this.direct=new DirectApplication(this.db);
@@ -136,6 +140,23 @@ export class EngineeringApplication {
     if(record.analysis && !record.analysis.handoff)return {chain:"analysis",agentId:record.analysis.agentId,draftId:record.analysis.draftId,definitionSource:record.analysis.definitionSource};
     if(record.development && !record.development.handoff)return {chain:"development",agentId:record.development.agentId,draftId:record.development.draftId,definitionSource:record.development.definitionSource};
     return {chain:"verification",agentId:record.agentId,draftId:record.draftId,definitionSource:record.definitionSource};
+  }
+  private repairEngineeringSuccessor(original:InterventionRecord,checkpoint:HandoffYamlCheckpoint):HandoffRootChange {
+    const record=this.current(original.workspaceId,original.issueId),role=record&&this.activeRole(record);
+    if(!record||role?.draftId!==checkpoint.originalDraftId||role.agentId!==original.agentId)throw new DraftConflictError("Engineering recovery no longer owns its editable stage");
+    if(role.chain==="analysis"){
+      record.analysis!.draftId=checkpoint.draft.id;record.analysis!.contract=analysisContractSchema.parse(checkpoint.contract);
+      record.contract.binding={...checkpoint.draft.binding};if(record.development)record.development.baseCodeVersion=checkpoint.draft.binding.codeVersion;
+    }else if(role.chain==="development"){
+      record.development!.draftId=checkpoint.draft.id;record.development!.baseCodeVersion=checkpoint.draft.binding.codeVersion;record.contract.binding={...checkpoint.draft.binding};
+    }else{record.draftId=checkpoint.draft.id;record.contract=verificationContractSchema.parse(checkpoint.contract);}
+    record.delivery=undefined;record.verificationExecution=undefined;record.repairEpoch++;
+    return {payload:JSON.stringify(recordSchema.parse(record))};
+  }
+  private assertEngineeringRepairSuccessor(original:InterventionRecord,checkpoint:HandoffYamlCheckpoint){
+    const record=this.current(original.workspaceId,original.issueId),role=record&&this.activeRole(record);
+    const contract=role?.chain==="analysis"?record!.analysis!.contract:role?.chain==="development"?developmentContractSchema.parse(this.devContract(record!)):record?.contract;
+    if(role?.draftId!==checkpoint.draft.id||JSON.stringify(contract)!==JSON.stringify(checkpoint.contract))throw new DraftConflictError("Staged engineering role differs from its frozen successor");
   }
 
   private async dependencyBinding(workspaceId:string,issueId:string) {
@@ -296,13 +317,13 @@ export class EngineeringApplication {
     const row = this.db.prepare("SELECT payload FROM engineering_execution WHERE workspace_id = ? AND issue_id = ? AND revision = ? AND agent_id = ? AND attempt_id = ?")
       .get(record.workspaceId, record.issueId, record.contract.binding.revision, actor.agentId, actor.attemptId);
     if (!row) throw new Error("The runtime must bind its actual repository before engineering commands");
-    return executionSchema.parse(JSON.parse(String(row.payload)));
+    const execution=executionSchema.parse(JSON.parse(String(row.payload)));if(execution.repairEpoch!==record.repairEpoch)throw new DraftConflictError("Execution belongs to a surrendered recovery epoch");return execution;
   }
 
   private selectionCommit(record: Record) {
     if (!record.development || record.development.handoff) return record.contract.binding.codeVersion;
-    const row = this.db.prepare("SELECT payload FROM engineering_execution WHERE workspace_id = ? AND issue_id = ? AND revision = ? AND agent_id = ? ORDER BY rowid DESC LIMIT 1")
-      .get(record.workspaceId, record.issueId, record.contract.binding.revision, record.development.agentId);
+    const row = this.db.prepare("SELECT payload FROM engineering_execution WHERE workspace_id = ? AND issue_id = ? AND revision = ? AND agent_id = ? AND COALESCE(json_extract(payload,'$.repairEpoch'),0)=? ORDER BY rowid DESC LIMIT 1")
+      .get(record.workspaceId, record.issueId, record.contract.binding.revision, record.development.agentId,record.repairEpoch);
     const previous = row ? executionSchema.parse(JSON.parse(String(row.payload))) : undefined;
     const commit = previous?.mode === "worktree" && previous.branchRef ? git(record.repositoryPath, ["rev-parse", "--verify", previous.branchRef]) : record.development.baseCodeVersion;
     git(record.repositoryPath, ["merge-base", "--is-ancestor", record.development.baseCodeVersion, commit]);
@@ -310,8 +331,8 @@ export class EngineeringApplication {
   }
 
   private save(record: Record) {
-    const changed = this.db.prepare("UPDATE engineering_contract SET payload = ? WHERE workspace_id = ? AND issue_id = ? AND revision = ? AND NOT EXISTS (SELECT 1 FROM engineering_intervention WHERE workspace_id=? AND issue_id=?)")
-      .run(JSON.stringify(record), record.workspaceId, record.issueId, record.contract.binding.revision, record.workspaceId, record.issueId);
+    const changed = this.db.prepare("UPDATE engineering_contract SET payload = ? WHERE workspace_id = ? AND issue_id = ? AND revision = ? AND COALESCE(json_extract(payload,'$.repairEpoch'),0)=? AND NOT EXISTS (SELECT 1 FROM engineering_contract newer WHERE newer.workspace_id=engineering_contract.workspace_id AND newer.issue_id=engineering_contract.issue_id AND newer.revision>engineering_contract.revision) AND NOT EXISTS (SELECT 1 FROM engineering_intervention WHERE workspace_id=? AND issue_id=?)")
+      .run(JSON.stringify(record), record.workspaceId, record.issueId, record.contract.binding.revision, record.repairEpoch, record.workspaceId, record.issueId);
     if (changed.changes !== 1) throw new DraftConflictError("Engineering checkpoint changed or surrendered execution");
   }
 
@@ -462,7 +483,7 @@ export class EngineeringApplication {
     if(payload.expected_revision !== unit.parentRevision || payload.expected_sequence !== unit.planSequence || payload.execution_mode !== policy.mode)throw new DraftConflictError("Managed activation does not match its frozen plan and mode");
     let record=this.current(actor.workspaceId,actor.issueId);
     if(!record){
-      const previous=index>0 ? parent.accepted[units[index-1]!.unit.key]! : parent.contextContract.binding;
+      const previous=index>0 ? parent.accepted[units[index-1]!.unit.key]! : parent.planningContract!.binding;
       for(const prior of units.slice(0,index)){const binding=await this.dependencyBinding(unit.workspaceId,prior.issueId);if(JSON.stringify(binding.binding) !== JSON.stringify(parent.accepted[prior.unit.key]))throw new DraftConflictError("A preceding verified delivery changed");}
       if(policy.mode === "in_place" && snapshot(parent.repositoryPath).codeVersion !== previous.codeVersion)throw new DraftConflictError("In-place repository must match the preceding verified delivery");
       git(parent.repositoryPath,["merge-base","--is-ancestor",parent.contextContract.binding.codeVersion,previous.codeVersion]);
@@ -544,6 +565,36 @@ export class EngineeringApplication {
       if (actor.kind !== "coordinator") throw new Error("Only the host can read pending Admin observations");
       return this.interventions.observations();
     }
+    if(action==="repair-handoff-stage"){
+      if(actor.kind!=="host")throw new Error("Only the host can stage a reserved repair successor");
+      const reservation=handoffReservationSchema.parse(request.payload),c=reservation.continuation;
+      if(c.workspace_id!==actor.workspaceId||c.issue_id!==actor.issueId)throw new DraftConflictError("Reserved recovery belongs to another issue");
+      const pin={case_id:reservation.case_id,observation_id:reservation.fence.observation_id,snapshot_hash:reservation.fence.snapshot_hash};
+      const original=this.interventions.repairSource(actor.workspaceId,actor.issueId,pin);
+      const initialProposal=reservedRepairProposal(this.db,reservation,original);
+      const version=async()=>z.object({workspace_version:text}).parse(await this.invoke({actor,action:"repair-workspace-version",payload:pin})).workspace_version;
+      if(await version()!==reservation.expected_version)throw new DraftConflictError("Reserved repair content changed before staging");
+      if(!["direct","development"].includes(original.chain)||initialProposal.target.workspaceBinding.mode==="worktree")snapshot(reservation.fence.workspace_path,true);
+      this.db.exec("BEGIN IMMEDIATE");try{
+        const existing=readStagedRepair(this.db,original);
+        if(existing){if(existing.manifest.reservation.hash!==reservation.hash)throw new DraftConflictError("Staged recovery belongs to another native reservation");if(await version()!==reservation.expected_version)throw new DraftConflictError("Reserved repair content changed during replay");this.db.exec("COMMIT");return existing.manifest.application;}
+        const proposal=reservedRepairProposal(this.db,reservation,original),checkpoint=proposal.checkpoint;
+        const source=z.record(z.string(),z.unknown()).parse(await this.invoke({actor,action:"repair-source",payload:pin}));
+        let change:HandoffRootChange;
+        if(checkpoint.kind==="direct")change=this.direct.repairSuccessor(reservation);
+        else if(proposal.rootKind==="business")change=this.business.repairSuccessor(original,checkpoint);
+        else if(proposal.rootKind==="requirement")change=this.requirements.repairSuccessor(original,checkpoint);
+        else change=this.repairEngineeringSuccessor(original,checkpoint);
+        const applied=persistStagedRepair(this.db,original,reservation,source,change);
+        if(checkpoint.kind==="yaml"){
+          if(proposal.rootKind==="business")this.business.assertRepairSuccessor(actor.workspaceId,actor.issueId,checkpoint);
+          else if(proposal.rootKind==="requirement")this.requirements.assertRepairSuccessor(actor.workspaceId,actor.issueId,checkpoint);
+          else this.assertEngineeringRepairSuccessor(original,checkpoint);
+        }
+        if(await version()!==reservation.expected_version)throw new DraftConflictError("Reserved repair content changed during business staging");
+        this.db.exec("COMMIT");return applied;
+      }catch(error){this.db.exec("ROLLBACK");throw error;}
+    }
     if(action==="repair-handoff-prepare"){
       if(actor.kind!=="host")throw new Error("Only the host can prepare verified repair handoff");
       const target=repairHandoffTargetSchema.parse(request.payload),binding=target.workspaceBinding,pin={case_id:target.caseId,observation_id:target.observationId,snapshot_hash:target.snapshotHash};
@@ -552,6 +603,7 @@ export class EngineeringApplication {
       if(source.source_attempt_id!==binding.sourceAttemptId||source.snapshot_hash!==target.snapshotHash||source.workspace_root!==binding.workspaceRoot||source.workspace_version!==target.expectedVersion)throw new DraftConflictError("Verified repair content changed before handoff");
       const original=this.interventions.repairSource(actor.workspaceId,actor.issueId,pin);
       if(!["direct","development"].includes(original.chain)||binding.mode==="worktree")snapshot(binding.workspaceRoot,true);
+      const staged=readStagedRepair(this.db,original);if(staged){if(staged.proposal.targetHash!==handoffHash(target))throw new DraftConflictError("Staged recovery pins another verified target");return stagedPreparation(staged);}
       const direct=original.chain==="direct"?this.direct.current(actor.workspaceId,actor.issueId):undefined;
       const business=direct?undefined:this.business.current(actor.workspaceId,actor.issueId),requirement=direct?undefined:this.requirements.current(actor.workspaceId,actor.issueId),engineering=direct||requirement||business?undefined:this.current(actor.workspaceId,actor.issueId);
       const businessRole=business&&Object.values(business.roles).includes(original.agentId)&&["idea-context","business-design","requirement-spec","spec-review"].includes(original.chain);
@@ -581,6 +633,7 @@ export class EngineeringApplication {
     if (action === "repair-source") {
       if (actor.kind !== "host") throw new Error("Only the host can validate an Admin repair source");
       const original = this.interventions.repairSource(actor.workspaceId, actor.issueId, request.payload);
+      const staged=readStagedRepair(this.db,original);if(staged)return {...staged.manifest.source,checkpoint_state:"staged",handoff_target_hash:staged.proposal.targetHash,handoff_application_hash:staged.manifest.application.hash};
       const frozen = original.chain === "direct" ? z.object({ repository_path: text, code_version: z.string() }).parse(original.snapshot) : (() => { const value = z.object({repositoryPath:text,contract:z.object({binding:z.object({codeVersion:text})})}).parse(original.snapshot); return {repository_path:value.repositoryPath,code_version:value.contract.binding.codeVersion}; })();
       let registeredPath = frozen.repository_path;
       let execution: { repositoryPath: string; mode: "in_place" | "worktree" } | undefined;
@@ -830,13 +883,14 @@ export class EngineeringApplication {
       else if (code.codeVersion !== (analysis ? record.analysis!.contract.binding.codeVersion : record.contract.binding.codeVersion)) throw new Error("Verification execution is not at the frozen delivery commit or analysis snapshot");
       const branchRef = git(code.repositoryPath, ["rev-parse", "--abbrev-ref", "HEAD"]) === "HEAD" ? "" : repositoryBranch(code.repositoryPath);
       if (development && payload.mode === "worktree" && !branchRef) throw new Error("Worktree development requires a durable branch");
-      const execution = executionSchema.parse({ repositoryPath: code.repositoryPath, mode: payload.mode, branchRef, agentId: actor.agentId, attemptId: actor.attemptId, overlays });
+      const execution = executionSchema.parse({ repairEpoch:record.repairEpoch,repositoryPath: code.repositoryPath, mode: payload.mode, branchRef, agentId: actor.agentId, attemptId: actor.attemptId, overlays });
       const previous = this.db.prepare("SELECT payload FROM engineering_execution WHERE workspace_id = ? AND issue_id = ? AND revision = ? AND agent_id = ? AND attempt_id = ?")
         .get(record.workspaceId, record.issueId, record.contract.binding.revision, actor.agentId, actor.attemptId);
       const identity = (value: Execution) => ({ ...value, overlays: value.overlays.map(({ hash: _hash, ...overlay }) => overlay).sort((a, b) => a.path.localeCompare(b.path)) });
       if (previous && JSON.stringify(identity(executionSchema.parse(JSON.parse(String(previous.payload))))) !== JSON.stringify(identity(execution))) throw new DraftConflictError("Execution binding changed; start a fresh runtime claim");
-      this.db.prepare("INSERT INTO engineering_execution (workspace_id, issue_id, revision, agent_id, attempt_id, payload) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(workspace_id, issue_id, revision, agent_id, attempt_id) DO UPDATE SET payload = excluded.payload")
-        .run(record.workspaceId, record.issueId, record.contract.binding.revision, actor.agentId, actor.attemptId, JSON.stringify(execution));
+      const changed=this.db.prepare("INSERT INTO engineering_execution (workspace_id, issue_id, revision, agent_id, attempt_id, payload) SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM engineering_contract WHERE workspace_id=? AND issue_id=? AND revision=? AND COALESCE(json_extract(payload,'$.repairEpoch'),0)=?) AND NOT EXISTS(SELECT 1 FROM engineering_intervention WHERE workspace_id=? AND issue_id=?) ON CONFLICT(workspace_id, issue_id, revision, agent_id, attempt_id) DO UPDATE SET payload = excluded.payload")
+        .run(record.workspaceId, record.issueId, record.contract.binding.revision, actor.agentId, actor.attemptId, JSON.stringify(execution),record.workspaceId,record.issueId,record.contract.binding.revision,record.repairEpoch,record.workspaceId,record.issueId);
+      if(changed.changes!==1)throw new DraftConflictError("Execution binding changed or surrendered execution");
       return { bound: true, repository_path: execution.repositoryPath };
     }
     if (action === "receipt") {

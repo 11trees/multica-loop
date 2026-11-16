@@ -14,6 +14,7 @@ import { CommandChainEngine, DraftConflictError, chainCommandSchema, draftSchema
 import { endToEndPolicySchema, type BusinessSource } from "./end-to-end";
 import type { RequirementDefinitions } from "./requirement-application";
 import type { SqliteDraftStore } from "./sqlite-store";
+import type { HandoffYamlCheckpoint, HandoffRootChange } from "./repair-handoff";
 
 const text = z.string().trim().min(1), sequence = z.number().int().nonnegative();
 const stages = ["intent", "business_design", "specification", "review"] as const;
@@ -55,6 +56,18 @@ export class BusinessApplication {
     const record=this.current(original.workspaceId,original.issueId);if(!record||!Object.values(businessProfiles).some(profile=>profile.id===original.chain))return undefined;
     const entry=this.active(record),execution=this.execution(record,entry,original.agentId,original.attemptId);
     return inspectRepairCheckpoint(this.db,original,{chain:businessProfiles[entry.stage].id,agentId:record.roles[entry.stage],draftId:entry.draftId,revision:record.revision,repositoryPath:record.repositoryPath,contract:entry.contract,executionPath:execution.repositoryPath});
+  }
+  repairSuccessor(original:InterventionRecord,checkpoint:HandoffYamlCheckpoint):HandoffRootChange {
+    const record=this.current(original.workspaceId,original.issueId);if(!record)throw new DraftConflictError("Business recovery root is unavailable");
+    const entry=this.active(record);
+    if(entry.draftId!==checkpoint.originalDraftId||entry.settledHash||record.roles[entry.stage]!==original.agentId)throw new DraftConflictError("Business recovery no longer owns its editable stage");
+    const successor=entrySchema.parse({...entry,draftId:checkpoint.draft.id,generation:entry.generation+1,contract:checkpoint.contract});
+    entry.superseded=true;record.entries.push(successor);record.activeDraftId=successor.draftId;record.codeVersion=checkpoint.draft.binding.codeVersion;record.version++;
+    return {payload:JSON.stringify(recordSchema.parse(record))};
+  }
+  assertRepairSuccessor(workspaceId:string,issueId:string,checkpoint:HandoffYamlCheckpoint){
+    const record=this.current(workspaceId,issueId),entry=record&&this.active(record);
+    if(!entry||entry.draftId!==checkpoint.draft.id||JSON.stringify(entry.contract)!==JSON.stringify(checkpoint.contract))throw new DraftConflictError("Staged business role differs from its frozen successor");
   }
   private active(record: Record) { const entry = record.entries.find(item => item.draftId === record.activeDraftId && !item.superseded); if (!entry) throw new Error("Business checkpoint is unavailable"); return entry; }
   private save(record: Record) {
@@ -203,8 +216,9 @@ export class BusinessApplication {
       this.readonlyExecution(record, entry, execution);
       const existing = this.db.prepare("SELECT payload FROM business_execution WHERE workspace_id=? AND issue_id=? AND revision=? AND agent_id=? AND attempt_id=?").get(record.workspaceId, record.issueId, record.revision, actor.agentId, actor.attemptId);
       if (existing && JSON.stringify(executionSchema.parse(JSON.parse(String(existing.payload)))) !== JSON.stringify(execution)) throw new DraftConflictError("Native business attempt binding cannot be replaced");
-      this.db.prepare("INSERT INTO business_execution(workspace_id,issue_id,revision,agent_id,attempt_id,payload) VALUES(?,?,?,?,?,?) ON CONFLICT DO NOTHING")
-        .run(record.workspaceId, record.issueId, record.revision, actor.agentId, actor.attemptId, JSON.stringify(execution));
+      const changed=this.db.prepare("INSERT INTO business_execution(workspace_id,issue_id,revision,agent_id,attempt_id,payload) SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM business_contract WHERE workspace_id=? AND issue_id=? AND revision=? AND version=?) AND NOT EXISTS(SELECT 1 FROM engineering_intervention WHERE workspace_id=? AND issue_id=?) ON CONFLICT(workspace_id,issue_id,revision,agent_id,attempt_id) DO UPDATE SET payload=business_execution.payload")
+        .run(record.workspaceId, record.issueId, record.revision, actor.agentId, actor.attemptId, JSON.stringify(execution),record.workspaceId,record.issueId,record.revision,record.version,record.workspaceId,record.issueId);
+      if(changed.changes!==1)throw new DraftConflictError("Business execution binding changed or surrendered execution");
       return { bound: true, repository_path: root };
     }
     if (actor.kind !== "human" && actor.kind !== "task") throw new Error("Authenticated business control is required");

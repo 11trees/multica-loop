@@ -110,11 +110,12 @@ and proposed successor binding the physically settled independent receipt,
 native candidate, every original observation and unchanged checkpoint. A private
 native reservation now persists its stable task identity before activation,
 retains project admission barriers and replays interrupted management
-acknowledgement without creating a task. It keeps business held. Successor stages
-restart with fresh derived conclusions while
+acknowledgement without creating a task. Reserved staging now writes the new
+draft and owner pointers atomically, retaining original drafts, exact binding
+history and the business hold. Successor stages restart with fresh derived conclusions while
 retaining original obligations, scenarios and authenticated human choices. Old
 attempts and surrendered draft IDs remain revoked independently of active-hold
-lookup. Activation, queue handoff and closure remain incomplete. Recheck actual content,
+lookup. Execution release, queue publication and closure remain incomplete. Recheck actual content,
 native project/cohort, the task's frozen Team policy and saved human authority
 before acting. Later Team profile edits do not reconfigure the interrupted task.
 Management intent, the business checkpoint and the PostgreSQL fence/queue live in

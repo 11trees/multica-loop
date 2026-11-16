@@ -7,6 +7,7 @@ import type { ApplicationRequest } from "./application";
 import { directInstructions, directResult } from "./direct";
 import { git, repositoryBranch, repositoryCommonDirectory, repositorySnapshot } from "./repository";
 import { DraftConflictError } from "./runtime";
+import type { HandoffReservation, HandoffRootChange } from "./repair-handoff";
 
 const text = z.string().trim().min(1);
 const sequence = z.number().int().nonnegative();
@@ -50,6 +51,11 @@ export class DirectApplication {
   current(workspaceId: string, issueId: string): Record | undefined {
     const row = this.db.prepare("SELECT payload FROM direct_contract WHERE workspace_id=? AND issue_id=?").get(workspaceId, issueId);
     return row ? recordSchema.parse(JSON.parse(String(row.payload))) : undefined;
+  }
+  repairSuccessor(reservation:HandoffReservation):HandoffRootChange {
+    const c=reservation.continuation,record=this.current(c.workspace_id,c.issue_id);
+    if(!record||record.version+1!==c.expected_sequence||record.activeAttemptId!==reservation.fence.source_attempt_id||record.result||record.nativeCompleted)throw new DraftConflictError("Direct source changed before staging recovery");
+    return {payload:JSON.stringify(recordSchema.parse({...record,version:record.version+1,initialCommit:reservation.expected_version.split(":")[1],activeAttemptId:undefined}))};
   }
   private save(record: Record) {
     const expected = record.version;

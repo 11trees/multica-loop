@@ -7,7 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import { beforeEach, afterEach, it, expect } from "vitest";
 import { AdminStore } from "./admin-store";
 import { originalRepairTargets } from "./repair-verification-input";
-import { handoffReservationHash, handoffReservationSchema, type HandoffReservation } from "./repair-handoff";
+import { handoffReservationHash, handoffReservationSchema, handoffApplicationBodySchema, handoffApplicationSchema, handoffHash, type HandoffReservation, type HandoffApplication } from "./repair-handoff";
 
 let directory:string,filename:string,store:AdminStore,now:number;
 const workspaceId=randomUUID(),issueId=randomUUID();
@@ -353,4 +353,22 @@ it.each(["proposal","target","task","human","scope","version","owner","generatio
  value.hash=handoffReservationHash(value);expect(handoffReservationSchema.safeParse(value).success).toBe(true);
  expect(()=>store.execution.recordHandoffReservation(h.authority,h.claim.caseId,value)).toThrow(/differs/);
  expect(store.execution.handoffContext(h.authority,h.claim.caseId).reservation).toBeNull();
+});
+function stagedFixture(h:Awaited<ReturnType<typeof reservedHandoff>>){
+ const r=h.reservation,body=handoffApplicationBodySchema.parse({staged:true,hold_retained:true,target_hash:r.target_hash,preparation_hash:r.preparation_hash,reservation_hash:r.hash,root_kind:"engineering",continuation:r.continuation,expected_version:r.expected_version,source_payload_hash:"1".repeat(64),applied_payload_hash:"2".repeat(64),source_hash:"3".repeat(64),sidecars_hash:"4".repeat(64),original_bindings_hash:"5".repeat(64),draft_id:h.prepared.draft_id,draft_hash:"6".repeat(64)});
+ return handoffApplicationSchema.parse({...body,hash:handoffHash(body)});
+}
+it("retains acknowledged business staging across restart without releasing business or closing its Case",async()=>{
+ const h=await reservedHandoff(),value=stagedFixture(h);
+ expect(()=>store.execution.recordHandoffApplication(h.authority,h.claim.caseId,value)).toThrow(/acknowledged native reservation/);
+ store.execution.recordHandoffReservation(h.authority,h.claim.caseId,h.reservation);expect(store.execution.recordHandoffApplication(h.authority,h.claim.caseId,value)).toEqual(value);
+ store.close();store=new AdminStore(filename,()=>now);expect(store.execution.handoffContext(h.authority,h.claim.caseId).application).toEqual(value);expect(store.issue(workspaceId,issueId).status).toBe("verified");
+ const changed={...value,applied_payload_hash:"7".repeat(64)};const {hash:_hash,...body}=changed;changed.hash=handoffHash(body);expect(()=>store.execution.recordHandoffApplication(h.authority,h.claim.caseId,changed)).toThrow(/cannot be replaced/);
+ store.execution.setIntent({intent:"stopped",request_id:"stop-staged"});expect(()=>store.execution.recordHandoffApplication(h.authority,h.claim.caseId,value)).toThrow(/running intent/);
+ now+=30001;const successor=store.acquireSupervisor("staged-successor",30000,true)!;store.execution.setIntent({intent:"running",request_id:"resume-staged"});expect(store.execution.recordHandoffApplication(successor,h.claim.caseId,value)).toEqual(value);
+});
+it.each(["target","reservation","proposal","task","human","version","draft","kind"])("refuses rehashed business staging for changed %s",async changed=>{
+ const h=await reservedHandoff();store.execution.recordHandoffReservation(h.authority,h.claim.caseId,h.reservation);const value:HandoffApplication=structuredClone(stagedFixture(h));
+ if(changed==="target")value.target_hash="a".repeat(64);if(changed==="reservation")value.reservation_hash="b".repeat(64);if(changed==="proposal")value.preparation_hash="c".repeat(64);if(changed==="task")value.continuation.task_id=randomUUID();if(changed==="human")value.continuation.user_id=randomUUID();if(changed==="version")value.expected_version=version.replaceAll("b","e");if(changed==="draft")value.draft_id=randomUUID();if(changed==="kind")value.root_kind="direct";
+ const {hash:_hash,...body}=value;value.hash=handoffHash(body);expect(()=>store.execution.recordHandoffApplication(h.authority,h.claim.caseId,value)).toThrow(/differs/);expect(store.execution.handoffContext(h.authority,h.claim.caseId).application).toBeNull();
 });

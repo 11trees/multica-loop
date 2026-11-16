@@ -233,11 +233,7 @@ func TestEngineeringNativeHandoffReservation(t *testing.T) {
 				_, err := f.h.EngineeringTakeoverControl.Call(ctx, map[string]any{"action": "reserve-handoff", "authority": engineeringAdminAuthority{OwnerID: "current-host", Token: 2}, "case_id": "fixture-case"})
 				return err
 			}
-			if mode == "success" {
-				err = f.h.ReconcileEngineeringRepairHandoffs(ctx, engineeringAdminAuthority{OwnerID: "current-host", Token: 2})
-			} else {
-				err = call()
-			}
+			err = call()
 			if mode == "ack-retry" {
 				if err == nil {
 					t.Fatal("interrupted management acknowledgement succeeded")

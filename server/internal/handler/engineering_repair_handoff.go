@@ -17,6 +17,7 @@ type engineeringHandoffContext struct {
 	Target                json.RawMessage                `json:"target"`
 	TargetHash            string                         `json:"target_hash"`
 	Preparation           *engineeringHandoffPreparation `json:"preparation"`
+	Reservation           *engineeringHandoffReservation `json:"reservation"`
 }
 
 type engineeringHandoffPreparation struct {
@@ -43,6 +44,8 @@ func (h *Handler) controlEngineeringRepair(ctx context.Context, raw json.RawMess
 		return h.prepareEngineeringRepairHandoff(ctx, raw)
 	case "reserve-handoff":
 		return h.runEngineeringRepairHandoff(ctx, raw, true)
+	case "stage-handoff":
+		return h.stageEngineeringRepairHandoff(ctx, raw)
 	default:
 		return nil, fmt.Errorf("unknown native repair control action")
 	}
@@ -69,6 +72,9 @@ func (h *Handler) ReconcileEngineeringRepairHandoffs(ctx context.Context, author
 			return err
 		}
 		if _, err = h.EngineeringTakeoverControl.Call(ctx, map[string]any{"action": "reserve-handoff", "authority": authority, "case_id": item.CaseID}); err != nil {
+			return err
+		}
+		if _, err = h.EngineeringTakeoverControl.Call(ctx, map[string]any{"action": "stage-handoff", "authority": authority, "case_id": item.CaseID}); err != nil {
 			return err
 		}
 	}

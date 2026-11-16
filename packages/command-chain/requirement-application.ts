@@ -25,6 +25,7 @@ import { feedbackCommentSchema, createFeedbackTriageHandlers, compileFeedbackTri
 import { endToEndPolicySchema, businessSourceSchema, type EndToEndPolicy, type BusinessSource } from "./end-to-end";
 import type { DecisionMode } from "./decisions";
 import { artifactBlock } from "./artifacts";
+import { handoffHash, type HandoffYamlCheckpoint, type HandoffRootChange } from "./repair-handoff";
 import { compileReproductionConclusion, reproductionState, createReproductionHandlers, reproductionContractSchema, reproductionProfile } from "./reproduction";
 
 const text=z.string().trim().min(1),sequence=z.number().int().nonnegative();
@@ -36,7 +37,7 @@ const feedbackPlanSchema=z.strictObject({groupId:text,draftId:z.uuid(),source:te
 const feedbackWorkSchema=z.strictObject({batchId:text,userId:z.uuid(),plannerId:z.uuid(),reproducerId:z.uuid().optional(),groups:z.array(feedbackPlanSchema).min(1),appended:z.boolean().default(false)});
 type FeedbackWork=z.infer<typeof feedbackWorkSchema>;
 type DeliveryEvidence={binding:z.infer<typeof verificationContractSchema.shape.binding>;analysis:ReturnType<typeof compileAnalysisConclusion>;verification:ReturnType<typeof compileVerificationConclusion>};
-const recordSchema=z.strictObject({teamDelivery:endToEndPolicySchema.extend({reviewSource:text,projectId:z.uuid(),bindingId:z.uuid()}).optional(),endToEnd:endToEndPolicySchema.extend({reviewSource:text}).optional(),workspaceId:z.uuid(),issueId:z.uuid(),createdBy:z.uuid(),repositoryPath:text,agentId:z.uuid(),plannerAgentId:z.uuid(),autoContinue:z.boolean(),contextDraftId:z.uuid(),planDraftId:z.uuid(),contextSource:text,planningSource:text,contextContract:contextContractSchema,contextHandoff:z.boolean(),planningContract:planningContractSchema.optional(),reproduction:z.strictObject({agentId:z.uuid(),draftId:z.uuid(),source:text,contract:reproductionContractSchema.optional(),handoff:z.boolean()}).optional(),acceptances:z.array(acceptanceSchema).default([]),publicationRequestedBy:z.uuid().optional(),deliveryPolicy:z.strictObject({analystId:z.uuid(),developerId:z.uuid(),verifierId:z.uuid(),maxReworks:sequence.max(10),mode:z.enum(["in_place","worktree"]),userId:z.uuid()}).optional(),accepted:z.record(z.string(),verificationContractSchema.shape.binding).default({}),reviews:z.array(reviewRecordSchema).default([]),feedbackWork:z.array(feedbackWorkSchema).default([])});
+const recordSchema=z.strictObject({repairEpoch:sequence.default(0),teamDelivery:endToEndPolicySchema.extend({reviewSource:text,projectId:z.uuid(),bindingId:z.uuid()}).optional(),endToEnd:endToEndPolicySchema.extend({reviewSource:text}).optional(),workspaceId:z.uuid(),issueId:z.uuid(),createdBy:z.uuid(),repositoryPath:text,agentId:z.uuid(),plannerAgentId:z.uuid(),autoContinue:z.boolean(),contextDraftId:z.uuid(),planDraftId:z.uuid(),contextSource:text,planningSource:text,contextContract:contextContractSchema,contextHandoff:z.boolean(),planningContract:planningContractSchema.optional(),reproduction:z.strictObject({agentId:z.uuid(),draftId:z.uuid(),source:text,contract:reproductionContractSchema.optional(),handoff:z.boolean()}).optional(),acceptances:z.array(acceptanceSchema).default([]),publicationRequestedBy:z.uuid().optional(),deliveryPolicy:z.strictObject({analystId:z.uuid(),developerId:z.uuid(),verifierId:z.uuid(),maxReworks:sequence.max(10),mode:z.enum(["in_place","worktree"]),userId:z.uuid()}).optional(),accepted:z.record(z.string(),verificationContractSchema.shape.binding).default({}),reviews:z.array(reviewRecordSchema).default([]),feedbackWork:z.array(feedbackWorkSchema).default([])});
 type EvidenceCache={deliveries:Map<string,Promise<DeliveryEvidence>>;reports:Map<string,Promise<z.infer<typeof feedbackWorkEvidenceSchema>>>;ancestry:Set<string>};
 type Record=z.infer<typeof recordSchema>;
 type ReviewRecord=z.infer<typeof reviewRecordSchema>;
@@ -64,7 +65,7 @@ export class RequirementApplication {
     const mode=resources[0]!.mode;if(resources.length!==Object.keys(roles).length || resources.some(resource=>resource.mode!==mode || repositorySnapshot(resource.path,false).repositoryPath!==record.repositoryPath))throw new DraftConflictError("Team roles need one project repository and execution mode");
     if(record.teamDelivery){if(record.teamDelivery.bindingId!==binding.id)throw new DraftConflictError("Team delivery owner changed");return;}
     const next=recordSchema.parse({...record,teamDelivery:{...policy,projectId:binding.projectId,bindingId:binding.id,reviewSource:this.definitions.review},deliveryPolicy:{analystId:roles.analyst,developerId:roles.developer,verifierId:roles.verifier,maxReworks:policy.maxReworks,mode,userId:binding.startedBy}});
-    this.db.prepare("UPDATE requirement_contract SET payload=? WHERE workspace_id=? AND issue_id=? AND revision=?").run(JSON.stringify(next),record.workspaceId,record.issueId,record.contextContract.binding.revision);
+    this.save(next);
   }
   teamDeliveryScope(workspaceId:string,issueId:string,resources?:{path:string;mode:"in_place"|"worktree"}[]){
     const record=this.current(workspaceId,issueId);if(!record?.teamDelivery || !record.deliveryPolicy)throw new DraftConflictError("Team delivery is not authorized");
@@ -347,7 +348,37 @@ export class RequirementApplication {
     }catch(error){this.db.exec("ROLLBACK");throw error;}
     return this.publication(record);
   }
-  private save(record:Record){const changed=this.db.prepare("UPDATE requirement_contract SET payload=? WHERE workspace_id=? AND issue_id=? AND revision=? AND NOT EXISTS (SELECT 1 FROM engineering_intervention WHERE workspace_id=? AND issue_id=?)").run(JSON.stringify(record),record.workspaceId,record.issueId,record.contextContract.binding.revision,record.workspaceId,record.issueId);if(changed.changes !== 1)throw new DraftConflictError("Requirement checkpoint changed or surrendered execution");}
+  private save(record:Record){const changed=this.db.prepare("UPDATE requirement_contract SET payload=? WHERE workspace_id=? AND issue_id=? AND revision=? AND COALESCE(json_extract(payload,'$.repairEpoch'),0)=? AND NOT EXISTS (SELECT 1 FROM requirement_contract newer WHERE newer.workspace_id=requirement_contract.workspace_id AND newer.issue_id=requirement_contract.issue_id AND newer.revision>requirement_contract.revision) AND NOT EXISTS (SELECT 1 FROM engineering_intervention WHERE workspace_id=? AND issue_id=?)").run(JSON.stringify(record),record.workspaceId,record.issueId,record.contextContract.binding.revision,record.repairEpoch,record.workspaceId,record.issueId);if(changed.changes !== 1)throw new DraftConflictError("Requirement checkpoint changed or surrendered execution");}
+  repairSuccessor(original:InterventionRecord,checkpoint:HandoffYamlCheckpoint):HandoffRootChange {
+    const record=this.current(original.workspaceId,original.issueId);if(!record)throw new DraftConflictError("Requirement recovery root is unavailable");
+    const role=this.role(record),binding=checkpoint.draft.binding;
+    if(role.draftId!==checkpoint.originalDraftId||role.agentId!==original.agentId||!role.contract)throw new DraftConflictError("Requirement recovery no longer owns its editable stage");
+    if(Object.keys(record.accepted).length&&role.contract.binding.codeVersion!==binding.codeVersion)throw new DraftConflictError("Accepted requirement work needs normal independent verification and evidence reconciliation before recovery");
+    let sidecars:HandoffRootChange["sidecars"];
+    const derivePlanning=(contract:z.infer<typeof planningContractSchema>)=>planningContractSchema.parse({...contract,binding:{...contract.binding,codeVersion:binding.codeVersion,contractVersion:handoffHash({original:contract.binding.contractVersion,repair:binding.contractVersion})}});
+    if(role.chain==="context"){record.contextDraftId=checkpoint.draft.id;record.contextContract=contextContractSchema.parse(checkpoint.contract);}
+    else if(role.chain==="feedback-triage"||role.chain==="feedback-verify")sidecars=this.feedback.repairSuccessor(record.workspaceId,record.issueId,checkpoint);
+    else if(role.chain==="review"){
+      const review=record.reviews.at(-1);if(!review||review.draftId!==checkpoint.originalDraftId||review.settled||review.reportHash||review.acknowledgement)throw new DraftConflictError("A settled or read report cannot become an editable repair draft");
+      review.draftId=checkpoint.draft.id;review.contract=reviewContractSchema.parse(checkpoint.contract);
+    }else{
+      const group=record.feedbackWork.flatMap(work=>work.groups).find(group=>group.draftId===checkpoint.originalDraftId||group.reproduction?.draftId===checkpoint.originalDraftId);
+      if(role.chain==="planning"){
+        if(group){if(group.settled)throw new DraftConflictError("Published Feedback work cannot be replaced");group.draftId=checkpoint.draft.id;group.contract=planningContractSchema.parse(checkpoint.contract);}
+        else{record.planDraftId=checkpoint.draft.id;record.planningContract=planningContractSchema.parse(checkpoint.contract);}
+      }else if(role.chain==="reproduction"){
+        const reproduction=group?.reproduction??record.reproduction;if(!reproduction||reproduction.handoff)throw new DraftConflictError("Completed reproduction cannot become an editable repair draft");
+        reproduction.draftId=checkpoint.draft.id;reproduction.contract=reproductionContractSchema.parse(checkpoint.contract);
+        if(group)group.contract=derivePlanning(group.contract);else if(record.planningContract)record.planningContract=derivePlanning(record.planningContract);
+      }else throw new DraftConflictError("Unsupported requirement recovery owner");
+    }
+    record.repairEpoch++;
+    return {payload:JSON.stringify(recordSchema.parse(record)),sidecars};
+  }
+  assertRepairSuccessor(workspaceId:string,issueId:string,checkpoint:HandoffYamlCheckpoint){
+    const record=this.current(workspaceId,issueId),role=record&&this.role(record);
+    if(!role||role.draftId!==checkpoint.draft.id||JSON.stringify(role.contract)!==JSON.stringify(checkpoint.contract))throw new DraftConflictError("Staged requirement role differs from its frozen successor");
+  }
   repairCheckpoint(original:InterventionRecord){
     const record=this.current(original.workspaceId,original.issueId);if(!record)return undefined;
     const role=this.role(record),row=this.db.prepare("SELECT payload FROM requirement_execution WHERE workspace_id=? AND issue_id=? AND revision=? AND agent_id=? AND attempt_id=?").get(record.workspaceId,record.issueId,record.contextContract.binding.revision,original.agentId,original.attemptId);
@@ -644,7 +675,7 @@ export class RequirementApplication {
       if(snapshot.codeVersion !== role.contract.binding.codeVersion)throw new Error("Requirement execution is not at the frozen repository commit");
       const previous=this.db.prepare("SELECT payload FROM requirement_execution WHERE workspace_id=? AND issue_id=? AND revision=? AND agent_id=? AND attempt_id=?").get(record.workspaceId,record.issueId,record.contextContract.binding.revision,actor.agentId,actor.attemptId);
       if(previous){const binding=executionSchema.parse(JSON.parse(String(previous.payload)));if((forwardGroup || role.chain === "feedback-verify" || review?.contract.correction || binding.feedbackCheckpoint) && binding.feedbackCheckpoint?.draftId !== role.draftId)throw new Error("Native feedback attempt belongs to another checkpoint");}
-      this.db.prepare("INSERT INTO requirement_execution(workspace_id,issue_id,revision,agent_id,attempt_id,payload) VALUES(?,?,?,?,?,?) ON CONFLICT DO NOTHING").run(record.workspaceId,record.issueId,record.contextContract.binding.revision,actor.agentId,actor.attemptId,JSON.stringify({repositoryPath:code.repositoryPath,overlays,...(forwardGroup || role.chain === "feedback-verify" || review?.contract.correction ? {feedbackCheckpoint:{draftId:role.draftId,mode:payload.mode,branchRef:payload.mode === "worktree" ? repositoryBranch(code.repositoryPath) : null}} : {})}));return {bound:true,repository_path:code.repositoryPath};
+      const changed=this.db.prepare("INSERT INTO requirement_execution(workspace_id,issue_id,revision,agent_id,attempt_id,payload) SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM requirement_contract WHERE workspace_id=? AND issue_id=? AND revision=? AND COALESCE(json_extract(payload,'$.repairEpoch'),0)=?) AND NOT EXISTS(SELECT 1 FROM engineering_intervention WHERE workspace_id=? AND issue_id=?) ON CONFLICT(workspace_id,issue_id,revision,agent_id,attempt_id) DO UPDATE SET payload=requirement_execution.payload").run(record.workspaceId,record.issueId,record.contextContract.binding.revision,actor.agentId,actor.attemptId,JSON.stringify({repositoryPath:code.repositoryPath,overlays,...(forwardGroup || role.chain === "feedback-verify" || review?.contract.correction ? {feedbackCheckpoint:{draftId:role.draftId,mode:payload.mode,branchRef:payload.mode === "worktree" ? repositoryBranch(code.repositoryPath) : null}} : {})}),record.workspaceId,record.issueId,record.contextContract.binding.revision,record.repairEpoch,record.workspaceId,record.issueId);if(changed.changes!==1)throw new DraftConflictError("Requirement execution binding changed or surrendered execution");return {bound:true,repository_path:code.repositoryPath};
     }
     if(actor.kind !== "human" && actor.kind !== "task")throw new Error("Authenticated requirement control is required");
     if(actor.kind === "task"){

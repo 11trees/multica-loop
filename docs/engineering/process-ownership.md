@@ -126,7 +126,7 @@ A terminal task or an empty set of known allocations cannot replace missing fact
 
 The private business worker's host-only `repair-source` action takes the original
 `observation_id`, acknowledged `case_id`, and `snapshot_hash`. It verifies the
-immutable receipt, exact delivery acknowledgement and current surrendered
+immutable receipt, exact delivery acknowledgement and, before reserved staging, the current surrendered
 checkpoint. Direct requires the same active attempt and unfinished contract;
 YAML requires the original role, revision and exact saved draft. Both require the
 original daemon repository binding. Callers cannot provide replacement paths.
@@ -140,6 +140,13 @@ mode; no missing mode or removed directory is inferred from the registered path.
 End to End context can inspect the requirement record after business handoff.
 These source reads perform no normal readonly repository validation, because
 repository drift may itself be the fault being reported.
+
+After [reserved business staging](repair-handoff.md), source inspection validates
+the exact applied root/sidecars, old and new draft hashes, original execution and
+physical-binding bytes, and frozen Team against its immutable application
+witness. It returns original failure provenance with an explicit staged marker
+and application hash. A missing binding or changed checkpoint refuses the bridge;
+the historical source does not become a new completion or execution permission.
 
 This is a read-only source description, not a takeover receipt. It reads saved
 bindings even if cleanup removed the directory; it neither recreates the path

@@ -18,6 +18,8 @@ export const handoffCheckpointSchema=z.discriminatedUnion("kind",[
   z.strictObject({kind:z.literal("direct"),originalVersion:z.number().int().nonnegative(),nextVersion:z.number().int().positive()}),
   z.strictObject({kind:z.literal("yaml"),originalDraftId:text,draft:draftSchema,contract:z.record(z.string(),z.unknown())}),
 ]);
+export type HandoffYamlCheckpoint=Extract<z.infer<typeof handoffCheckpointSchema>,{kind:"yaml"}>;
+export type HandoffRootChange={payload:string;sidecars?:{batchId:string;before:string;after:string}[]};
 export const handoffProposalSchema=z.strictObject({target:repairHandoffTargetSchema,targetHash:hash,rootKind:z.enum(["direct","business","requirement","engineering"]),sourcePayload:text,sourcePayloadHash:hash,teamBinding:teamBindingSchema.nullable(),checkpoint:handoffCheckpointSchema,continuation:handoffContinuationSchema});
 export const handoffHash=(value:unknown)=>createHash("sha256").update(JSON.stringify(value)).digest("hex");
 export function handoffUUID(value:string){const h=handoffHash(value);return `${h.slice(0,8)}-${h.slice(8,12)}-5${h.slice(13,16)}-a${h.slice(17,20)}-${h.slice(20,32)}`;}
@@ -41,3 +43,15 @@ export function handoffReservationHash(value:Omit<HandoffReservation,"hash">){
 export const handoffReservationSchema=reservationFields.superRefine((value,ctx)=>{
   if(handoffReservationHash(value)!==value.hash)ctx.addIssue({code:"custom",message:"Native handoff reservation hash changed"});
 });
+
+export const handoffApplicationBodySchema=z.strictObject({
+  staged:z.literal(true),hold_retained:z.literal(true),target_hash:hash,preparation_hash:hash,reservation_hash:hash,
+  root_kind:z.enum(["direct","business","requirement","engineering"]),continuation:handoffContinuationSchema,
+  expected_version:repairContentVersionSchema,source_payload_hash:hash,applied_payload_hash:hash,source_hash:hash,sidecars_hash:hash,original_bindings_hash:hash,
+  draft_id:text.nullable(),draft_hash:hash.nullable(),
+});
+export const handoffApplicationSchema=handoffApplicationBodySchema.extend({hash}).superRefine((value,ctx)=>{
+  const {hash:actual,...body}=value;if(handoffHash(body)!==actual)ctx.addIssue({code:"custom",message:"Staged handoff receipt hash changed"});
+  if(value.root_kind==="direct"?value.draft_id!==null||value.draft_hash!==null:value.draft_id===null||value.draft_hash===null)ctx.addIssue({code:"custom",message:"Staged draft identity differs from its workflow owner"});
+});
+export type HandoffApplication=z.infer<typeof handoffApplicationSchema>;

@@ -220,6 +220,8 @@ for(const target of stageOrder)it(`retains the exact ${target} repair source and
  await rm(join(repository,"observed-drift.md"));
  const {hostHandoffTargetFixture}=await import("./test-helpers/repair-handoff-fixture"),targetProof=await hostHandoffTargetFixture(original,{workspaceId:human.workspaceId,issueId:human.issueId,projectId,repositoryPath:registered,caseId:"REPAIR-business"});
  expect(await invoke(host,"repair-handoff-prepare",targetProof)).toMatchObject({prepared:true,kind:"yaml",continuation:{agent_id:roles[target],user_id:human.userId,reason:"repair_ready"}});
+ const {hostHandoffReservationFixture}=await import("./test-helpers/repair-handoff-fixture"),reservation=hostHandoffReservationFixture(targetProof,await invoke(host,"repair-handoff-prepare",targetProof));
+ expect(await invoke(host,"repair-handoff-stage",reservation)).toMatchObject({staged:true,root_kind:"business",hold_retained:true});expect(await invoke(host,"repair-source",pin)).toMatchObject({checkpoint_state:"staged"});
  expect(await invoke(host,"execution-permission")).toEqual({allowed:false});
  const db=new DatabaseSync(database),row=db.prepare("SELECT payload FROM business_contract").get()!,changed=JSON.parse(String(row.payload));changed.activeDraftId=randomUUID();db.prepare("UPDATE business_contract SET payload=?").run(JSON.stringify(changed));db.close();
  await expect(invoke(host,"repair-source",pin)).rejects.toThrow(/checkpoint|unavailable/);

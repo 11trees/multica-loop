@@ -81,7 +81,7 @@ A native task or an investigation invocation cannot use these management command
 
 ## Investigation and physical ownership
 
-The management database schema is version 10. It freezes one invocation generation,
+The management database schema is version 11. It freezes one invocation generation,
 session identity, runtime revision and recovery method per allocation. A durable
 fair queue rotates Cases, with at most one active investigation, independent
 preparation or native verification invocation globally.
@@ -128,8 +128,12 @@ the original Team and human. The private host then reserves the exact successor
 in PostgreSQL and acknowledges its immutable receipt in management storage;
 fresh source/content, human/Team and intent checks remain mandatory on replay.
 The reservation creates no runnable task and retains admission barriers even
-without a fence. A passing/prepared/reserved repair Case still holds its
-business fence; no new business execution or Case closure is connected yet.
+without a fence. Reserved business staging now atomically writes the new draft,
+owner pointers and immutable lineage while retaining the original hold. The API
+rechecks native ownership/content and human/Team authority before management
+acknowledgement, and interrupted acknowledgements replay the same successor. A
+passing/prepared/reserved/staged repair Case still holds its business fence;
+execution release, native queue publication and Case closure remain unconnected.
 See [the verification protocol](repair-verification.md).
 Diagnosis and external-wait prerequisites remain unconnected. No investigation
 receipt closes the Case or resumes business.

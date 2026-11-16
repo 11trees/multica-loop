@@ -9,6 +9,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { repairHandoffTargetSchema,handoffProposalSchema } from "./repair-handoff";
 import { readRepairWorkspaceVersion } from "./repair-workspace-version";
+import { hostHandoffReservationFixture } from "./test-helpers/repair-handoff-fixture";
 import { EngineeringTeamStore } from "./team-store";
 import { EngineeringApplication, type ApplicationRequest } from "./application";
 import { SqliteDraftStore } from "./sqlite-store";
@@ -200,6 +201,14 @@ for(const kind of ["direct","yaml"] as const)it(`prepares a replayable ${kind} s
  expect(saved.checkpoint.kind).toBe(kind);expect(check.prepare("SELECT payload FROM engineering_intervention").get()!.payload).toBe(original);expect(check.prepare(`SELECT payload FROM ${kind==="direct"?"direct_contract":"engineering_contract"}`).get()!.payload).toBe(root);
  if(saved.checkpoint.kind==="yaml"){expect(saved.checkpoint.draft.binding.codeVersion).toBe(target.expectedVersion.split(":")[1]);expect(saved.checkpoint.draft.id).not.toBe(saved.checkpoint.originalDraftId);expect(check.prepare("SELECT payload FROM chain_drafts WHERE id=?").get(saved.checkpoint.draft.id)).toBeUndefined();}
  check.close();expect(await invoke(host,"execution-permission")).toEqual({allowed:false});expect(await invoke({kind:"coordinator"},"continuations")).toEqual([]);
+ const receipt=hostHandoffReservationFixture(target,await invoke(host,"repair-handoff-prepare",target));
+ await expect(invoke(owner,"repair-handoff-stage",receipt)).rejects.toThrow(/Only the host/);
+ const staged=await invoke(host,"repair-handoff-stage",receipt);expect(staged).toMatchObject({staged:true,hold_retained:true,reservation_hash:receipt.hash});
+ app.close();app=new EngineeringApplication(database,definition);
+ expect(await invoke(host,"repair-handoff-stage",receipt)).toEqual(staged);expect(await invoke(host,"repair-handoff-prepare",target)).toMatchObject(prepared);
+ expect(await invoke(host,"repair-source",{case_id:target.caseId,observation_id:target.observationId,snapshot_hash:target.snapshotHash})).toMatchObject({checkpoint_state:"staged",attempt_id:owner.attemptId,handoff_target_hash:receipt.target_hash});
+ const after=new DatabaseSync(database);expect(after.prepare("SELECT payload FROM engineering_intervention").get()!.payload).toBe(original);expect(after.prepare(`SELECT payload FROM ${kind==="direct"?"direct_contract":"engineering_contract"}`).get()!.payload).not.toBe(root);if(saved.checkpoint.kind==="yaml")expect(after.prepare("SELECT sequence FROM chain_drafts WHERE id=?").get(saved.checkpoint.draft.id)!.sequence).toBe(saved.checkpoint.draft.sequence);after.close();
+ expect(await invoke(host,"execution-permission")).toEqual({allowed:false});expect(await invoke({kind:"coordinator"},"continuations")).toEqual([]);
  await expect(invoke(owner,"repair-handoff-prepare",target)).rejects.toThrow(/Only the host/);
  await writeFile(join(repository,"changed-after-preparation.txt"),"Changed candidate");await expect(invoke(host,"repair-handoff-prepare",target)).rejects.toThrow(/content changed/);
  if(kind==="yaml")await expect(invoke(host,"repair-handoff-prepare",{...target,expectedVersion:await readRepairWorkspaceVersion(repository)})).rejects.toThrow(/uncommitted/);
@@ -212,6 +221,7 @@ it("prepares Direct recovery from the frozen Team even after a newer Team profil
  teams.configure(human.workspaceId,teamId,human.userId,{expected_revision:1,definition:{...definition,roles:{executor:randomUUID()}}});teamDb.close();const target=await handoffTarget();
  expect(await invoke(host,"repair-handoff-prepare",target)).toMatchObject({continuation:{agent_id:agentId,user_id:human.userId}});
  const check=new DatabaseSync(database),prepared=handoffProposalSchema.parse(JSON.parse(String(check.prepare("SELECT payload FROM engineering_repair_handoff").get()!.payload)));expect(prepared.teamBinding?.profile.revision).toBe(1);check.close();
+ const reservation=hostHandoffReservationFixture(target,await invoke(host,"repair-handoff-prepare",target));expect(await invoke(host,"repair-handoff-stage",reservation)).toMatchObject({staged:true,root_kind:"direct"});expect(await invoke(host,"team-binding")).toMatchObject({binding:{profile:{revision:1,definition:{roles:{executor:agentId}}}}});
 });
 
 it("preserves uncommitted in-place development while preparing its successor",async()=>{
@@ -219,5 +229,29 @@ it("preserves uncommitted in-place development while preparing its successor",as
  await invoke(human,"configure",{expected_revision:0,agent_id:randomUUID(),developer_agent_id:agentId,implementation_guidance:"Implement the original reader outcome",repository_path:repository,sources:[{key:"original",kind:"acceptance",description:"Original reader behavior",oracle:"Observe the original entry",sourceRef:"README.md"}]});
  await invoke({...owner,kind:"daemon"},"bind",{work_dir:repository,mode:"in_place",overlays:[]});await invoke(owner,"start");await writeFile(join(repository,"partial-development.txt"),"Retain unfinished work");await invoke(owner,"intervention-request",body);
  const target=await handoffTarget();expect(await invoke(host,"repair-handoff-prepare",target)).toMatchObject({prepared:true,kind:"yaml",continuation:{agent_id:agentId}});
+ const receipt=hostHandoffReservationFixture(target,await invoke(host,"repair-handoff-prepare",target));expect(await invoke(host,"repair-handoff-stage",receipt)).toMatchObject({staged:true,root_kind:"engineering"});
  expect(await readFile(join(repository,"partial-development.txt"),"utf8")).toBe("Retain unfinished work");expect(await invoke(host,"execution-permission")).toEqual({allowed:false});
+});
+
+it("rolls back a failed root write with its new draft and retries the same native reservation",async()=>{
+ await invoke(human,"configure",{expected_revision:0,agent_id:agentId,repository_path:repository,sources:[{key:"original",kind:"acceptance",description:"Original reader behavior",oracle:"Observe the original entry",sourceRef:"README.md"}]});
+ await invoke({...owner,kind:"daemon"},"bind",{work_dir:repository,mode:"in_place",overlays:[]});await invoke(owner,"start");await invoke(owner,"intervention-request",body);
+ const target=await handoffTarget(),receipt=hostHandoffReservationFixture(target,await invoke(host,"repair-handoff-prepare",target));
+ const db=new DatabaseSync(database),root=db.prepare("SELECT payload FROM engineering_contract").get()!.payload;
+ db.exec("CREATE TRIGGER fail_repair_stage BEFORE UPDATE ON engineering_contract BEGIN SELECT RAISE(ABORT,'fixture failed staging'); END");
+ await expect(invoke(host,"repair-handoff-stage",receipt)).rejects.toThrow(/failed staging/);
+ expect(db.prepare("SELECT payload FROM engineering_contract").get()!.payload).toBe(root);expect(db.prepare("SELECT count(*) AS n FROM chain_drafts").get()!.n).toBe(1);expect(db.prepare("SELECT count(*) AS n FROM engineering_repair_handoff_application").get()!.n).toBe(0);
+ db.exec("DROP TRIGGER fail_repair_stage");expect(await invoke(host,"repair-handoff-stage",receipt)).toMatchObject({staged:true});db.close();
+});
+it("rejects an old asynchronous runtime bind after its recovery checkpoint is staged",async()=>{
+ await invoke(human,"configure",{expected_revision:0,agent_id:agentId,repository_path:repository,sources:[{key:"original",kind:"acceptance",description:"Original reader behavior",oracle:"Observe the original entry",sourceRef:"README.md"}]});
+ const daemon={...owner,kind:"daemon" as const};await invoke(daemon,"bind",{work_dir:repository,mode:"in_place",overlays:[]});await invoke(owner,"start");
+ let release!:()=>void,entered!:()=>void;const pending=new Promise<void>(resolve=>release=resolve),started=new Promise<void>(resolve=>entered=resolve);
+ const validation=vi.spyOn(app as unknown as {validateDependencies:()=>Promise<void>},"validateDependencies").mockImplementationOnce(async()=>{entered();await pending;});
+ const late=invoke(daemon,"bind",{work_dir:repository,mode:"in_place",overlays:[]});await started;
+ try{
+  await invoke(owner,"intervention-request",body);const target=await handoffTarget(),receipt=hostHandoffReservationFixture(target,await invoke(host,"repair-handoff-prepare",target));await invoke(host,"repair-handoff-stage",receipt);
+  release();await expect(late).rejects.toThrow(/surrendered execution/);
+  expect(await invoke(host,"repair-source",{case_id:target.caseId,observation_id:target.observationId,snapshot_hash:target.snapshotHash})).toMatchObject({checkpoint_state:"staged"});
+ }finally{release();await late.catch(()=>{});validation.mockRestore();}
 });

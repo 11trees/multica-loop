@@ -4,6 +4,8 @@ import {z} from "zod";
 import {DraftConflictError} from "./runtime";
 import {parseCommandChainDefinition} from "./definition";
 import type {SqliteDraftStore} from "./sqlite-store";
+import type {HandoffYamlCheckpoint,HandoffRootChange} from "./repair-handoff";
+import {initializeInterventions} from "./intervention-store";
 import {compileFeedbackTriageConclusion,compileFeedbackVerifyConclusion,feedbackTriageConclusionSchema,feedbackVerifyConclusionSchema,feedbackTriageContractSchema,feedbackVerifyContractSchema,feedbackGroupSchema,feedbackWorkEvidenceSchema,feedbackTriageProfile,feedbackVerifyProfile,type FeedbackTriageContract,type FeedbackGroup} from "./feedback";
 
 const text=z.string().trim().min(1),seq=z.number().int().nonnegative();
@@ -24,17 +26,27 @@ export type FeedbackWorkResolver=(scope:{workspaceId:string;issueId:string;batch
 /** Internal host storage. Native identity, lifecycle and authoritative work lookup belong to its caller. */
 export class FeedbackStore {
  constructor(private readonly db:DatabaseSync,private readonly drafts:SqliteDraftStore,private readonly resolveWork?:FeedbackWorkResolver){
+  initializeInterventions(db);
   db.exec("CREATE TABLE IF NOT EXISTS engineering_feedback_batch(workspace_id TEXT NOT NULL,issue_id TEXT NOT NULL,batch_id TEXT NOT NULL,number INTEGER NOT NULL,version INTEGER NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(workspace_id,issue_id,batch_id),UNIQUE(workspace_id,issue_id,number))");
   db.exec("CREATE TABLE IF NOT EXISTS engineering_feedback_comment(workspace_id TEXT NOT NULL,issue_id TEXT NOT NULL,comment_id TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(workspace_id,issue_id,comment_id))");
  }
  get(workspaceId:string,issueId:string,batchId:string){const row=this.db.prepare("SELECT payload FROM engineering_feedback_batch WHERE workspace_id=? AND issue_id=? AND batch_id=?").get(workspaceId,issueId,batchId);return row ? batchSchema.parse(JSON.parse(String(row.payload))) : undefined;}
  private require(workspaceId:string,issueId:string,batchId:string){const batch=this.get(workspaceId,issueId,batchId);if(!batch)throw new Error("Feedback batch is unavailable in this issue/workspace");return batch;}
  list(workspaceId:string,issueId:string){return this.db.prepare("SELECT payload FROM engineering_feedback_batch WHERE workspace_id=? AND issue_id=? ORDER BY number").all(workspaceId,issueId).map(row=>batchSchema.parse(JSON.parse(String(row.payload))));}
+ repairSuccessor(workspaceId:string,issueId:string,checkpoint:HandoffYamlCheckpoint):NonNullable<HandoffRootChange["sidecars"]>{
+  const rows=this.db.prepare("SELECT payload FROM engineering_feedback_batch WHERE workspace_id=? AND issue_id=? ORDER BY number").all(workspaceId,issueId);
+  for(const row of rows){const before=String(row.payload),batch=batchSchema.parse(JSON.parse(before));let found=false;
+   if(batch.triageDraftId===checkpoint.originalDraftId&&!batch.triage&&batch.status==="triaging"){batch.triageDraftId=checkpoint.draft.id;batch.contract=feedbackTriageContractSchema.parse(checkpoint.contract);found=true;}
+   for(const group of batch.groups)for(const entry of Object.values(group.verifications))if(entry.draftId===checkpoint.originalDraftId&&!entry.result&&group.status==="verifying"){entry.draftId=checkpoint.draft.id;entry.contract=feedbackVerifyContractSchema.parse(checkpoint.contract);found=true;}
+   if(found){batch.version++;return [{batchId:batch.id,before,after:JSON.stringify(batchSchema.parse(batch))}];}
+  }
+  throw new DraftConflictError("Feedback recovery no longer owns its editable checkpoint");
+ }
  private comment(batch:Pick<FeedbackBatch,"workspaceId"|"issueId">,id:string){const row=this.db.prepare("SELECT payload FROM engineering_feedback_comment WHERE workspace_id=? AND issue_id=? AND comment_id=?").get(batch.workspaceId,batch.issueId,id);return row ? commentStateSchema.parse(JSON.parse(String(row.payload))) : undefined;}
  private saveComment(batch:FeedbackBatch,id:string,value:z.infer<typeof commentStateSchema>){this.db.prepare("INSERT INTO engineering_feedback_comment(workspace_id,issue_id,comment_id,payload) VALUES(?,?,?,?) ON CONFLICT(workspace_id,issue_id,comment_id) DO UPDATE SET payload=excluded.payload").run(batch.workspaceId,batch.issueId,id,JSON.stringify(value));}
  private save(batch:FeedbackBatch,expectedVersion:number){
   batch.version=expectedVersion+1;batchSchema.parse(batch);
-  const result=this.db.prepare("UPDATE engineering_feedback_batch SET version=?,payload=? WHERE workspace_id=? AND issue_id=? AND batch_id=? AND version=?").run(batch.version,JSON.stringify(batch),batch.workspaceId,batch.issueId,batch.id,expectedVersion);
+  const result=this.db.prepare("UPDATE engineering_feedback_batch SET version=?,payload=? WHERE workspace_id=? AND issue_id=? AND batch_id=? AND version=? AND NOT EXISTS(SELECT 1 FROM engineering_intervention WHERE workspace_id=? AND issue_id=?)").run(batch.version,JSON.stringify(batch),batch.workspaceId,batch.issueId,batch.id,expectedVersion,batch.workspaceId,batch.issueId);
   if(result.changes !== 1)throw new DraftConflictError("Feedback batch changed; reload its current version");
  }
  private atomic<T>(work:()=>T){this.db.exec("BEGIN IMMEDIATE");try{const result=work();this.db.exec("COMMIT");return result;}catch(error){this.db.exec("ROLLBACK");throw error;}}
