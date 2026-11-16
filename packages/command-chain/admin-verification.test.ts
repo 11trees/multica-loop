@@ -1,4 +1,5 @@
 // @vitest-environment node
+import {repairBusinessProgressHash,repairNativeProgressHash,repairRecoveryProgressSchema,type RepairRecoveryProgress} from "./repair-progress";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -390,4 +391,27 @@ it.each(["task","runtime","human","application","ready","case","verification"])(
  const h=await publicationFixture(),value=structuredClone(h.value),p=value.publication;
  if(changed==="task")p.task_id=randomUUID();if(changed==="runtime")p.runtime_id=randomUUID();if(changed==="human")p.user_id=randomUUID();if(changed==="application")p.application_hash="1".repeat(64);if(changed==="ready")p.ready_hash="2".repeat(64);if(changed==="case")p.case_id="another-case";if(changed==="verification")p.verification_attempt_id="another-verifier";
  p.hash=handoffPublicationHash(p);expect(handoffPublicationSchema.safeParse(p).success).toBe(true);expect(()=>store.execution.recordHandoffPublication(h.authority,h.claim.caseId,value)).toThrow(/differs/);expect(store.issue(workspaceId,issueId).status).toBe("verified");expect(store.execution.handoffContext(h.authority,h.claim.caseId).publication).toBeNull();
+});
+async function observedRecovery(){
+ const h=await publicationFixture();store.execution.recordHandoffPublication(h.authority,h.claim.caseId,h.value);const p=h.value.publication,c=h.reservation.continuation;
+ const body={applied:true as const,case_id:h.claim.caseId,verification_attempt_id:h.context.target.verificationAttemptId,target_hash:p.target_hash,application_hash:p.application_hash,ready_hash:p.ready_hash,workspace_id:workspaceId,issue_id:issueId,task_id:p.task_id,agent_id:p.agent_id,attempt_id:`${p.task_id}:222222`,chain:"verification" as const,draft_id:h.prepared.draft_id,draft_hash:"1".repeat(64),result_id:"ordinary-result",result_hash:"2".repeat(64),completion_event_hash:"3".repeat(64),revision:c.expected_revision,sequence:c.expected_sequence+5},business={...body,hash:repairBusinessProgressHash(body)},nativeBody={publication_hash:p.hash,progress_hash:business.hash,task_id:p.task_id,attempt_id:business.attempt_id,workspace_id:workspaceId,issue_id:issueId,agent_id:p.agent_id,user_id:p.user_id,runtime_id:p.runtime_id,project_id:h.context.target.workspaceBinding.projectId,status:"completed" as const,controllers_hash:"4".repeat(64)},value=repairRecoveryProgressSchema.parse({business,native:{...nativeBody,hash:repairNativeProgressHash(nativeBody)}});
+ return {...h,progress:value};
+}
+function rehashProgress(p:RepairRecoveryProgress){p.business.hash=repairBusinessProgressHash(p.business);p.native.progress_hash=p.business.hash;p.native.hash=repairNativeProgressHash(p.native);return p;}
+it("closes only after saving a new applied result and rereading its exact native and business facts",async()=>{
+ const h=await observedRecovery();expect(store.execution.observingHandoffs(h.authority)).toEqual([{case_id:h.claim.caseId}]);expect(()=>store.execution.closeObservedHandoff(h.authority,h.claim.caseId,h.progress)).toThrow(/fresh matching/);
+ expect(store.execution.recordBusinessProgress(h.authority,h.claim.caseId,h.progress)).toEqual(h.progress);expect(store.issue(workspaceId,issueId).status).toBe("observing");
+ const stale=structuredClone(h.progress);stale.business.result_hash="5".repeat(64);rehashProgress(stale);expect(()=>store.execution.closeObservedHandoff(h.authority,h.claim.caseId,stale)).toThrow(/fresh matching/);expect(()=>store.execution.recordBusinessProgress(h.authority,h.claim.caseId,stale)).toThrow(/cannot be replaced/);
+ expect(store.execution.closeObservedHandoff(h.authority,h.claim.caseId,h.progress)).toMatchObject({closed:true,progress_hash:h.progress.business.hash});expect(store.issue(workspaceId,issueId).status).toBe("closed");expect(store.execution.observingHandoffs(h.authority)).toEqual([]);
+ store.close();store=new AdminStore(filename,()=>now);expect(store.execution.closeObservedHandoff(h.authority,h.claim.caseId,h.progress)).toMatchObject({closed:true});
+ store.observe(h.authority,observation("after-closed-recovery"));expect(store.issue(workspaceId,issueId).status).toBe("queued");expect(()=>store.execution.closeObservedHandoff(h.authority,h.claim.caseId,h.progress)).toThrow(/settled verified/);const db=new DatabaseSync(filename);expect(db.prepare("SELECT payload FROM admin_business_progress").get()!.payload).toBe(JSON.stringify(h.progress));db.close();
+});
+it("retains applied progress across stop and supervisor replacement without closing under stale authority",async()=>{
+ const h=await observedRecovery();store.execution.recordBusinessProgress(h.authority,h.claim.caseId,h.progress);store.execution.setIntent({intent:"stopped",request_id:"stop-recovery-observation"});expect(()=>store.execution.closeObservedHandoff(h.authority,h.claim.caseId,h.progress)).toThrow(/running intent/);expect(store.execution.observingHandoffs(h.authority)).toEqual([]);
+ now+=30001;const next=store.acquireSupervisor("observation-successor",30000,true)!;store.execution.setIntent({intent:"running",request_id:"resume-recovery-observation"});expect(()=>store.execution.closeObservedHandoff(h.authority,h.claim.caseId,h.progress)).toThrow(/authority/);expect(store.execution.recordBusinessProgress(next,h.claim.caseId,h.progress)).toEqual(h.progress);expect(store.execution.closeObservedHandoff(next,h.claim.caseId,h.progress)).toMatchObject({closed:true});
+});
+it.each(["task","claim","draft","revision","sequence","application","ready","runtime","project","publication","native-claim"])("refuses rehashed recovery progress with changed %s",async changed=>{
+ const h=await observedRecovery(),p=structuredClone(h.progress);
+ if(changed==="task"){p.business.task_id=randomUUID();p.native.task_id=p.business.task_id;}if(changed==="claim"){p.business.attempt_id="original:123";p.native.attempt_id=p.business.attempt_id;}if(changed==="draft")p.business.draft_id=randomUUID();if(changed==="revision")p.business.revision++;if(changed==="sequence")p.business.sequence=h.reservation.continuation.expected_sequence;if(changed==="application")p.business.application_hash="6".repeat(64);if(changed==="ready")p.business.ready_hash="7".repeat(64);if(changed==="runtime")p.native.runtime_id=randomUUID();if(changed==="project")p.native.project_id=randomUUID();if(changed==="publication")p.native.publication_hash="8".repeat(64);if(changed==="native-claim")p.native.attempt_id=`${p.business.task_id}:333333`;
+ rehashProgress(p);expect(repairRecoveryProgressSchema.safeParse(p).success).toBe(true);expect(()=>store.execution.recordBusinessProgress(h.authority,h.claim.caseId,p)).toThrow(/differs/);expect(store.issue(workspaceId,issueId).status).toBe("observing");
 });

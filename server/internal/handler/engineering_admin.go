@@ -140,6 +140,9 @@ func (h *Handler) runEngineeringAdmin(ctx context.Context, interval time.Duratio
 				if err := h.ReconcileEngineeringRepairHandoffs(ctx, *current); err != nil && ctx.Err() == nil {
 					slog.WarnContext(ctx, "engineering Admin verified handoff preparation waiting", "error", err)
 				}
+				if err := h.ReconcileEngineeringRecoveryProgress(ctx, *current); err != nil && ctx.Err() == nil {
+					slog.WarnContext(ctx, "engineering Admin recovery observation waiting", "error", err)
+				}
 			}
 			select {
 			case <-ctx.Done():

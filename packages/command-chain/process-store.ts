@@ -33,6 +33,7 @@ export class EngineeringProcessStore {
         owner = ownerSchema.parse(owner);
         const payload = JSON.stringify({ projectId: projectId ?? null, repositoryPath, mode });
         this.transaction(() => {
+            if(this.db.prepare("SELECT 1 FROM engineering_repair_retired_claim WHERE workspace_id=? AND issue_id=? AND attempt_id=?").get(owner.workspaceId,owner.issueId,owner.attemptId))throw new DraftConflictError("Native execution claim was replaced");
             const prior = this.db.prepare("SELECT payload FROM engineering_process_binding WHERE workspace_id=? AND issue_id=? AND agent_id=? AND attempt_id=?").get(owner.workspaceId, owner.issueId, owner.agentId, owner.attemptId);
             if (prior && prior.payload !== payload)
                 throw new DraftConflictError("Physical process repository binding cannot change within a native claim");
@@ -43,7 +44,7 @@ export class EngineeringProcessStore {
         owner = ownerSchema.parse(owner);
         const request = processRequestSchema.parse(input);
         return this.transaction(() => {
-            const blocked = surrendered || !!this.db.prepare("SELECT 1 FROM engineering_intervention WHERE workspace_id=? AND issue_id=? AND attempt_id=? UNION ALL SELECT 1 FROM engineering_intervention_pending WHERE workspace_id=? AND issue_id=? LIMIT 1").get(owner.workspaceId, owner.issueId, owner.attemptId, owner.workspaceId, owner.issueId);
+            const blocked = surrendered || !!this.db.prepare("SELECT 1 FROM engineering_intervention WHERE workspace_id=? AND issue_id=? AND attempt_id=? UNION ALL SELECT 1 FROM engineering_intervention_pending WHERE workspace_id=? AND issue_id=? UNION ALL SELECT 1 FROM engineering_repair_retired_claim WHERE workspace_id=? AND issue_id=? AND attempt_id=? LIMIT 1").get(owner.workspaceId, owner.issueId, owner.attemptId, owner.workspaceId, owner.issueId,owner.workspaceId,owner.issueId,owner.attemptId);
             const row = this.db.prepare("SELECT payload,status FROM engineering_process WHERE allocation_id=?").get(request.allocation_id);
             if (request.operation === "reserve") {
                 if (row) {

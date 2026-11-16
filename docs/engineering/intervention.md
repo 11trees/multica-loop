@@ -117,7 +117,10 @@ retaining original obligations, scenarios and authenticated human choices. Old
 attempts and surrendered draft IDs remain revoked independently of active-hold
 lookup. Task-specific readiness and atomic native publication now resume only the
 frozen successor through its authenticated native bind, retaining immutable
-publication replay. Case observation and closure remain incomplete. Recheck actual content,
+publication replay. Host observation now closes only after a newly applied owner
+result, exact completed native claim, scoped physical cleanup and a second matching
+fresh read. This cannot replace ordinary Done or human reading gates. Recovery
+stall/failure/cohort-change observation remains incomplete. Recheck actual content,
 native project/cohort, the task's frozen Team policy and saved human authority
 before acting. Later Team profile edits do not reconfigure the interrupted task.
 Management intent, the business checkpoint and the PostgreSQL fence/queue live in

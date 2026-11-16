@@ -1,4 +1,6 @@
 // @vitest-environment node
+import {hostHandoffTargetFixture,hostHandoffReservationFixture} from "./test-helpers/repair-handoff-fixture";
+import {handoffReadySchema} from "./repair-handoff";
 import { execFileSync } from "node:child_process";
 import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -45,7 +47,7 @@ const overview = async () => overviewSchema.parse(await invoke(human, "overview"
 const closureSchema=z.object({business:z.object({version:z.number(),specification:z.object({draft_id:z.string(),hash:z.string(),content:z.string(),ready:z.boolean(),acknowledgement:z.object({userId:z.string()}).nullable()}).nullable(),comments:z.array(z.object({id:z.string(),status:z.string(),reviewedBy:z.string().optional()})),readings:z.array(z.unknown())})});
 const closure=async()=>closureSchema.parse(await invoke(human,"overview")).business;
 const host={kind:"host" as const,workspaceId:human.workspaceId,issueId:human.issueId};
-const actor = (stage: BusinessStage, attemptId = randomUUID()) => ({ kind: "task" as const, workspaceId: human.workspaceId, issueId: human.issueId, projectId, agentId: roles[stage], attemptId });
+const actor = (stage: BusinessStage, attemptId: string = randomUUID()) => ({ kind: "task" as const, workspaceId: human.workspaceId, issueId: human.issueId, projectId, agentId: roles[stage], attemptId });
 async function start(stage: BusinessStage, owner = actor(stage), mode: "in_place" | "worktree" = "in_place", path = repository) {
   await invoke({ ...owner, kind: "daemon" }, "bind", { work_dir: path, mode, overlays: [] });
   let state = viewSchema.parse(await invoke(owner, "start"));
@@ -250,3 +252,12 @@ it("inspects End to End delivery context after business handoff while retaining 
  const targets=originalRepairTargets([{...original!,origin:"business",evidence:{original}}]);const source=targets.find(item=>item.targetRef.endsWith(":approved-business-source"));
  expect(source?.original).toMatchObject({specification,stages:expect.arrayContaining(stageOrder.map(stage=>expect.objectContaining({stage})))});
 },20000);
+it.each(stageOrder)("observes newly applied %s recovery after the business owner advances to its next checkpoint",async stage=>{
+ await invoke(human,"configure-business",configuration());for(const previous of stageOrder.slice(0,stageOrder.indexOf(stage))){const session=await start(previous);await session.until(null);}
+ const interrupted=await start(stage,actor(stage,`${randomUUID()}:123456`));await invoke(interrupted.owner,"intervention-request",{summary:"Original stage failure",reason:"Reconcile this exact stage",evidence:"Keep upstream obligations"});const [original]=z.array(z.record(z.string(),z.unknown())).parse(await invoke({kind:"coordinator"},"repair-observations"));if(!original)throw new Error("Missing original stage");
+ const caseId=`REPAIR-${stage}`;await invoke(host,"repair-observation-ack",{case_id:caseId,observation_id:original.observationId,snapshot_hash:original.snapshotHash});const target=await hostHandoffTargetFixture(original,{...human,projectId,repositoryPath:await realpath(repository),caseId}),reservation=hostHandoffReservationFixture(target,await invoke(host,"repair-handoff-prepare",target)),application=await invoke(host,"repair-handoff-stage",reservation),ready=handoffReadySchema.parse(await invoke(host,"repair-handoff-ready",application)),pin={target_hash:ready.target_hash,application_hash:ready.application_hash,ready_hash:ready.hash};
+ const recovered=await start(stage,actor(stage,`${ready.continuation.task_id}:999999`));expect(await invoke(host,"repair-business-progress",pin)).toEqual({progress:null});await recovered.until(null);
+ const observed=await invoke(host,"repair-business-progress",pin);expect(observed).toMatchObject({progress:{applied:true,attempt_id:recovered.owner.attemptId,draft_id:recovered.state.draft!.id,chain:recovered.state.draft!.definition.id}});
+ app.close();app=open();expect(await invoke(host,"repair-business-progress",pin)).toEqual(observed);await expect(invoke(interrupted.owner,"start")).rejects.toThrow(/surrendered/);
+ if(stage==="review")await expect(invoke(host,"completion")).rejects.toThrow(/Read.*specification/);
+},60000);

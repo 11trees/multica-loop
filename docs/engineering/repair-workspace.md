@@ -55,7 +55,9 @@ repair group's physical exit, allocates separate Test and native-check generatio
 and checks the exact candidate version before/after actual commands. Stop or
 source changes refuse further grants/capture/submission. These gates do not claim
 immediate OS revocation of an earlier grant on every business UI change. Verified
-repair still holds the business fence; business handoff remains unconnected.
+repair alone still holds the business fence. The separate [verified handoff](repair-handoff.md)
+now connects controlled publication, authenticated resume and ordinary-result
+observation before guarded Case closure.
 
 ## Storage and evidence
 

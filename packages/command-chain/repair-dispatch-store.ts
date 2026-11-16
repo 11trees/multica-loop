@@ -3,7 +3,7 @@ import { z } from "zod";
 import { DraftConflictError } from "./runtime";
 import type { InterventionRecord } from "./intervention-store";
 import { readStagedRepair } from "./repair-stage-store";
-import { handoffReadyHash,handoffReadyBodySchema,handoffReadySchema,handoffApplicationSchema,type HandoffApplication } from "./repair-handoff";
+import { handoffProposalSchema,handoffReadyHash,handoffReadyBodySchema,handoffReadySchema,handoffApplicationSchema,type HandoffApplication } from "./repair-handoff";
 
 export function readyRepairDispatch(db:DatabaseSync,original:InterventionRecord,raw:HandoffApplication){
  const application=handoffApplicationSchema.parse(raw),staged=readStagedRepair(db,original);
@@ -26,5 +26,18 @@ export function activateRepairDispatch(db:DatabaseSync,original:InterventionReco
   const staged=readStagedRepair(db,original);if(!staged||staged.manifest.application.hash!==dispatch.ready.application_hash||task.projectId!==staged.proposal.target.workspaceBinding.projectId)throw new DraftConflictError("Native dispatch changed its applied source or project");
   const changed=db.prepare("UPDATE engineering_repair_dispatch SET state='active',attempt_id=? WHERE target_hash=? AND state='ready' AND payload=?").run(task.attemptId,dispatch.ready.target_hash,JSON.stringify(dispatch.ready));
   if(changed.changes!==1)throw new DraftConflictError("Recovery dispatch changed before activation");db.exec("COMMIT");return true;
+ }catch(error){db.exec("ROLLBACK");throw error;}
+}
+
+/** A native reclaim keeps the fixed task, but its authenticated claim changes. */
+export function refreshRepairDispatchClaim(db:DatabaseSync,task:{workspaceId:string;issueId:string;agentId:string;projectId?:string;attemptId:string}){
+ const dispatch=repairDispatchForTask(db,task.workspaceId,task.issueId,task.attemptId.split(":")[0]!);
+ if(!dispatch||dispatch.state!=="active"||dispatch.attemptId===task.attemptId)return;
+ db.exec("BEGIN IMMEDIATE");try{
+  const proposalRow=db.prepare("SELECT payload FROM engineering_repair_handoff WHERE target_hash=?").get(dispatch.ready.target_hash);if(!proposalRow)throw new DraftConflictError("Recovery claim has no prepared origin");
+  const proposal=handoffProposalSchema.parse(JSON.parse(String(proposalRow.payload)));
+  if(task.agentId!==dispatch.ready.continuation.agent_id||task.projectId!==proposal.target.workspaceBinding.projectId||!dispatch.attemptId||db.prepare("SELECT 1 FROM engineering_process WHERE workspace_id=? AND issue_id=? AND attempt_id=? AND status<>'exited'").get(task.workspaceId,task.issueId,dispatch.attemptId)||db.prepare("SELECT 1 FROM engineering_repair_business_progress WHERE target_hash=?").get(dispatch.ready.target_hash))throw new DraftConflictError("Previous recovery claim is unsettled or already applied");
+  db.prepare("INSERT INTO engineering_repair_retired_claim VALUES(?,?,?,?)").run(task.workspaceId,task.issueId,dispatch.attemptId,dispatch.ready.target_hash);
+  const changed=db.prepare("UPDATE engineering_repair_dispatch SET attempt_id=? WHERE target_hash=? AND state='active' AND attempt_id=? AND payload=?").run(task.attemptId,dispatch.ready.target_hash,dispatch.attemptId,JSON.stringify(dispatch.ready));if(changed.changes!==1)throw new DraftConflictError("Recovery claim changed while binding its native replacement");db.exec("COMMIT");
  }catch(error){db.exec("ROLLBACK");throw error;}
 }

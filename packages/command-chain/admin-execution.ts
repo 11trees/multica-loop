@@ -1,3 +1,4 @@
+import {repairRecoveryProgressSchema,type RepairRecoveryProgress} from "./repair-progress";
 import { repairHandoffTargetSchema,handoffPreparationSchema,handoffReservationSchema,handoffApplicationSchema,handoffReadySchema,handoffPublicationSchema,handoffHash,type HandoffReservation,type HandoffApplication,type HandoffReady,type HandoffPublication,type RepairHandoffTarget } from "./repair-handoff";
 import { independentCheckSchema, independentCheckResultSchema, independentCheckSteps, independentCheckPassed, compileIndependentReceipt, independentReceiptSchema } from "./repair-verification-receipt";
 import { authorizeRepairPlan, preparedRepairPlanSchema } from "./repair-verification-plan";
@@ -45,7 +46,8 @@ export function initializeAdminExecution(db: DatabaseSync, version: number) {
         db.exec("ALTER TABLE admin_control ADD COLUMN execution_supported INTEGER NOT NULL DEFAULT 0");
     if (version < 6) db.exec("DROP INDEX IF EXISTS admin_one_live_attempt");
     if(version<8) db.exec("UPDATE admin_case SET status='queued' WHERE current_attempt_id IS NULL AND status IN ('verifying','verification-prepared','verified')");
-    db.exec(`CREATE TABLE IF NOT EXISTS admin_handoff_publication(case_id TEXT NOT NULL,verification_attempt_id TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(case_id,verification_attempt_id));
+    db.exec(`CREATE TABLE IF NOT EXISTS admin_business_progress(case_id TEXT NOT NULL,verification_attempt_id TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(case_id,verification_attempt_id));
+    CREATE TABLE IF NOT EXISTS admin_handoff_publication(case_id TEXT NOT NULL,verification_attempt_id TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(case_id,verification_attempt_id));
     CREATE TABLE IF NOT EXISTS admin_handoff_application(case_id TEXT NOT NULL,verification_attempt_id TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(case_id,verification_attempt_id));
     CREATE TABLE IF NOT EXISTS admin_handoff_reservation(case_id TEXT NOT NULL,verification_attempt_id TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(case_id,verification_attempt_id));
     CREATE TABLE IF NOT EXISTS admin_handoff_preparation(case_id TEXT NOT NULL,verification_attempt_id TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(case_id,verification_attempt_id));
@@ -364,7 +366,7 @@ export class AdminExecutionStore {
         const control=this.requireAuthority(authority);
         if(control.desired_intent!=="running")throw new DraftConflictError("Verified handoff requires current running intent");
         const repair=this.db.prepare("SELECT status,current_attempt_id FROM admin_case WHERE case_id=?").get(caseId);
-        if(!["verified","observing"].includes(String(repair?.status))||repair?.current_attempt_id!==null)throw new DraftConflictError("Case has no settled verified handoff");
+        if(!["verified","observing","closed"].includes(String(repair?.status))||repair?.current_attempt_id!==null)throw new DraftConflictError("Case has no settled verified handoff");
         const row=this.db.prepare("SELECT payload FROM admin_attempt WHERE case_id=? ORDER BY rowid DESC LIMIT 1").get(caseId);
         if(!row)throw new DraftConflictError("Verified handoff has no execution source");
         const attempt=attemptSchema.parse(JSON.parse(String(row.payload))),basis=this.executionBasisFor(attempt),receipt=this.independentVerificationReceipt(attempt.attemptId),progress=this.progress(attempt.attemptId),request=this.takeover(attempt.attemptId);
@@ -427,6 +429,25 @@ export class AdminExecutionStore {
         if(row&&String(row.payload)!==json(value))throw new DraftConflictError("Native publication cannot be replaced");
         if(!row)this.db.prepare("INSERT INTO admin_handoff_publication VALUES(?,?,?)").run(caseId,context.target.verificationAttemptId,json(value));
         this.db.prepare("UPDATE admin_case SET status='observing',updated_at=? WHERE case_id=? AND status='verified'").run(this.now(),caseId);return value;
+    });}
+    observingHandoffs(authority:AdminAuthority){if(this.requireAuthority(authority).desired_intent!=="running")return [];return this.db.prepare("SELECT case_id FROM admin_case WHERE status='observing' AND current_attempt_id IS NULL ORDER BY updated_at,case_id").all().map(row=>({case_id:String(row.case_id)}));}
+    private validateBusinessProgress(value:RepairRecoveryProgress,context:ReturnType<AdminExecutionStore["handoffContext"]>){
+        const p=value.business,n=value.native,published=context.publication?.publication,r=context.reservation,a=context.application,c=r?.continuation;
+        if(!published||!r||!a||!c||p.case_id!==context.target.caseId||p.verification_attempt_id!==context.target.verificationAttemptId||p.target_hash!==context.target_hash||p.application_hash!==a.hash||p.ready_hash!==published.ready_hash||p.task_id!==c.task_id||p.workspace_id!==c.workspace_id||p.issue_id!==c.issue_id||p.agent_id!==c.agent_id||p.revision!==c.expected_revision||!p.attempt_id.startsWith(c.task_id+":")||p.attempt_id===context.target.workspaceBinding.sourceAttemptId||p.draft_id!==a.draft_id||(p.chain==="direct"?p.sequence!==0:p.sequence<=c.expected_sequence)||n.publication_hash!==published.hash||n.progress_hash!==p.hash||n.task_id!==p.task_id||n.attempt_id!==p.attempt_id||n.workspace_id!==p.workspace_id||n.issue_id!==p.issue_id||n.agent_id!==p.agent_id||n.user_id!==c.user_id||n.runtime_id!==published.runtime_id||n.project_id!==r.project_id)throw new DraftConflictError("Observed recovery result differs from its published native dispatch");
+        if(this.db.prepare("SELECT 1 FROM admin_attempt WHERE case_id=? AND status IN ('waiting','launching','running')").get(context.target.caseId))throw new DraftConflictError("Recovery still has an unfinished management attempt");
+    }
+    recordBusinessProgress(authority:AdminAuthority,caseId:string,raw:unknown){const value=repairRecoveryProgressSchema.parse(raw);return this.transaction(()=>{
+        const context=this.handoffContext(authority,caseId);this.validateBusinessProgress(value,context);
+        const row=this.db.prepare("SELECT payload FROM admin_business_progress WHERE case_id=? AND verification_attempt_id=?").get(caseId,context.target.verificationAttemptId);
+        if(row&&String(row.payload)!==json(value))throw new DraftConflictError("Applied recovery progress cannot be replaced");
+        if(!row)this.db.prepare("INSERT INTO admin_business_progress VALUES(?,?,?)").run(caseId,context.target.verificationAttemptId,json(value));return value;
+    });}
+    closeObservedHandoff(authority:AdminAuthority,caseId:string,raw:unknown){const current=repairRecoveryProgressSchema.parse(raw);return this.transaction(()=>{
+        const context=this.handoffContext(authority,caseId);this.validateBusinessProgress(current,context);
+        const row=this.db.prepare("SELECT payload FROM admin_business_progress WHERE case_id=? AND verification_attempt_id=?").get(caseId,context.target.verificationAttemptId);
+        if(!row||row.payload!==json(current))throw new DraftConflictError("Case closure requires a fresh matching ordinary result observation");
+        const repair=this.db.prepare("SELECT status FROM admin_case WHERE case_id=?").get(caseId);if(!["observing","closed"].includes(String(repair?.status)))throw new DraftConflictError("Case is not observing its published recovery");
+        this.db.prepare("UPDATE admin_case SET status='closed',updated_at=? WHERE case_id=? AND status='observing'").run(this.now(),caseId);return {closed:true,progress_hash:current.business.hash,native_hash:current.native.hash};
     });}
     private originalObservations(caseId: string) {
         return this.db.prepare("SELECT payload FROM admin_observation WHERE case_id=? AND origin<>'admin' ORDER BY rowid").all(caseId).map(row => JSON.parse(String(row.payload)));

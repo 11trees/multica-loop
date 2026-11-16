@@ -8,6 +8,8 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { repairHandoffTargetSchema,handoffProposalSchema,handoffReadySchema,handoffApplicationSchema,handoffHash } from "./repair-handoff";
+import {repairBusinessProgressSchema} from "./repair-progress";
+import {draftSchema} from "./runtime";
 import { readRepairWorkspaceVersion } from "./repair-workspace-version";
 import { hostHandoffReservationFixture } from "./test-helpers/repair-handoff-fixture";
 import { EngineeringTeamStore } from "./team-store";
@@ -286,4 +288,49 @@ it("keeps dispatch held when the applied witness, candidate content or physical 
  await writeFile(join(repository,"late-candidate.txt"),"Candidate changed after verification");await expect(invoke(host,"repair-handoff-ready",application)).rejects.toThrow(/content changed/);await rm(join(repository,"late-candidate.txt"));
  const db=new DatabaseSync(database);db.prepare("INSERT INTO engineering_process VALUES(?,?,?,?,?,?)").run(randomUUID(),human.workspaceId,human.issueId,owner.attemptId,"launching","{}");
  await expect(invoke(host,"repair-handoff-ready",application)).rejects.toThrow(/physical exit/);expect(db.prepare("SELECT count(*) AS n FROM engineering_repair_dispatch").get()!.n).toBe(0);expect(await invoke(host,"execution-permission")).toEqual({allowed:false});db.close();
+});
+async function recoveredProgress(kind:"direct"|"verification"){
+ if(kind==="direct"){await direct();await invoke(owner,"direct-run");}else{await invoke(human,"configure",{expected_revision:0,agent_id:agentId,repository_path:repository,sources:[{key:"original",kind:"acceptance",description:"Original entry",oracle:"Title remains visible",sourceRef:"README.md"}]});await invoke({...owner,kind:"daemon"},"bind",{work_dir:repository,mode:"in_place",overlays:[]});await invoke(owner,"start");}
+ await invoke(owner,"intervention-request",body);const target=await handoffTarget(),reservation=hostHandoffReservationFixture(target,await invoke(host,"repair-handoff-prepare",target)),application=handoffApplicationSchema.parse(await invoke(host,"repair-handoff-stage",reservation)),ready=handoffReadySchema.parse(await invoke(host,"repair-handoff-ready",application));
+ const successor={...owner,attemptId:`${ready.continuation.task_id}:999999`},daemon={...successor,kind:"daemon" as const},pin={target_hash:ready.target_hash,application_hash:ready.application_hash,ready_hash:ready.hash};
+ expect(await invoke(host,"repair-business-progress",pin)).toEqual({progress:null});await invoke(daemon,"bind",{work_dir:repository,mode:"in_place",overlays:[]});
+ expect(await invoke(host,"repair-business-progress",pin)).toEqual({progress:null});
+ return {successor,daemon,pin,application,ready};
+}
+async function finishRecoveredVerification(successor:ApplicationRequest["actor"]){
+ let state=z.object({draft:draftSchema}).parse(await invoke(successor,"start"));const command=async(command:unknown)=>{state=z.object({draft:draftSchema}).parse(await invoke(successor,"command",{expected_sequence:state.draft.sequence,command}));};
+ await command({type:"phase.complete"});await command({type:"artifact.put",ref:"verification.scenarios",key:"original",content:"channel: frontend\ntitle: Reader visible\nsetup: Open reader\nsteps: Reload reader\nexpected: Title remains visible\ncoverageRefs: [original]"});await command({type:"phase.complete"});await command({type:"artifact.put",ref:"verification.results",key:"original",content:"status: passed\nevidence: Controlled reader observation"});await command({type:"phase.complete"});await command({type:"artifact.put",ref:"verification.evidence-review",content:"summary: Compared new observations against the frozen Expected"});await command({type:"phase.complete"});await command({type:"phase.complete"});return state.draft;
+}
+for(const kind of ["direct","verification"] as const)it(`observes only the new normally applied ${kind} result and retains its immutable proof across restart`,async()=>{
+ const h=await recoveredProgress(kind);await expect(invoke(h.successor,"repair-business-progress",h.pin)).rejects.toThrow(/native host/);
+ if(kind==="direct"){await invoke(h.successor,"direct-run");expect(await invoke(host,"repair-business-progress",h.pin)).toEqual({progress:null});await invoke(h.successor,"direct-submit",{summary:"New ordinary recovered result"});}else await finishRecoveredVerification(h.successor);
+ const first=z.object({progress:repairBusinessProgressSchema}).parse(await invoke(host,"repair-business-progress",h.pin));expect(first.progress).toMatchObject({applied:true,attempt_id:h.successor.attemptId,task_id:h.ready.continuation.task_id,chain:kind,application_hash:h.application.hash});expect(first.progress.result_hash).toMatch(/^[a-f0-9]{64}$/);
+ app.close();app=new EngineeringApplication(database,definition);expect(await invoke(host,"repair-business-progress",h.pin)).toEqual(first);
+ const db=new DatabaseSync(database);expect(db.prepare("SELECT payload FROM engineering_repair_business_progress").get()!.payload).toBe(JSON.stringify(first.progress));
+ if(kind==="direct"){db.prepare("UPDATE direct_contract SET payload=json_set(payload,'$.result.summary','Forged result')").run();await expect(invoke(host,"repair-business-progress",h.pin)).rejects.toThrow(/result changed/);}
+ else{db.prepare("UPDATE chain_drafts SET payload=json_set(payload,'$.events[#-1].command','phase.rewind') WHERE id=?").run(first.progress.draft_id);await expect(invoke(host,"repair-business-progress",h.pin)).rejects.toThrow(/ordinary completion event/);}
+ expect(db.prepare("SELECT payload FROM engineering_repair_business_progress").get()!.payload).toBe(JSON.stringify(first.progress));db.close();
+});
+it("retains observation while this recovery's provider exit is unknown and allows later normal work on the same issue",async()=>{
+ const h=await recoveredProgress("direct");await invoke(h.successor,"direct-run");await invoke(h.successor,"direct-submit",{summary:"New result"});const db=new DatabaseSync(database),id=randomUUID();
+ db.prepare("INSERT INTO engineering_process VALUES(?,?,?,?,?,?)").run(id,human.workspaceId,human.issueId,h.successor.attemptId,"launching","{}");expect(await invoke(host,"repair-business-progress",h.pin)).toEqual({progress:null});db.prepare("UPDATE engineering_process SET status='exited' WHERE allocation_id=?").run(id);
+ db.prepare("INSERT INTO engineering_process VALUES(?,?,?,?,?,?)").run(randomUUID(),human.workspaceId,human.issueId,`${randomUUID()}:777777`,"running","{}");expect(await invoke(host,"repair-business-progress",h.pin)).toMatchObject({progress:{applied:true,attempt_id:h.successor.attemptId}});db.close();
+});
+it("refuses a completed draft before its normal owner applies the result",async()=>{
+ const h=await recoveredProgress("verification");await finishRecoveredVerification(h.successor);const db=new DatabaseSync(database),root=String(db.prepare("SELECT payload FROM engineering_contract").get()!.payload),value=JSON.parse(root);delete value.verificationExecution;db.prepare("UPDATE engineering_contract SET payload=?").run(JSON.stringify(value));
+ expect(await invoke(host,"repair-business-progress",h.pin)).toEqual({progress:null});expect(db.prepare("SELECT count(*) AS n FROM engineering_repair_business_progress").get()!.n).toBe(0);db.prepare("UPDATE engineering_contract SET payload=?").run(root);expect(await invoke(host,"repair-business-progress",h.pin)).toMatchObject({progress:{applied:true}});db.close();
+});
+it("observes the actual replacement claim after a pre-result native reclaim of the same recovery task",async()=>{
+ const h=await recoveredProgress("direct"),replacement={...h.successor,attemptId:`${h.ready.continuation.task_id}:1000000`},db=new DatabaseSync(database),id=randomUUID();
+ db.prepare("INSERT INTO engineering_process VALUES(?,?,?,?,?,?)").run(id,human.workspaceId,human.issueId,h.successor.attemptId,"launching","{}");await expect(invoke({...replacement,kind:"daemon"},"bind",{work_dir:repository,mode:"in_place",overlays:[]})).rejects.toThrow(/physical exit/);db.prepare("UPDATE engineering_process SET status='exited' WHERE allocation_id=?").run(id);
+ await invoke({...replacement,kind:"daemon"},"bind",{work_dir:repository,mode:"in_place",overlays:[]});await invoke(replacement,"direct-run");await invoke(replacement,"direct-submit",{summary:"Actual replacement result"});expect(await invoke(host,"repair-business-progress",h.pin)).toMatchObject({progress:{attempt_id:replacement.attemptId,task_id:h.ready.continuation.task_id}});expect(db.prepare("SELECT attempt_id FROM engineering_repair_dispatch").get()!.attempt_id).toBe(replacement.attemptId);db.close();
+});
+it("permanently rejects a recovery writer that read before native claim replacement",async()=>{
+ const h=await recoveredProgress("verification"),old=z.object({draft:draftSchema}).parse(await invoke(h.successor,"start")).draft,replacement={...h.successor,attemptId:`${h.ready.continuation.task_id}:1000001`},drafts=new SqliteDraftStore(database);
+ try{
+  await invoke({...replacement,kind:"daemon"},"bind",{work_dir:repository,mode:"in_place",overlays:[]});
+  await expect(drafts.save({...old,sequence:old.sequence+1},old.sequence)).rejects.toThrow(/Draft changed/);await expect(invoke(h.successor,"command",{expected_sequence:old.sequence,command:{type:"phase.complete"}})).rejects.toThrow(/claim was replaced/);await expect(invoke({...h.successor,kind:"daemon"},"bind",{work_dir:repository,mode:"in_place",overlays:[]})).rejects.toThrow(/claim was replaced/);
+  await expect(invoke({...h.successor,kind:"daemon"},"process",{operation:"reserve",allocation_id:randomUUID(),runtime_id:randomUUID(),host_id:"retired-native",provider:"codex"})).rejects.toThrow(/Surrendered/);
+  await finishRecoveredVerification(replacement);expect(await invoke(host,"repair-business-progress",h.pin)).toMatchObject({progress:{attempt_id:replacement.attemptId}});
+ }finally{drafts.close();}
 });

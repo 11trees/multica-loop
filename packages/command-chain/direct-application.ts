@@ -7,6 +7,7 @@ import type { ApplicationRequest } from "./application";
 import { directInstructions, directResult } from "./direct";
 import { git, repositoryBranch, repositoryCommonDirectory, repositorySnapshot } from "./repository";
 import { DraftConflictError } from "./runtime";
+import type {InterventionRecord} from "./intervention-store";
 import type { HandoffReservation, HandoffRootChange } from "./repair-handoff";
 
 const text = z.string().trim().min(1);
@@ -56,6 +57,11 @@ export class DirectApplication {
     const c=reservation.continuation,record=this.current(c.workspace_id,c.issue_id);
     if(!record||record.version+1!==c.expected_sequence||record.activeAttemptId!==reservation.fence.source_attempt_id||record.result||record.nativeCompleted)throw new DraftConflictError("Direct source changed before staging recovery");
     return {payload:JSON.stringify(recordSchema.parse({...record,version:record.version+1,initialCommit:reservation.expected_version.split(":")[1],activeAttemptId:undefined}))};
+  }
+  repairAppliedResult(original:InterventionRecord,attemptId:string){
+    const record=this.current(original.workspaceId,original.issueId);if(!record?.result)return undefined;
+    const result=this.result(record);if(record.contractHash!==z.object({direct:z.object({contract_hash:text})}).parse(original.snapshot).direct.contract_hash||record.agentId!==original.agentId||result.attemptId!==attemptId||record.activeAttemptId!==attemptId)throw new DraftConflictError("Recovery result belongs to another Direct execution");
+    return {id:result.id,hash:result.hash,event:{command:"direct-submit",attemptId,resultId:result.id,submittedAt:result.submittedAt}};
   }
   private save(record: Record) {
     const expected = record.version;

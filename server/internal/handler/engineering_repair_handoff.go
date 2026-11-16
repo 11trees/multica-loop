@@ -19,6 +19,7 @@ type engineeringHandoffContext struct {
 	Preparation           *engineeringHandoffPreparation `json:"preparation"`
 	Reservation           *engineeringHandoffReservation `json:"reservation"`
 	Application           json.RawMessage                `json:"application"`
+	Publication           *engineeringHandoffPublished   `json:"publication"`
 }
 
 type engineeringHandoffPreparation struct {
@@ -47,6 +48,8 @@ func (h *Handler) controlEngineeringRepair(ctx context.Context, raw json.RawMess
 		return h.runEngineeringRepairHandoff(ctx, raw, true)
 	case "stage-handoff":
 		return h.stageEngineeringRepairHandoff(ctx, raw)
+	case "observe-handoff":
+		return h.observeEngineeringRepairHandoff(ctx, raw)
 	case "publication-status":
 		return h.engineeringRepairPublicationStatus(ctx, raw)
 	case "publish-handoff":

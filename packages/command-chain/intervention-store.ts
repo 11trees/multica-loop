@@ -25,6 +25,7 @@ export function initializeInterventions(db: DatabaseSync) {
     PRIMARY KEY(workspace_id,issue_id,attempt_id));
     CREATE TABLE IF NOT EXISTS engineering_intervention_delivery(observation_id TEXT PRIMARY KEY,case_id TEXT NOT NULL,snapshot_hash TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS engineering_repair_dispatch(target_hash TEXT PRIMARY KEY,observation_id TEXT NOT NULL UNIQUE,workspace_id TEXT NOT NULL,issue_id TEXT NOT NULL,task_id TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN ('ready','active')),payload TEXT NOT NULL,attempt_id TEXT);
+    CREATE TABLE IF NOT EXISTS engineering_repair_retired_claim(workspace_id TEXT NOT NULL,issue_id TEXT NOT NULL,attempt_id TEXT NOT NULL,target_hash TEXT NOT NULL,PRIMARY KEY(workspace_id,issue_id,attempt_id));
     CREATE VIEW IF NOT EXISTS engineering_intervention_pending AS SELECT original.* FROM engineering_intervention original WHERE NOT EXISTS(SELECT 1 FROM engineering_repair_dispatch dispatch WHERE dispatch.observation_id=json_extract(original.payload,'$.observationId') AND dispatch.state='active')`);
 }
 
@@ -40,6 +41,7 @@ export class InterventionStore {
     return row ? this.parse(row.payload) : undefined;
   }
   original(workspaceId:string,issueId:string,observationId:string){const row=this.db.prepare("SELECT payload FROM engineering_intervention WHERE workspace_id=? AND issue_id=? AND json_extract(payload,'$.observationId')=?").get(workspaceId,issueId,observationId);return row?this.parse(row.payload):undefined;}
+  retired(workspaceId:string,issueId:string,attemptId:string){return !!this.db.prepare("SELECT 1 FROM engineering_repair_retired_claim WHERE workspace_id=? AND issue_id=? AND attempt_id=?").get(workspaceId,issueId,attemptId);}
   private parse(payload: unknown) {
     const record = recordSchema.parse(JSON.parse(String(payload)));
     const { receiptHash, ...original } = record;

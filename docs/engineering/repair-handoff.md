@@ -9,8 +9,8 @@ ready business checkpoint; the Case enters observation rather than closure.
 
 ## Verified management context
 
-Management schema 12 retains preparation, reservation and application ledgers and
-adds `admin_handoff_publication`. The host reads `handoff-pending` only
+Management schema 13 retains preparation, reservation, application and publication
+ledgers and adds `admin_business_progress`. The host reads `handoff-pending` only
 under current running intent and obtains `handoff-context` with management
 authority. Agent commands expose neither action. A display status alone is
 insufficient: context recompiles the entire ordered native receipt, compares its
@@ -196,12 +196,65 @@ or re-enqueue a terminal one. Native and Node hash the same length-prefixed UTF-
 ready/publication fields. Management saves its exact immutable envelope and moves
 the Case to `observing`. Restart and supervisor replacement retain that receipt.
 
+## Ordinary result observation and Case closure
+
+Independent discovery polls `handoff-observing` under current management authority
+and running intent, then calls private `observe-handoff`. Observation reads the
+already acknowledged immutable native publication. It does not repeat staging
+against a root that ordinary work has advanced.
+
+The native host requires the fixed task to have an actual completed timestamp
+and dispatch claim. It rechecks issue/workspace/project, publication and reservation
+identity, absence of a new project fence/reservation, and the exact claim's
+controllers and process-exit receipts through the native cleanup rules. Other
+ordinary tasks may already be running; they cannot substitute for this task's
+facts and do not prevent its completed result from being observed. Cancelled,
+running, unclaimed or physically unfinished tasks remain observing.
+
+Host-only `repair-business-progress` revalidates immutable application lineage,
+original drafts/bindings, frozen Team and task-specific readiness. It requires
+this grant's authenticated bound claim, its actual repository binding and scoped
+physical exit, without an active intervention. Direct needs its explicit,
+immutable RUN/SUBMIT result. YAML needs the exact successor draft, frozen contract
+and definition, new attempt and sequence, and a terminal ordinary `phase.complete`
+event. The corresponding business, requirement, Feedback or engineering owner
+must also have applied its normal result. A completed draft before owner
+settlement is insufficient. Saved conclusions, independent results, reports and
+captured command receipts are recompiled or compared against their owner facts;
+ordinary work may already have moved the current role or removed its worktree.
+This observes an accepted historical result, not current repository delivery.
+
+The business worker saves immutable `engineering_repair_business_progress` for
+the target. A native reclaim before application keeps the stable task ID but
+binds the new actual claim only after the previous claim's physical exit. It
+records `engineering_repair_retired_claim` and rejects old commands, delayed
+draft writes, runtime binds and process reservations; physical exit recording
+remains available. Applied progress cannot be reassigned to another claim.
+
+The native observation envelope binds business result/event hashes to the exact
+completed task, claim, publication and controller/process fact hash. Management
+checks that envelope against the fully recompiled verified context and all
+original observations, then stores `admin_business_progress` while the Case stays
+`observing`. The host reads native and business facts again. Only an identical
+fresh envelope can call private `handoff-close`; management rechecks current
+supervision, running intent, original coverage, physical settlement and exact
+saved progress before entering `closed`. Interrupted progress acknowledgement
+replays the same receipt. Closure acknowledgement loss retains the committed
+closed Case. New original facts requeue the Case without deleting old proof.
+
+These host operations do not advance a workflow phase, create more tasks or
+mark an issue Done. Business specification/report reading and all ordinary
+independent delivery/Done gates remain required.
+
 ## Remaining recovery work
 
-Observe a new ordinary result application before closing the management Case.
-Publication or activation cannot satisfy a Team phase or native Done. Progress
-observation and closure remain unimplemented. Broader revocation, runtime/service
-identity and shared-path recovery retain their separate migration requirements.
+Observation of a normally applied recovery result and its guarded Case closure
+are connected. Automatic stall/failure/cohort-change observations for recovery
+that never produces such a result still require migration; waiting alone does
+not synthesize a successful result or close the Case. Broader revocation,
+runtime/service identity, external dependency and shared-path recovery retain
+their separate migration requirements. Real-provider and packaged recovery
+acceptance remain outstanding.
 
 ## Controlled evidence
 
@@ -263,5 +316,27 @@ the authenticated-bind boundary, keep other callers held before activation,
 complete Direct's ordinary RUN/SUBMIT, and reject old task/draft/process writes.
 Management tests retain `observing` across restart, refuse rehashed mismatched
 publication fields and preserve staged receipts during the schema-eleven upgrade.
-These are separate controlled layers; real-provider recovery and Case closure
-acceptance remain outstanding.
+These are separate controlled layers; real-provider recovery acceptance remains
+outstanding.
+
+Ordinary progress tests resume Direct and verification through real application
+commands and preserve their immutable proof across restart. All four business
+stages and requirement context/planning use their normal owner application after
+recovery; next-stage advancement does not lose the prior proof. Missing owner
+settlement, corrupted results/events, unfinished provider allocations and retired
+native claims are refused. A scoped later run on the same issue does not replace
+or block the observed result. Late draft writes are rejected even before the new
+claim resumes the draft. These business-store tests use synthetic host repair
+proofs, not a complete provider-driven recovery.
+
+PostgreSQL/private socket observation tests use simulated management/business
+ports and real task/claim/controller/cleanup rows. They cover queued/running or
+cancelled work, absent results, unknown physical cleanup, changed claims/results,
+stop between observation and closure, new fences/reservations, later ordinary
+work and lost progress/closure acknowledgements. Management tests separately
+require saved plus freshly matching progress, retain closed proof over restart,
+refuse mismatched rehashed scopes and stale supervisors, and requeue new originals.
+The schema-twelve upgrade preserves publications and leaves the new progress
+ledger empty. Shared UTF-8 witnesses check native/Node result and cleanup hashes.
+These layers establish controlled observation/closure behavior; they do not
+establish a real-provider or packaged end-to-end recovery acceptance run.

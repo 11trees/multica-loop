@@ -31,16 +31,24 @@ export function reservedRepairProposal(db:DatabaseSync,raw:HandoffReservation,or
  if(JSON.stringify(team??null)!==JSON.stringify(proposal.teamBinding))throw new DraftConflictError("Frozen task Team changed before recovery activation");
  return proposal;
 }
-export function readStagedRepair(db:DatabaseSync,original:InterventionRecord){
+export function readRepairApplication(db:DatabaseSync,original:InterventionRecord){
  const row=db.prepare("SELECT payload FROM engineering_repair_handoff_application WHERE observation_id=?").get(original.observationId);if(!row)return undefined;
+ const delivery=db.prepare("SELECT case_id,snapshot_hash FROM engineering_intervention_delivery WHERE observation_id=?").get(original.observationId);
  const manifest=manifestSchema.parse(JSON.parse(String(row.payload))),a=manifest.application,proposal=reservedRepairProposal(db,manifest.reservation,original),checkpoint=proposal.checkpoint;
- if(a.target_hash!==proposal.targetHash||a.reservation_hash!==manifest.reservation.hash||a.preparation_hash!==manifest.reservation.preparation_hash||a.root_kind!==proposal.rootKind||a.source_payload_hash!==proposal.sourcePayloadHash||a.expected_version!==proposal.target.expectedVersion||JSON.stringify(a.continuation)!==JSON.stringify(proposal.continuation)||a.source_hash!==handoffHash(manifest.source)||a.sidecars_hash!==handoffHash(manifest.sidecars)||a.original_bindings_hash!==handoffHash(manifest.bindings)||JSON.stringify(originalBindings(db,original,proposal.rootKind))!==JSON.stringify(manifest.bindings)||handoffHash(repairRootPayload(db,a.root_kind,original.workspaceId,original.issueId))!==a.applied_payload_hash)throw new DraftConflictError("Staged recovery checkpoint or immutable lineage changed");
- for(const sidecar of manifest.sidecars){const saved=db.prepare("SELECT payload FROM engineering_feedback_batch WHERE workspace_id=? AND issue_id=? AND batch_id=?").get(original.workspaceId,original.issueId,sidecar.batchId);if(saved?.payload!==sidecar.after)throw new DraftConflictError("Staged Feedback checkpoint changed");}
+ if(delivery?.case_id!==proposal.target.caseId||delivery.snapshot_hash!==original.snapshotHash||a.target_hash!==proposal.targetHash||a.reservation_hash!==manifest.reservation.hash||a.preparation_hash!==manifest.reservation.preparation_hash||a.root_kind!==proposal.rootKind||a.source_payload_hash!==proposal.sourcePayloadHash||a.expected_version!==proposal.target.expectedVersion||JSON.stringify(a.continuation)!==JSON.stringify(proposal.continuation)||a.source_hash!==handoffHash(manifest.source)||a.sidecars_hash!==handoffHash(manifest.sidecars)||a.original_bindings_hash!==handoffHash(manifest.bindings)||JSON.stringify(originalBindings(db,original,proposal.rootKind))!==JSON.stringify(manifest.bindings))throw new DraftConflictError("Staged recovery checkpoint or immutable lineage changed");
  if(checkpoint.kind==="yaml"){
-  const saved=db.prepare("SELECT payload FROM chain_drafts WHERE id=?").get(checkpoint.draft.id),old=db.prepare("SELECT payload FROM chain_drafts WHERE id=?").get(checkpoint.originalDraftId);
-  if(a.draft_id!==checkpoint.draft.id||a.draft_hash!==handoffHash(checkpoint.draft)||!saved||handoffHash(draftSchema.parse(JSON.parse(String(saved.payload))))!==a.draft_hash||!old||JSON.stringify(draftSchema.parse(JSON.parse(String(old.payload))))!==JSON.stringify(z.object({draft:draftSchema}).parse(original.snapshot).draft))throw new DraftConflictError("Staged or surrendered draft changed");
+  const old=db.prepare("SELECT payload FROM chain_drafts WHERE id=?").get(checkpoint.originalDraftId);
+  if(a.draft_id!==checkpoint.draft.id||a.draft_hash!==handoffHash(checkpoint.draft)||!old||JSON.stringify(draftSchema.parse(JSON.parse(String(old.payload))))!==JSON.stringify(z.object({draft:draftSchema}).parse(original.snapshot).draft))throw new DraftConflictError("Staged or surrendered draft changed");
  }else if(a.draft_id!==null||a.draft_hash!==null)throw new DraftConflictError("Direct recovery cannot inherit a YAML checkpoint");
  return {manifest,proposal};
+}
+export function readStagedRepair(db:DatabaseSync,original:InterventionRecord){
+ const staged=readRepairApplication(db,original);if(!staged)return undefined;
+ const {manifest,proposal}=staged,a=manifest.application;
+ if(handoffHash(repairRootPayload(db,a.root_kind,original.workspaceId,original.issueId))!==a.applied_payload_hash)throw new DraftConflictError("Staged recovery checkpoint or immutable lineage changed");
+ for(const sidecar of manifest.sidecars){const saved=db.prepare("SELECT payload FROM engineering_feedback_batch WHERE workspace_id=? AND issue_id=? AND batch_id=?").get(original.workspaceId,original.issueId,sidecar.batchId);if(saved?.payload!==sidecar.after)throw new DraftConflictError("Staged Feedback checkpoint changed");}
+ if(proposal.checkpoint.kind==="yaml"){const saved=db.prepare("SELECT payload FROM chain_drafts WHERE id=?").get(proposal.checkpoint.draft.id);if(!saved||handoffHash(draftSchema.parse(JSON.parse(String(saved.payload))))!==a.draft_hash)throw new DraftConflictError("Staged or surrendered draft changed");}
+ return staged;
 }
 export function stagedPreparation(staged:NonNullable<ReturnType<typeof readStagedRepair>>){
  const p=staged.proposal,c=p.checkpoint;return handoffPreparationSchema.parse({prepared:true,hash:handoffHash(p),target_hash:p.targetHash,continuation:p.continuation,kind:c.kind,draft_id:c.kind==="yaml"?c.draft.id:null});

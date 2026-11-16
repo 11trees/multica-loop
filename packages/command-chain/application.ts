@@ -1,6 +1,7 @@
 import { initializeRepairHandoffs,prepareRepairHandoff } from "./repair-handoff-store";
 import { initializeRepairApplications, readStagedRepair, stagedPreparation, reservedRepairProposal, persistStagedRepair } from "./repair-stage-store";
-import { readyRepairDispatch,repairDispatchForTask,activateRepairDispatch } from "./repair-dispatch-store";
+import {initializeRepairProgress,readRepairProgress} from "./repair-progress-store";
+import { readyRepairDispatch,repairDispatchForTask,activateRepairDispatch,refreshRepairDispatchClaim } from "./repair-dispatch-store";
 import { repairHandoffTargetSchema, handoffReservationSchema, handoffApplicationSchema,handoffHash, type HandoffYamlCheckpoint, type HandoffRootChange } from "./repair-handoff";
 import { readRepairWorkspaceVersion } from "./repair-workspace-version";
 import { EngineeringTeamStore } from "./team-store";
@@ -36,7 +37,7 @@ const coordinator = z.strictObject({ kind: z.literal("coordinator") });
 const actor = z.discriminatedUnion("kind", [human, task, daemon, host, coordinator, teamManager]);
 export const applicationRequestSchema = z.strictObject({
   actor,
-  action: z.enum(["team-feedback-scope", "team-routing", "team-delivery-scope", "team-review", "team-lookup", "team-start", "team-profile", "team-bind", "team-binding", "execution-permission", "process", "process-scope", "intervention-request", "repair-handoff-prepare", "repair-handoff-stage", "repair-handoff-ready", "repair-workspace-version", "repair-source", "repair-observations", "repair-observation-ack", "configure-direct","direct-run","direct-submit","direct-scope","direct-completed","business-handoff","end-to-end-scope","business-scope","business-read","business-comment","business-comment-intent","business-comment-ack","business-comment-resolved","business-comment-protected","configure-business", "configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations", "verified-binding", "publication", "publication-ack", "delivery-policy", "activate-unit", "accept-unit", "parent-scope", "review-inputs", "configure-review", "review-ack", "begin-feedback", "cancel-feedback", "feedback-restored", "authorize-feedback-work", "prepare-feedback-verification", "prepare-feedback-report"]),
+  action: z.enum(["team-feedback-scope", "team-routing", "team-delivery-scope", "team-review", "team-lookup", "team-start", "team-profile", "team-bind", "team-binding", "execution-permission", "process", "process-scope", "intervention-request", "repair-handoff-prepare", "repair-handoff-stage", "repair-handoff-ready", "repair-business-progress", "repair-workspace-version", "repair-source", "repair-observations", "repair-observation-ack", "configure-direct","direct-run","direct-submit","direct-scope","direct-completed","business-handoff","end-to-end-scope","business-scope","business-read","business-comment","business-comment-intent","business-comment-ack","business-comment-resolved","business-comment-protected","configure-business", "configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations", "verified-binding", "publication", "publication-ack", "delivery-policy", "activate-unit", "accept-unit", "parent-scope", "review-inputs", "configure-review", "review-ack", "begin-feedback", "cancel-feedback", "feedback-restored", "authorize-feedback-work", "prepare-feedback-verification", "prepare-feedback-report"]),
   payload: z.unknown().optional(),
   host_version: z.string().optional(),
 });
@@ -119,6 +120,7 @@ export class EngineeringApplication {
     this.interventions = new InterventionStore(this.db,kernelVersion);
     initializeRepairHandoffs(this.db);
     initializeRepairApplications(this.db);
+    initializeRepairProgress(this.db);
     this.processes=new EngineeringProcessStore(this.db);
     this.drafts = new SqliteDraftStore(database);
     this.direct=new DirectApplication(this.db);
@@ -132,6 +134,20 @@ export class EngineeringApplication {
     this.db.exec("CREATE TABLE IF NOT EXISTS engineering_execution (workspace_id TEXT NOT NULL, issue_id TEXT NOT NULL, revision INTEGER NOT NULL, agent_id TEXT NOT NULL, attempt_id TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY (workspace_id, issue_id, revision, agent_id, attempt_id))");
   }
 
+  private repairAppliedResult(original:InterventionRecord,checkpoint:HandoffYamlCheckpoint,draft:ChainDraft,attemptId:string){
+    const record=this.revision(original.workspaceId,original.issueId,original.revision);if(!record)throw new DraftConflictError("Recovery engineering source disappeared");
+    const same=(contract:unknown)=>{if(JSON.stringify(contract)!==JSON.stringify(checkpoint.contract))throw new DraftConflictError("Applied recovery contract changed");};
+    if(record.analysis?.draftId===draft.id){same(record.analysis.contract);if(!record.analysis.handoff)return undefined;const result=compileAnalysisConclusion(draft,record.analysis.contract);if(JSON.stringify(result)!==JSON.stringify(record.analysis.conclusion))throw new DraftConflictError("Applied recovery analysis changed");return result;}
+    const execution=this.execution(record,{kind:"task",workspaceId:original.workspaceId,issueId:original.issueId,agentId:original.agentId,attemptId});
+    if(record.development?.draftId===draft.id){same(this.devContract(record));if(!record.development.handoff||!record.development.conclusion||!record.delivery)return undefined;
+      if(JSON.stringify(execution)!==JSON.stringify(record.delivery))throw new DraftConflictError("Applied recovery development runtime changed");
+      // Recompile the accepted run's saved review and captured commands; later work
+      // may already have changed its repository or removed its worktree.
+      const result=compileDevelopmentConclusion(draft,this.devContract(record),{...this.runtime(record),fingerprint:()=>draft.development!.reviewFingerprint!}),saved=z.object({commit:text}).passthrough().parse(record.development.conclusion),value={...result,commit:saved.commit};if(saved.commit!==record.contract.binding.codeVersion||JSON.stringify(value)!==JSON.stringify(record.development.conclusion))throw new DraftConflictError("Applied recovery development conclusion changed");return value;
+    }
+    if(record.draftId===draft.id){same(record.contract);if(!record.verificationExecution)return undefined;if(JSON.stringify(execution)!==JSON.stringify(record.verificationExecution))throw new DraftConflictError("Applied recovery verification runtime changed");return compileVerificationConclusion(draft,record.contract);}
+    throw new DraftConflictError("Recovery result has no engineering-owned application");
+  }
   private current(workspaceId: string, issueId: string): Record | undefined {
     const row = this.db.prepare("SELECT payload FROM engineering_contract WHERE workspace_id = ? AND issue_id = ? ORDER BY revision DESC LIMIT 1").get(workspaceId, issueId);
     return row ? recordSchema.parse(JSON.parse(String(row.payload))) : undefined;
@@ -566,6 +582,16 @@ export class EngineeringApplication {
       if (actor.kind !== "coordinator") throw new Error("Only the host can read pending Admin observations");
       return this.interventions.observations();
     }
+    if(action==="repair-business-progress"){
+      if(actor.kind!=="host")throw new Error("Only the native host can observe applied recovery results");
+      this.db.exec("BEGIN IMMEDIATE");try{
+        const result=readRepairProgress(this.db,actor,request.payload,(original,checkpoint,draft,attemptId,root)=>{
+          if(!checkpoint||!draft)return this.direct.repairAppliedResult(original,attemptId);
+          const applied=root==="business"?this.business.repairAppliedResult(original,checkpoint,draft):root==="requirement"?this.requirements.repairAppliedResult(original,checkpoint,draft):this.repairAppliedResult(original,checkpoint,draft,attemptId);
+          return applied?{id:`${draft.id}:${draft.sequence}`,hash:handoffHash(applied),event:draft.events.at(-1)}:undefined;
+        });this.db.exec("COMMIT");return result;
+      }catch(error){this.db.exec("ROLLBACK");throw error;}
+    }
     if(action==="repair-handoff-ready"){
       if(actor.kind!=="host")throw new Error("Only the native host can authorize the fixed repair dispatch");
       const application=handoffApplicationSchema.parse(request.payload),c=application.continuation;
@@ -707,6 +733,8 @@ export class EngineeringApplication {
     }
     let pending = this.interventions.pending(actor.workspaceId, actor.issueId);
     const surrendered = actor.kind === "task" || actor.kind === "daemon" ? this.interventions.surrendered(actor.workspaceId, actor.issueId, actor.attemptId) : undefined;
+    const retired=(actor.kind==="task"||actor.kind==="daemon")&&this.interventions.retired(actor.workspaceId,actor.issueId,actor.attemptId);
+    if(retired&&action!=="process")throw new DraftConflictError("Native execution claim was replaced; end execution");
     if(pending&&!surrendered&&(actor.kind==="task"||actor.kind==="daemon")){
       const dispatch=repairDispatchForTask(this.db,actor.workspaceId,actor.issueId,actor.attemptId.split(":")[0]!);
       if(dispatch?.state==="ready"&&dispatch.observationId===pending.observationId&&dispatch.ready.continuation.agent_id===actor.agentId){
@@ -714,9 +742,13 @@ export class EngineeringApplication {
         else if(actor.kind==="task"&&action==="selection")pending=undefined;
       }
     }
+    if(actor.kind==="daemon"&&action==="bind"){
+      const dispatch=repairDispatchForTask(this.db,actor.workspaceId,actor.issueId,actor.attemptId.split(":")[0]!);
+      if(dispatch?.state==="active"&&dispatch.attemptId!==actor.attemptId&&dispatch.attemptId&&this.db.prepare("SELECT 1 FROM engineering_process WHERE workspace_id=? AND issue_id=? AND attempt_id=? AND status<>'exited'").get(actor.workspaceId,actor.issueId,dispatch.attemptId))throw new DraftConflictError("Previous recovery claim has not confirmed physical exit");
+    }
     if(action==="process"){
       if(actor.kind!=="daemon")throw new Error("Only the native runtime can record physical process facts");
-      return this.processes.invoke({workspaceId:actor.workspaceId,issueId:actor.issueId,agentId:actor.agentId,attemptId:actor.attemptId},request.payload,!!pending || !!surrendered,actor.projectId);
+      return this.processes.invoke({workspaceId:actor.workspaceId,issueId:actor.issueId,agentId:actor.agentId,attemptId:actor.attemptId},request.payload,!!pending || !!surrendered || retired,actor.projectId);
     }
     if(action==="execution-permission"){
       if(actor.kind!=="host")throw new Error("Only the native host can inspect execution admission");
@@ -748,6 +780,7 @@ export class EngineeringApplication {
     if(action==="bind"&&actor.kind==="daemon"){
       const binding=z.object({bound:z.literal(true),repository_path:text}).parse(result),mode=z.object({mode:z.enum(["in_place","worktree"])}).parse(request.payload).mode;
       this.processes.bind({workspaceId:actor.workspaceId,issueId:actor.issueId,agentId:actor.agentId,attemptId:actor.attemptId},actor.projectId,binding.repository_path,mode);
+      refreshRepairDispatchClaim(this.db,actor);
     }
     if (actor.kind === "task" && ["read", "start", "direct-run"].includes(action)) this.interventions.viewed(actor, result);
     if (action === "overview" && pending) return { ...result, status: "waiting_for_intervention", intervention: this.interventions.view(pending) };
@@ -912,8 +945,8 @@ export class EngineeringApplication {
         .get(record.workspaceId, record.issueId, record.contract.binding.revision, actor.agentId, actor.attemptId);
       const identity = (value: Execution) => ({ ...value, overlays: value.overlays.map(({ hash: _hash, ...overlay }) => overlay).sort((a, b) => a.path.localeCompare(b.path)) });
       if (previous && JSON.stringify(identity(executionSchema.parse(JSON.parse(String(previous.payload))))) !== JSON.stringify(identity(execution))) throw new DraftConflictError("Execution binding changed; start a fresh runtime claim");
-      const changed=this.db.prepare("INSERT INTO engineering_execution (workspace_id, issue_id, revision, agent_id, attempt_id, payload) SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM engineering_contract WHERE workspace_id=? AND issue_id=? AND revision=? AND COALESCE(json_extract(payload,'$.repairEpoch'),0)=?) AND NOT EXISTS(SELECT 1 FROM engineering_intervention_pending WHERE workspace_id=? AND issue_id=?) ON CONFLICT(workspace_id, issue_id, revision, agent_id, attempt_id) DO UPDATE SET payload = excluded.payload")
-        .run(record.workspaceId, record.issueId, record.contract.binding.revision, actor.agentId, actor.attemptId, JSON.stringify(execution),record.workspaceId,record.issueId,record.contract.binding.revision,record.repairEpoch,record.workspaceId,record.issueId);
+      const changed=this.db.prepare("INSERT INTO engineering_execution (workspace_id, issue_id, revision, agent_id, attempt_id, payload) SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM engineering_contract WHERE workspace_id=? AND issue_id=? AND revision=? AND COALESCE(json_extract(payload,'$.repairEpoch'),0)=?) AND NOT EXISTS(SELECT 1 FROM engineering_intervention_pending WHERE workspace_id=? AND issue_id=?) AND NOT EXISTS(SELECT 1 FROM engineering_repair_retired_claim WHERE workspace_id=? AND issue_id=? AND attempt_id=?) ON CONFLICT(workspace_id, issue_id, revision, agent_id, attempt_id) DO UPDATE SET payload = excluded.payload")
+        .run(record.workspaceId, record.issueId, record.contract.binding.revision, actor.agentId, actor.attemptId, JSON.stringify(execution),record.workspaceId,record.issueId,record.contract.binding.revision,record.repairEpoch,record.workspaceId,record.issueId,actor.workspaceId,actor.issueId,actor.attemptId);
       if(changed.changes!==1)throw new DraftConflictError("Execution binding changed or surrendered execution");
       return { bound: true, repository_path: execution.repositoryPath };
     }

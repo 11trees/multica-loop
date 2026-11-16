@@ -33,8 +33,8 @@ export class SqliteDraftStore implements DraftStore {
   async save(draft: ChainDraft, expectedSequence: number): Promise<void> {
     const value = draftSchema.parse(draft);
     if (value.sequence !== expectedSequence + 1) throw new DraftConflictError("Invalid draft sequence");
-    const result = this.db.prepare("UPDATE chain_drafts SET sequence = ?, payload = ? WHERE id = ? AND sequence = ? AND NOT EXISTS (SELECT 1 FROM engineering_intervention WHERE draft_id=?) AND NOT EXISTS(SELECT 1 FROM engineering_intervention_pending WHERE workspace_id=? AND issue_id=?)")
-      .run(value.sequence, JSON.stringify(value), value.id, expectedSequence, value.id, value.binding.workspaceId, value.binding.issueId);
+    const result = this.db.prepare("UPDATE chain_drafts SET sequence = ?, payload = ? WHERE id = ? AND sequence = ? AND NOT EXISTS (SELECT 1 FROM engineering_intervention WHERE draft_id=?) AND NOT EXISTS(SELECT 1 FROM engineering_intervention_pending WHERE workspace_id=? AND issue_id=?) AND NOT EXISTS(SELECT 1 FROM engineering_repair_retired_claim WHERE workspace_id=? AND issue_id=? AND attempt_id=?)")
+      .run(value.sequence, JSON.stringify(value), value.id, expectedSequence, value.id, value.binding.workspaceId, value.binding.issueId,value.binding.workspaceId,value.binding.issueId,value.attemptId);
     if (result.changes !== 1) throw new DraftConflictError("Draft changed; reload before saving");
   }
 

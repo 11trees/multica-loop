@@ -136,7 +136,10 @@ passing/prepared/reserved/staged repair Case still holds its business fence.
 Task-specific readiness and atomic native publication now create the fixed task
 and release its exact fence together. Only that authenticated task can open its
 checkpoint on native bind. Publication acknowledgements replay the native ledger
-and enter `observing`; progress observation and Case closure remain unconnected.
+and enter `observing`. A host observer now requires a newly applied ordinary
+result, exact completed native claim and confirmed scoped cleanup, saves immutable
+progress and rereads it before closing. Ordinary workflow and Done gates remain
+independent. Recovery stall/failure/cohort-change sampling remains unconnected.
 See [the verification protocol](repair-verification.md).
 Diagnosis and external-wait prerequisites remain unconnected. No investigation
 receipt closes the Case or resumes business.
@@ -197,8 +200,9 @@ connected. Scoped registered-root write grants and host-recorded candidates now
 connect repair editing to verification. Isolated workspace/build actions,
 independent diagnosis, external dependency
 probes and runtime updates remain unconnected. Verified business handoff now
-connects controlled task publication and resume; progress observation and Case
-closure still require implementation. Real-provider, Linux runtime and packaged
+connects controlled task publication, resume, ordinary-result observation and
+guarded Case closure. Recovery stall/failure/cohort-change sampling still requires
+implementation. Real-provider, Linux runtime and packaged
 acceptance remain unverified. The complete migration stays active.
 
 
@@ -224,8 +228,9 @@ Inspection does not acquire the project fence, cancel a native task, confirm
 physical cleanup, validate the currently installed API/kernel version, or grant
 write authority. These facts must be freshly checked by the acquiring
 coordinator. Recorded local Codex draining and explicit registered-root write
-grants/candidate capture are connected. Isolated repair builds and verified
-business handoff remain incomplete; investigation may defer or
+grants/candidate capture are connected. Isolated repair builds remain incomplete.
+Controlled [verified business handoff](repair-handoff.md), ordinary-result
+observation and Case closure are connected; investigation may defer or
 request host preparation through the [verification input gate](repair-verification.md).
 
 
