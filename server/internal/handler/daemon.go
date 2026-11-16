@@ -23,6 +23,7 @@ import (
 	"github.com/multica-ai/multica/server/internal/analytics"
 	"github.com/multica-ai/multica/server/internal/auth"
 	"github.com/multica-ai/multica/server/internal/daemonws"
+	"github.com/multica-ai/multica/server/internal/engineering/roleguidance"
 	"github.com/multica-ai/multica/server/internal/events"
 	"github.com/multica-ai/multica/server/internal/integrations/lark"
 	"github.com/multica-ai/multica/server/internal/integrations/slack"
@@ -3147,6 +3148,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 			resp.EngineeringChain = role.Chain
 			resp.EngineeringRepository = role.Repository
 			resp.EngineeringCommit = role.Commit
+			resp.Agent.Instructions += "\n\n" + roleguidance.Instructions(role.Chain, role.ReportCorrection)
 			if role.Chain == "direct" {
 				resp.Agent.Instructions += "\n\n" + directRunInstruction
 			} else {

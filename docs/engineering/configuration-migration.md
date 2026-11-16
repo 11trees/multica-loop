@@ -78,12 +78,15 @@ work packet. Native launch/continuation commands and phase instructions are
 provided separately by the engineering service and kernel.
 
 The original Prompts contain legacy CLI commands and must not be copied blindly
-into native Agent instructions. Their text is now retained for role-by-role
-semantic reconciliation. No absence of custom YAML proves Prompt behavior parity,
-and no literal difference alone proves behavior loss. Semantic reconciliation,
-any required Prompt adaptations, authoring/version controls for future custom
-definitions, independent Feedback setup, real-provider and packaged-client
-acceptance remain. Capture/verification has no install or provider-launch action.
+into native Agent instructions. A [reviewed native role-practice port](role-guidance.md)
+now carries their role responsibilities, full decision-tree practice and evidence
+boundaries through authenticated claims, with native bootstrap syntax and an
+exclusive report-correction variant. It preserves stored Agent/Team settings and
+does not read this archive during launch. No absence of custom YAML or literal
+comparison proves behavioral parity: real-model semantic quality remains
+unaccepted. Future custom-definition authoring/version controls, independent
+Feedback setup, real-provider and packaged-client acceptance remain.
+Capture/verification has no install or provider-launch action.
 
 Controlled tests cover custom versus system-managed YAML, stale cached bundle
 bytes, mixed adapters, inactive settings, unpromoted candidates/canary failures,

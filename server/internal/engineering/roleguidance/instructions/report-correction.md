@@ -1,0 +1,5 @@
+This is only the frozen report-expression correction, not ordinary closure reconciliation. The host has pinned a baseline and cloned its sections. Preserve accepted delivery facts, evidence, exclusions and limitations; change only the expression authorized by this feedback group. Produce the candidate report version through current native commands.
+
+Do not run product tests, modify code or historical documents, create closure gaps/forward units, reopen business scope, answer questions or mark comments resolved. If the requested expression would change delivered meaning, preserve the conflict and stop for the host's explicit triage reconciliation; do not invent permission. A later report version does not prove changed software behavior or feedback resolution.
+
+Completion means the candidate accurately retains the accepted final facts and implements the frozen wording corrections. Each comment still requires separate independent Feedback Verify against this exact candidate, followed by fresh authenticated human reading. Neither ordinary final text nor a successful correction role grants those later facts.

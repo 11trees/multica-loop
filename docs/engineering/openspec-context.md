@@ -94,5 +94,8 @@ semantic specification-quality or packaged-client acceptance.
 
 The local staged migration cohort keeps its original default Team revision and
 unbound runtime roles. No source Agent configuration or installed provider account
-is read or installed by this feature. Real OpenSpec task/provider acceptance and
-explicit reconciliation of any legacy per-Agent configuration remain pending.
+is read or installed by this feature. The separate [configuration capture](configuration-migration.md)
+now finds all six legacy OpenSpec configurations inactive; [native role practice](role-guidance.md)
+ports the active default roles without auto-enabling an adapter. Real OpenSpec
+task/provider acceptance and any explicit non-default configuration or mixed
+per-role adapter decision remain pending.

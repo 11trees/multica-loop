@@ -220,3 +220,12 @@ its existing settings. Tasks retain the selected Team version; managed units
 inherit it. Each native role attempt freezes the exact daemon-bound directory
 and Markdown versions on its first authenticated checkpoint read. This does not
 add a task-level Agent/pack choice or import source configuration automatically.
+
+## Role practice at execution
+
+The frozen workflow selects the current role. Authenticated native claims now
+carry [versioned role practice](role-guidance.md) reviewed from the legacy roles,
+alongside the current native commands and phase work packet. This includes full
+decision-tree practice for decision roles and separate ordinary Review versus
+report-expression correction. It preserves workspace-authored Agent notes and
+stored Team definitions; tasks gain no additional configuration choice.
