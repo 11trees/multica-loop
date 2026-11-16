@@ -19,7 +19,7 @@ export async function captureWorkspace(root, { timeoutMs = 30000 } = {}) {
   if (!isAbsolute(root) || await realpath(root) !== root) throw new Error("Workspace root must be an existing canonical absolute directory");
   const controller = new AbortController(), timer = setTimeout(() => controller.abort(), timeoutMs);
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")));
-  Object.assign(env, { GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : "/dev/null", GIT_TERMINAL_PROMPT: "0" });
+  Object.assign(env, { GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : "/dev/null", GIT_TERMINAL_PROMPT: "0", GIT_NO_LAZY_FETCH: "1", GIT_ALLOW_PROTOCOL: "" });
   const git = args => new Promise((accept, reject) => execFile("git", ["--no-optional-locks", "--literal-pathspecs", "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", ...args], {
     cwd: root, env, signal: controller.signal, encoding: "buffer", maxBuffer: 32 * 1024 * 1024,
   }, (error, stdout) => error ? reject(new Error("Workspace Git inspection failed")) : accept(stdout)));

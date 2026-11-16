@@ -13,7 +13,7 @@ const within=(root,path)=>{const part=relative(root,path);return !part||!isAbsol
 const safePath=path=>typeof path==='string'&&path&&!isAbsolute(path)&&!path.includes('\0')&&!path.split('/').some(part=>['','.','..','.git'].includes(part.toLowerCase()));
 function git(root,args,input){
  const env=Object.fromEntries(Object.entries(process.env).filter(([key])=>!key.startsWith('GIT_')));
- Object.assign(env,{GIT_CONFIG_NOSYSTEM:'1',GIT_CONFIG_GLOBAL:'/dev/null',GIT_TERMINAL_PROMPT:'0',GIT_NO_LAZY_FETCH:'1',GIT_NO_REPLACE_OBJECTS:'1',GIT_LFS_SKIP_SMUDGE:'1'});
+ Object.assign(env,{GIT_CONFIG_NOSYSTEM:'1',GIT_CONFIG_GLOBAL:'/dev/null',GIT_TERMINAL_PROMPT:'0',GIT_NO_LAZY_FETCH:'1',GIT_ALLOW_PROTOCOL:'',GIT_NO_REPLACE_OBJECTS:'1',GIT_LFS_SKIP_SMUDGE:'1'});
  const supplied=input!==undefined&&input.length>0;
  return execFileSync('git',['--no-optional-locks','--literal-pathspecs','-c','core.fsmonitor=false','-c','core.hooksPath=/dev/null','-c','protocol.allow=never','-C',root,...args],{env,input:supplied?input:undefined,maxBuffer:128*1024*1024,stdio:[supplied?'pipe':'ignore','pipe','pipe']});
 }

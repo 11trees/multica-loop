@@ -70,3 +70,13 @@ test("baseline disables repository fsmonitor commands and inherited alternate Gi
   finally { if (prior === undefined) delete process.env.GIT_DIR; else process.env.GIT_DIR = prior; }
   await assert.rejects(captureWorkspace(join(root, "nested")), /working tree root/);
 });
+
+test("readonly workspace inspection refuses lazy fetch even when the repository enables an external transport",async t=>{
+ const {root,git}=await repository(t),tree=git('rev-parse','HEAD^{tree}').toString().trim(),marker=join(root,'unexpected-fetch'),transport=join(root,'fixture-transport');
+ await writeFile(transport,`#!/bin/sh\ntouch '${marker}'\nexit 1\n`);await chmod(transport,0o700);
+ git('config','core.repositoryformatversion','1');git('config','extensions.partialClone','fixture');git('config','remote.fixture.promisor','true');git('config','remote.fixture.url',`ext::${transport}`);git('config','protocol.ext.allow','always');
+ await rm(join(root,'.git/objects',tree.slice(0,2),tree.slice(2)));
+ await assert.rejects(captureWorkspace(root),/Git inspection failed/);await assert.rejects(readFile(marker),/ENOENT/);
+ const controlEnv={...process.env,GIT_CONFIG_GLOBAL:'/dev/null',GIT_CONFIG_NOSYSTEM:'1',GIT_TERMINAL_PROMPT:'0'};delete controlEnv.GIT_ALLOW_PROTOCOL;delete controlEnv.GIT_NO_LAZY_FETCH;
+ assert.throws(()=>execFileSync('git',['-C',root,'ls-tree','-r','HEAD'],{env:controlEnv,stdio:['ignore','pipe','pipe']}));assert.equal((await readFile(marker)).length,0);
+});
