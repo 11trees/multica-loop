@@ -97,7 +97,16 @@ func (c *LocalControlClient) Call(ctx context.Context, input any) (json.RawMessa
 		return nil, err
 	}
 	request.Header.Set("Authorization", "Bearer "+string(token))
-	response, err := (&http.Client{Transport: transport, Timeout: 20 * time.Second}).Do(request)
+	timeout := 20 * time.Second
+	var operation struct {
+		Action string `json:"action"`
+	}
+	if json.Unmarshal(body, &operation) == nil && operation.Action == "prepare-handoff" {
+		// Preparation includes two bounded 10-second content reads, plus native
+		// reconciliation and permission checks; keep room for both valid reads.
+		timeout = 40 * time.Second
+	}
+	response, err := (&http.Client{Transport: transport, Timeout: timeout}).Do(request)
 	if err != nil {
 		return nil, fmt.Errorf("engineering local control unavailable")
 	}

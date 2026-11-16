@@ -379,6 +379,10 @@ for(const checkpoint of ["context","planning","reproduction"] as const)it(`inspe
  await app.invoke({actor:sourceHost,action:"repair-observation-ack",payload:pin});
  expect(await app.invoke({actor:sourceHost,action:"repair-source",payload:pin})).toMatchObject({agent_id:agentId,attempt_id:owner.attemptId,chain:checkpoint,registered_repository_path:repository,execution_repository_path:repository,mode:"in_place"});
  const targets=originalRepairTargets([{...original,origin:"business",evidence:{original}}]);expect(targets.length).toBeGreaterThan(2);
+ await rm(join(repository,"drift.txt"));
+ const {hostHandoffTargetFixture}=await import("./test-helpers/repair-handoff-fixture"),targetProof=await hostHandoffTargetFixture(original,{workspaceId:human.workspaceId,issueId:human.issueId,projectId:owner.projectId,repositoryPath:repository,caseId:"REPAIR-requirement"});
+ expect(await app.invoke({actor:sourceHost,action:"repair-handoff-prepare",payload:targetProof})).toMatchObject({prepared:true,kind:"yaml",continuation:{agent_id:agentId,user_id:human.userId,reason:"repair_ready"}});
+ expect(await app.invoke({actor:sourceHost,action:"execution-permission"})).toEqual({allowed:false});
  const db=new DatabaseSync(database);db.prepare("DELETE FROM engineering_process_binding WHERE attempt_id=?").run(owner.attemptId);db.close();
  await expect(app.invoke({actor:sourceHost,action:"repair-source",payload:pin})).rejects.toThrow(/physical repository binding/);
 },20000);

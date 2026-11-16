@@ -81,7 +81,7 @@ A native task or an investigation invocation cannot use these management command
 
 ## Investigation and physical ownership
 
-The management database schema is version 8. It freezes one invocation generation,
+The management database schema is version 9. It freezes one invocation generation,
 session identity, runtime revision and recovery method per allocation. A durable
 fair queue rotates Cases, with at most one active investigation, independent
 preparation or native verification invocation globally.
@@ -122,7 +122,10 @@ original native source and prepares checks without Admin command credentials;
 its prepared plan does not authorize business completion. Another native
 generation executes the frozen checks, records actual exits and source/artifact
 facts, and compiles an immutable receipt after final native authorization and
-physical worker exit. A passing repair Case still holds its business fence.
+physical worker exit. [Verified handoff preparation](repair-handoff.md) recompiles
+that proof, rechecks native scope/content and freezes a proposed successor under
+the original Team and human. A passing/prepared repair Case still holds its
+business fence; no new business execution or Case closure is connected yet.
 See [the verification protocol](repair-verification.md).
 Diagnosis and external-wait prerequisites remain unconnected. No investigation
 receipt closes the Case or resumes business.

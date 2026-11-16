@@ -1,3 +1,4 @@
+import { repairHandoffTargetSchema,handoffPreparationSchema,handoffHash } from "./repair-handoff";
 import { independentCheckSchema, independentCheckResultSchema, independentCheckSteps, independentCheckPassed, compileIndependentReceipt, independentReceiptSchema } from "./repair-verification-receipt";
 import { authorizeRepairPlan, preparedRepairPlanSchema } from "./repair-verification-plan";
 import { originalRepairTargets, repairContentVersionSchema, repairVerificationInputHash, repairVerificationInputSchema } from "./repair-verification-input";
@@ -44,7 +45,8 @@ export function initializeAdminExecution(db: DatabaseSync, version: number) {
         db.exec("ALTER TABLE admin_control ADD COLUMN execution_supported INTEGER NOT NULL DEFAULT 0");
     if (version < 6) db.exec("DROP INDEX IF EXISTS admin_one_live_attempt");
     if(version<8) db.exec("UPDATE admin_case SET status='queued' WHERE current_attempt_id IS NULL AND status IN ('verifying','verification-prepared','verified')");
-    db.exec(`CREATE TABLE IF NOT EXISTS admin_repair_write(attempt_id TEXT PRIMARY KEY,payload TEXT NOT NULL);
+    db.exec(`CREATE TABLE IF NOT EXISTS admin_handoff_preparation(case_id TEXT NOT NULL,verification_attempt_id TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(case_id,verification_attempt_id));
+ CREATE TABLE IF NOT EXISTS admin_repair_write(attempt_id TEXT PRIMARY KEY,payload TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS admin_repair_candidate(attempt_id TEXT NOT NULL,receipt_key TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(attempt_id,receipt_key));
  CREATE TABLE IF NOT EXISTS admin_verification_check(attempt_id TEXT NOT NULL,ordinal INTEGER NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(attempt_id,ordinal));
  CREATE TABLE IF NOT EXISTS admin_verification_receipt(attempt_id TEXT PRIMARY KEY,payload TEXT NOT NULL);
@@ -274,7 +276,10 @@ export class AdminExecutionStore {
         throw new DraftConflictError("Native verification has no physically settled independent plan");
     }
     private executionBasis(claim:AdminClaim){
-        const attempt=this.current(claim),binding=attempt.verification;
+        return this.executionBasisFor(this.current(claim));
+    }
+    private executionBasisFor(attempt:Attempt){
+        const binding=attempt.verification;
         if(attempt.role!=="verification-execution"||!binding?.sourcePreparationAttemptId||!binding.planHash)throw new DraftConflictError("Invocation is not native independent check execution");
         const producer=this.read(binding.sourcePreparationAttemptId),source=this.verificationInput(binding.sourceRepairAttemptId),plan=this.verificationPlan(producer.attemptId);
         if(!source||source.hash!==binding.inputHash||producer.role!=="verification"||producer.caseId!==attempt.caseId||producer.status!=="completed"||producer.finishedAt===null||!plan||this.planHash(plan)!==binding.planHash||plan.inputHash!==source.hash)throw new DraftConflictError("Independent plan identity or physical source changed");
@@ -350,6 +355,36 @@ export class AdminExecutionStore {
         if(!prior){if(previous.length>=100)throw new DraftConflictError("Repair attempt exceeds 100 retained candidates");this.db.prepare("INSERT INTO admin_repair_candidate VALUES(?,?,?)").run(claim.attemptId,key,json(candidate));
             this.db.prepare("INSERT INTO admin_evidence VALUES(?,?,?,?)").run(claim.attemptId,body.evidenceKey,"change",json({nativeRepairCandidate:candidate,writeAuthorization:grant}));}
         return candidate;
+    });}
+    pendingHandoffs(authority:AdminAuthority){if(this.requireAuthority(authority).desired_intent!=="running")return [];return this.db.prepare("SELECT case_id FROM admin_case WHERE status='verified' AND current_attempt_id IS NULL ORDER BY updated_at,case_id").all().map(row=>({case_id:String(row.case_id)}));}
+    handoffContext(authority:AdminAuthority,caseId:string){
+        const control=this.requireAuthority(authority);
+        if(control.desired_intent!=="running")throw new DraftConflictError("Verified handoff requires current running intent");
+        const repair=this.db.prepare("SELECT status,current_attempt_id FROM admin_case WHERE case_id=?").get(caseId);
+        if(repair?.status!=="verified"||repair.current_attempt_id!==null)throw new DraftConflictError("Case has no settled verified handoff");
+        const row=this.db.prepare("SELECT payload FROM admin_attempt WHERE case_id=? ORDER BY rowid DESC LIMIT 1").get(caseId);
+        if(!row)throw new DraftConflictError("Verified handoff has no execution source");
+        const attempt=attemptSchema.parse(JSON.parse(String(row.payload))),basis=this.executionBasisFor(attempt),receipt=this.independentVerificationReceipt(attempt.attemptId),progress=this.progress(attempt.attemptId),request=this.takeover(attempt.attemptId);
+        if(attempt.status!=="completed"||attempt.finishedAt===null||!attempt.pid||!attempt.startMarker||!receipt?.passed||!receipt.workerExitConfirmed||!receipt.nativeScopeConfirmed||!request?.inspection||progress?.phase!=="owned"||progress.workspace_version!==basis.source.input.expectedVersion||progress.targets_hash!==basis.source.input.workspaceBinding.targetsHash||progress.workspace_root!==basis.source.input.workspaceBinding.workspaceRoot)throw new DraftConflictError("Handoff requires settled native verification and its exact owned source");
+        const sourceRepair=this.read(basis.source.input.sourceRepairAttemptId);
+        if(sourceRepair.role!=="investigation"||sourceRepair.status!=="completed"||sourceRepair.finishedAt===null||sourceRepair.submission?.outcome!=="verification-requested"||request.claim.attemptId!==attempt.attemptId)throw new DraftConflictError("Handoff repair source is not physically settled");
+        const ids=this.originalObservations(caseId).map(row=>String(row.observationId)).sort();
+        if(json(ids)!==json(basis.source.input.originalObservations.map(row=>row.observationId).sort()))throw new DraftConflictError("Handoff original coverage changed");
+        const checks=this.executionChecks(attempt.attemptId);
+        if(checks.some(check=>check.result?.workerPID!==attempt.pid||check.result?.workerMarker!==attempt.startMarker))throw new DraftConflictError("Handoff physical check identity changed");
+        const compiled=compileIndependentReceipt({attemptId:attempt.attemptId,sourcePreparationAttemptId:basis.sourcePreparationAttemptId,inputHash:basis.source.hash,planHash:basis.planHash,plan:basis.plan,checks,scopeConfirmed:true,workerExitConfirmed:true,nativeScopeConfirmed:true});
+        if(!compiled.passed||json(compiled)!==json(receipt))throw new DraftConflictError("Handoff verification receipt no longer compiles");
+        const target=repairHandoffTargetSchema.parse({caseId,verificationAttemptId:attempt.attemptId,sourceRepairAttemptId:basis.source.input.sourceRepairAttemptId,sourcePreparationAttemptId:basis.sourcePreparationAttemptId,receiptHash:handoffHash(receipt),inputHash:basis.source.hash,nativeCandidateHash:basis.source.nativeCandidateHash,planHash:basis.planHash,expectedVersion:basis.source.input.expectedVersion,workspaceBinding:basis.source.input.workspaceBinding,originalObservationIds:ids,observationId:request.observation_id,snapshotHash:request.snapshot_hash,sourceReceiptHash:request.inspection.receipt_hash});
+        const targetHash=handoffHash(target),saved=this.db.prepare("SELECT payload FROM admin_handoff_preparation WHERE case_id=? AND verification_attempt_id=?").get(caseId,attempt.attemptId),preparation=saved?handoffPreparationSchema.parse(JSON.parse(String(saved.payload))):null;
+        if(preparation&&preparation.target_hash!==targetHash)throw new DraftConflictError("Saved handoff preparation changed proof identity");
+        return {authority,intent_revision:attempt.intentRevision,current_intent_revision:control.intent_revision,request,target,target_hash:targetHash,preparation};
+    }
+    recordHandoffPreparation(authority:AdminAuthority,caseId:string,raw:unknown){const prepared=handoffPreparationSchema.parse(raw);return this.transaction(()=>{
+        const context=this.handoffContext(authority,caseId);
+        if(prepared.target_hash!==context.target_hash||prepared.continuation.workspace_id!==context.target.workspaceBinding.workspaceId||prepared.continuation.issue_id!==context.target.workspaceBinding.issueId)throw new DraftConflictError("Native handoff preparation belongs to another verified source");
+        const row=this.db.prepare("SELECT payload FROM admin_handoff_preparation WHERE case_id=? AND verification_attempt_id=?").get(caseId,context.target.verificationAttemptId);
+        if(row&&String(row.payload)!==json(prepared))throw new DraftConflictError("Native handoff preparation cannot be replaced");
+        if(!row)this.db.prepare("INSERT INTO admin_handoff_preparation VALUES(?,?,?)").run(caseId,context.target.verificationAttemptId,json(prepared));return prepared;
     });}
     private originalObservations(caseId: string) {
         return this.db.prepare("SELECT payload FROM admin_observation WHERE case_id=? AND origin<>'admin' ORDER BY rowid").all(caseId).map(row => JSON.parse(String(row.payload)));

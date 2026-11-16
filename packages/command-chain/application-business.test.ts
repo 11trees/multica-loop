@@ -217,6 +217,10 @@ for(const target of stageOrder)it(`retains the exact ${target} repair source and
  const targets=originalRepairTargets([observation]);
  expect(targets).toEqual(expect.arrayContaining([expect.objectContaining({targetRef:`${original.observationId}:original-input`,original:"Reader continues the selected item"})]));
  expect(targets.filter(item=>item.targetRef.includes(":upstream:"))).toHaveLength(stageOrder.indexOf(target));
+ await rm(join(repository,"observed-drift.md"));
+ const {hostHandoffTargetFixture}=await import("./test-helpers/repair-handoff-fixture"),targetProof=await hostHandoffTargetFixture(original,{workspaceId:human.workspaceId,issueId:human.issueId,projectId,repositoryPath:registered,caseId:"REPAIR-business"});
+ expect(await invoke(host,"repair-handoff-prepare",targetProof)).toMatchObject({prepared:true,kind:"yaml",continuation:{agent_id:roles[target],user_id:human.userId,reason:"repair_ready"}});
+ expect(await invoke(host,"execution-permission")).toEqual({allowed:false});
  const db=new DatabaseSync(database),row=db.prepare("SELECT payload FROM business_contract").get()!,changed=JSON.parse(String(row.payload));changed.activeDraftId=randomUUID();db.prepare("UPDATE business_contract SET payload=?").run(JSON.stringify(changed));db.close();
  await expect(invoke(host,"repair-source",pin)).rejects.toThrow(/checkpoint|unavailable/);
 },20000);

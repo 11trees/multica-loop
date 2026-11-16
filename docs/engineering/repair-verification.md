@@ -6,7 +6,8 @@ This migration connects submission, private host preparation, physical handoff,
 separate independent Test allocation, fresh source authorization, frozen check
 preparation and native check execution with physical receipts. Scoped
 [repair writes and candidate capture](repair-workspace.md) are connected;
-verified business handoff remains incomplete.
+verified business handoff remains incomplete; [preparation](repair-handoff.md)
+now records an intent and proposed successor without releasing business.
 
 ## Request and fresh candidate binding
 

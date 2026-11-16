@@ -1,3 +1,5 @@
+import { initializeRepairHandoffs,prepareRepairHandoff } from "./repair-handoff-store";
+import { repairHandoffTargetSchema } from "./repair-handoff";
 import { readRepairWorkspaceVersion } from "./repair-workspace-version";
 import { EngineeringTeamStore } from "./team-store";
 import { EngineeringProcessStore } from "./process-store";
@@ -32,7 +34,7 @@ const coordinator = z.strictObject({ kind: z.literal("coordinator") });
 const actor = z.discriminatedUnion("kind", [human, task, daemon, host, coordinator, teamManager]);
 export const applicationRequestSchema = z.strictObject({
   actor,
-  action: z.enum(["team-feedback-scope", "team-routing", "team-delivery-scope", "team-review", "team-lookup", "team-start", "team-profile", "team-bind", "team-binding", "execution-permission", "process", "process-scope", "intervention-request", "repair-workspace-version", "repair-source", "repair-observations", "repair-observation-ack", "configure-direct","direct-run","direct-submit","direct-scope","direct-completed","business-handoff","end-to-end-scope","business-scope","business-read","business-comment","business-comment-intent","business-comment-ack","business-comment-resolved","business-comment-protected","configure-business", "configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations", "verified-binding", "publication", "publication-ack", "delivery-policy", "activate-unit", "accept-unit", "parent-scope", "review-inputs", "configure-review", "review-ack", "begin-feedback", "cancel-feedback", "feedback-restored", "authorize-feedback-work", "prepare-feedback-verification", "prepare-feedback-report"]),
+  action: z.enum(["team-feedback-scope", "team-routing", "team-delivery-scope", "team-review", "team-lookup", "team-start", "team-profile", "team-bind", "team-binding", "execution-permission", "process", "process-scope", "intervention-request", "repair-handoff-prepare", "repair-workspace-version", "repair-source", "repair-observations", "repair-observation-ack", "configure-direct","direct-run","direct-submit","direct-scope","direct-completed","business-handoff","end-to-end-scope","business-scope","business-read","business-comment","business-comment-intent","business-comment-ack","business-comment-resolved","business-comment-protected","configure-business", "configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations", "verified-binding", "publication", "publication-ack", "delivery-policy", "activate-unit", "accept-unit", "parent-scope", "review-inputs", "configure-review", "review-ack", "begin-feedback", "cancel-feedback", "feedback-restored", "authorize-feedback-work", "prepare-feedback-verification", "prepare-feedback-report"]),
   payload: z.unknown().optional(),
   host_version: z.string().optional(),
 });
@@ -111,6 +113,7 @@ export class EngineeringApplication {
       PRIMARY KEY (workspace_id, issue_id, revision)
     )`);
     this.interventions = new InterventionStore(this.db,kernelVersion);
+    initializeRepairHandoffs(this.db);
     this.processes=new EngineeringProcessStore(this.db);
     this.drafts = new SqliteDraftStore(database);
     this.direct=new DirectApplication(this.db);
@@ -540,6 +543,31 @@ export class EngineeringApplication {
     if (action === "repair-observations") {
       if (actor.kind !== "coordinator") throw new Error("Only the host can read pending Admin observations");
       return this.interventions.observations();
+    }
+    if(action==="repair-handoff-prepare"){
+      if(actor.kind!=="host")throw new Error("Only the host can prepare verified repair handoff");
+      const target=repairHandoffTargetSchema.parse(request.payload),binding=target.workspaceBinding,pin={case_id:target.caseId,observation_id:target.observationId,snapshot_hash:target.snapshotHash};
+      if(binding.workspaceId!==actor.workspaceId||binding.issueId!==actor.issueId)throw new DraftConflictError("Handoff belongs to another native issue");
+      const source=z.object({source_attempt_id:text,snapshot_hash:text,workspace_root:text,workspace_version:text}).parse(await this.invoke({actor,action:"repair-workspace-version",payload:pin}));
+      if(source.source_attempt_id!==binding.sourceAttemptId||source.snapshot_hash!==target.snapshotHash||source.workspace_root!==binding.workspaceRoot||source.workspace_version!==target.expectedVersion)throw new DraftConflictError("Verified repair content changed before handoff");
+      const original=this.interventions.repairSource(actor.workspaceId,actor.issueId,pin);
+      if(!["direct","development"].includes(original.chain)||binding.mode==="worktree")snapshot(binding.workspaceRoot,true);
+      const direct=original.chain==="direct"?this.direct.current(actor.workspaceId,actor.issueId):undefined;
+      const business=direct?undefined:this.business.current(actor.workspaceId,actor.issueId),requirement=direct?undefined:this.requirements.current(actor.workspaceId,actor.issueId),engineering=direct||requirement||business?undefined:this.current(actor.workspaceId,actor.issueId);
+      const businessRole=business&&Object.values(business.roles).includes(original.agentId)&&["idea-context","business-design","requirement-spec","spec-review"].includes(original.chain);
+      const root=direct??(businessRole?business:requirement)??engineering;
+      if(!root)throw new DraftConflictError("Current handoff root is unavailable");
+      const kind=direct?"direct":businessRole?"business":requirement?"requirement":"engineering",table=kind==="direct"?"direct_contract":kind==="business"?"business_contract":kind==="requirement"?"requirement_contract":"engineering_contract";
+      const parentIssueId=engineering?.managedBy?.parentIssueId,teams=new EngineeringTeamStore(this.db),teamBinding=teams.binding(actor.workspaceId,parentIssueId??actor.issueId);
+      this.db.exec("BEGIN IMMEDIATE");try{
+        await this.invoke({actor,action:"repair-source",payload:pin});
+        const row=this.db.prepare(`SELECT payload FROM ${table} WHERE workspace_id=? AND issue_id=? ORDER BY ${kind==="direct"?"version":"revision"} DESC LIMIT 1`).get(actor.workspaceId,actor.issueId);
+        if(!row)throw new DraftConflictError("Handoff root disappeared");
+        const currentRoot=z.object({createdBy:z.uuid()}).parse(JSON.parse(String(row.payload)));
+        if(currentRoot.createdBy!==root.createdBy)throw new DraftConflictError("Handoff human authority changed");
+        const result=prepareRepairHandoff(this.db,original,target,{kind,payload:String(row.payload),userId:root.createdBy,parentIssueId,teamBinding});
+        this.db.exec("COMMIT");return result;
+      }catch(error){this.db.exec("ROLLBACK");throw error;}
     }
     if (action === "repair-workspace-version") {
       if (actor.kind !== "host") throw new Error("Only the host can read an Admin repair workspace version");

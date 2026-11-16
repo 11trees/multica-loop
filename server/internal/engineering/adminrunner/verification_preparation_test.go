@@ -406,6 +406,16 @@ func TestIndependentTestPreparationUsesSeparateFixtureAndPreservesActualArtifact
 				t.Fatal("invalid native receipt")
 			}
 			if mode == "success" || mode == "repair-write" {
+				handoff := call(map[string]any{"action": "handoff-context", "authority": acquired.Authority, "case_id": execution.CaseID})
+				var verifiedTarget struct {
+					Target struct {
+						VerificationAttemptID string `json:"verificationAttemptId"`
+						ExpectedVersion       string `json:"expectedVersion"`
+					} `json:"target"`
+				}
+				if json.Unmarshal(handoff, &verifiedTarget) != nil || verifiedTarget.Target.VerificationAttemptID != execution.AttemptID || verifiedTarget.Target.ExpectedVersion != expected {
+					t.Fatal("actual native checks did not produce exact handoff eligibility", string(handoff))
+				}
 				if repairCase.Status != "verified" || !verdict.Passed || !verdict.WorkerExited || len(verdict.Checks) != 6 {
 					t.Fatal("actual native original checks did not pass", repairCase.Status, string(receipt))
 				}

@@ -6,6 +6,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, expect, it } from "vitest";
+import { z } from "zod";
+import { repairHandoffTargetSchema,handoffProposalSchema } from "./repair-handoff";
+import { readRepairWorkspaceVersion } from "./repair-workspace-version";
+import { EngineeringTeamStore } from "./team-store";
 import { EngineeringApplication, type ApplicationRequest } from "./application";
 import { SqliteDraftStore } from "./sqlite-store";
 import { interventionRequestSchema } from "./intervention-store";
@@ -157,4 +161,45 @@ it("retains distinct registered and execution paths after the surrendered worktr
   expect(await invoke(host,"repair-source",pin)).toMatchObject({registered_repository_path:repository,execution_repository_path:execution,mode:"worktree"});
   expect(await invoke(host,"repair-workspace-version",pin)).toMatchObject({workspace_root:repository,workspace_version:expect.stringMatching(/^workspace-content-v1:/)});
   expect(await invoke(host,"execution-permission")).toEqual({allowed:false});
+});
+
+async function handoffTarget(){
+ const [original]=z.array(z.object({observationId:z.string(),snapshotHash:z.string(),receiptHash:z.string(),attemptId:z.string()})).parse(await invoke({kind:"coordinator"},"repair-observations"));if(!original)throw new Error("Missing original fixture");
+ const pin={case_id:"REPAIR-verified",observation_id:original.observationId,snapshot_hash:original.snapshotHash};await invoke(host,"repair-observation-ack",pin);
+ const source=z.object({registered_repository_path:z.string(),execution_repository_path:z.string(),mode:z.enum(["in_place","worktree"])}).parse(await invoke(host,"repair-source",pin));
+ return repairHandoffTargetSchema.parse({caseId:pin.case_id,verificationAttemptId:"verified-native-checks",sourceRepairAttemptId:"repair",sourcePreparationAttemptId:"independent-test",receiptHash:"a".repeat(64),inputHash:"b".repeat(64),nativeCandidateHash:"c".repeat(64),planHash:"d".repeat(64),expectedVersion:await readRepairWorkspaceVersion(repository),workspaceBinding:{workspaceId:human.workspaceId,issueId:human.issueId,projectId,runtimeId:randomUUID(),workspaceRoot:source.registered_repository_path,executionPath:source.execution_repository_path,mode:source.mode,sourceAttemptId:original.attemptId,snapshotHash:original.snapshotHash,targetsHash:"e".repeat(64)},originalObservationIds:[original.observationId],observationId:original.observationId,snapshotHash:original.snapshotHash,sourceReceiptHash:original.receiptHash});
+}
+for(const kind of ["direct","yaml"] as const)it(`prepares a replayable ${kind} successor without changing the surrendered checkpoint`,async()=>{
+ if(kind==="direct"){await direct();await invoke(owner,"direct-run");}else{await invoke(human,"configure",{expected_revision:0,agent_id:agentId,repository_path:repository,sources:[{key:"original",kind:"acceptance",description:"Original entry",oracle:"Original observable behavior",sourceRef:"README.md"}]});await invoke({...owner,kind:"daemon"},"bind",{work_dir:repository,mode:"in_place",overlays:[]});await invoke(owner,"start");}
+ await invoke(owner,"intervention-request",body);
+ await writeFile(join(repository,"README.md"),"Repaired source after independent verification");execFileSync("git",["-C",repository,"add","README.md"]);execFileSync("git",["-C",repository,"commit","-qm","Repaired fixture"]);
+ const target=await handoffTarget();
+ const before=new DatabaseSync(database),original=before.prepare("SELECT payload FROM engineering_intervention").get()!.payload,root=before.prepare(`SELECT payload FROM ${kind==="direct"?"direct_contract":"engineering_contract"}`).get()!.payload;before.close();
+ const prepared=z.object({hash:z.string(),target_hash:z.string(),draft_id:z.string().nullable(),continuation:z.object({task_id:z.string(),agent_id:z.string(),user_id:z.string()})}).parse(await invoke(host,"repair-handoff-prepare",target));
+ expect(prepared.continuation).toMatchObject({agent_id:agentId,user_id:human.userId});expect(prepared.continuation.task_id).not.toBe(owner.attemptId.split(":")[0]);
+ app.close();app=new EngineeringApplication(database,definition);expect(await invoke(host,"repair-handoff-prepare",target)).toMatchObject(prepared);
+ const check=new DatabaseSync(database),saved=handoffProposalSchema.parse(JSON.parse(String(check.prepare("SELECT payload FROM engineering_repair_handoff").get()!.payload)));
+ expect(saved.checkpoint.kind).toBe(kind);expect(check.prepare("SELECT payload FROM engineering_intervention").get()!.payload).toBe(original);expect(check.prepare(`SELECT payload FROM ${kind==="direct"?"direct_contract":"engineering_contract"}`).get()!.payload).toBe(root);
+ if(saved.checkpoint.kind==="yaml"){expect(saved.checkpoint.draft.binding.codeVersion).toBe(target.expectedVersion.split(":")[1]);expect(saved.checkpoint.draft.id).not.toBe(saved.checkpoint.originalDraftId);expect(check.prepare("SELECT payload FROM chain_drafts WHERE id=?").get(saved.checkpoint.draft.id)).toBeUndefined();}
+ check.close();expect(await invoke(host,"execution-permission")).toEqual({allowed:false});expect(await invoke({kind:"coordinator"},"continuations")).toEqual([]);
+ await expect(invoke(owner,"repair-handoff-prepare",target)).rejects.toThrow(/Only the host/);
+ await writeFile(join(repository,"changed-after-preparation.txt"),"Changed candidate");await expect(invoke(host,"repair-handoff-prepare",target)).rejects.toThrow(/content changed/);
+ if(kind==="yaml")await expect(invoke(host,"repair-handoff-prepare",{...target,expectedVersion:await readRepairWorkspaceVersion(repository)})).rejects.toThrow(/uncommitted/);
+});
+it("prepares Direct recovery from the frozen Team even after a newer Team profile is saved",async()=>{
+ const teamId=randomUUID(),teamDb=new DatabaseSync(database),teams=new EngineeringTeamStore(teamDb);
+ const definition={workflow:"direct" as const,roles:{executor:agentId},decision_mode:"balanced" as const,max_reworks:0};teams.configure(human.workspaceId,teamId,human.userId,{expected_revision:0,definition});
+ await invoke(human,"team-start",{team_id:teamId,team_revision:1,project_id:projectId,input:"Original Team goal",repository_path:repository,execution_resources:[{path:repository,mode:"in_place"}]});
+ await invoke({...owner,kind:"daemon"},"bind",{work_dir:repository,mode:"in_place",overlays:[]});await invoke(owner,"direct-run");await invoke(owner,"intervention-request",body);
+ teams.configure(human.workspaceId,teamId,human.userId,{expected_revision:1,definition:{...definition,roles:{executor:randomUUID()}}});teamDb.close();const target=await handoffTarget();
+ expect(await invoke(host,"repair-handoff-prepare",target)).toMatchObject({continuation:{agent_id:agentId,user_id:human.userId}});
+ const check=new DatabaseSync(database),prepared=handoffProposalSchema.parse(JSON.parse(String(check.prepare("SELECT payload FROM engineering_repair_handoff").get()!.payload)));expect(prepared.teamBinding?.profile.revision).toBe(1);check.close();
+});
+
+it("preserves uncommitted in-place development while preparing its successor",async()=>{
+ const development=await readFile(new URL("./definitions/development.yaml",import.meta.url),"utf8");app.close();app=new EngineeringApplication(database,definition,development);
+ await invoke(human,"configure",{expected_revision:0,agent_id:randomUUID(),developer_agent_id:agentId,implementation_guidance:"Implement the original reader outcome",repository_path:repository,sources:[{key:"original",kind:"acceptance",description:"Original reader behavior",oracle:"Observe the original entry",sourceRef:"README.md"}]});
+ await invoke({...owner,kind:"daemon"},"bind",{work_dir:repository,mode:"in_place",overlays:[]});await invoke(owner,"start");await writeFile(join(repository,"partial-development.txt"),"Retain unfinished work");await invoke(owner,"intervention-request",body);
+ const target=await handoffTarget();expect(await invoke(host,"repair-handoff-prepare",target)).toMatchObject({prepared:true,kind:"yaml",continuation:{agent_id:agentId}});
+ expect(await readFile(join(repository,"partial-development.txt"),"utf8")).toBe("Retain unfinished work");expect(await invoke(host,"execution-permission")).toEqual({allowed:false});
 });

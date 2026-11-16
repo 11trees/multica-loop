@@ -285,3 +285,32 @@ it("rejects changed native candidate identity when reading a frozen verification
  const db=new DatabaseSync(filename),row=db.prepare("SELECT payload FROM admin_repair_candidate").get()!,candidate=JSON.parse(String(row.payload));candidate.body.version=version.replaceAll("b","d");db.prepare("UPDATE admin_repair_candidate SET payload=?").run(JSON.stringify(candidate));db.close();
  expect(()=>store.execution.verificationInput(h.claim.attemptId)).toThrow(/candidate receipt changed/);
 });
+
+async function settledHandoff(){const h=await nativeExecution(),claim=h.executor.claim;for(let ordinal=0;ordinal<h.input.targets.length+3;ordinal++){const step=store.execution.startIndependentCheck(claim,ordinal);store.execution.finishIndependentCheck(claim,{ordinal,result:h.result(step.kind)});}store.execution.compileIndependentVerification(claim,true,true);store.execution.finish(claim,{exit_confirmed:true,reason:"Trusted host confirmed physical worker exit"});return h;}
+it("prepares verified handoff identity only from the complete settled native receipt",async()=>{
+ const h=await settledHandoff();
+ const context=store.execution.handoffContext(h.authority,h.claim.caseId);
+ expect(context.target).toMatchObject({caseId:h.claim.caseId,verificationAttemptId:h.executor.claim.attemptId,sourceRepairAttemptId:h.claim.attemptId,expectedVersion:version,originalObservationIds:["first","second"]});
+ expect(context.request.claim.attemptId).toBe(h.executor.claim.attemptId);
+ expect(store.execution.pendingHandoffs(h.authority)).toEqual([{case_id:h.claim.caseId}]);
+ const prepared={prepared:true as const,hash:"f".repeat(64),target_hash:context.target_hash,continuation:{workspace_id:workspaceId,issue_id:issueId,agent_id:randomUUID(),user_id:randomUUID(),task_id:randomUUID(),expected_revision:1,expected_sequence:4,reason:"repair_ready" as const},kind:"yaml" as const,draft_id:randomUUID()};
+ expect(store.execution.recordHandoffPreparation(h.authority,h.claim.caseId,prepared)).toEqual(prepared);
+ expect(()=>store.execution.recordHandoffPreparation(h.authority,h.claim.caseId,{...prepared,hash:"e".repeat(64)})).toThrow(/cannot be replaced/);
+ store.close();store=new AdminStore(filename,()=>now);expect(store.execution.handoffContext(h.authority,h.claim.caseId)).toMatchObject({target_hash:context.target_hash,preparation:prepared});
+ expect(store.issue(workspaceId,issueId).status).toBe("verified");expect(store.execution.claim(h.authority)).toBeNull();
+ store.execution.setIntent({intent:"stopped",request_id:"stop-handoff"});expect(()=>store.execution.handoffContext(h.authority,h.claim.caseId)).toThrow(/running intent/);expect(store.execution.pendingHandoffs(h.authority)).toEqual([]);
+ now+=30001;const successor=store.acquireSupervisor("successor",30000,true)!;store.execution.setIntent({intent:"running",request_id:"resume-handoff"});
+ expect(()=>store.execution.handoffContext(h.authority,h.claim.caseId)).toThrow(/authority/);
+ expect(store.execution.handoffContext(successor,h.claim.caseId).target_hash).toBe(context.target_hash);
+});
+it("refuses handoff before physical settlement, after new originals or after receipt corruption",async()=>{
+ const h=await nativeExecution();expect(()=>store.execution.handoffContext(h.authority,h.claim.caseId)).toThrow(/settled verified/);
+});
+it("recompiles a settled receipt before preparing a native handoff",async()=>{
+ const h=await settledHandoff(),db=new DatabaseSync(filename),row=db.prepare("SELECT payload FROM admin_verification_receipt WHERE attempt_id=?").get(h.executor.claim.attemptId)!,receipt=JSON.parse(String(row.payload));receipt.checks[0].result.stdout="forged-version";db.prepare("UPDATE admin_verification_receipt SET payload=? WHERE attempt_id=?").run(JSON.stringify(receipt),h.executor.claim.attemptId);db.close();
+ expect(()=>store.execution.handoffContext(h.authority,h.claim.caseId)).toThrow(/no longer compiles/);
+});
+it("keeps previous native handoff preparation but invalidates readiness for new original facts",async()=>{
+ const h=await settledHandoff();store.execution.handoffContext(h.authority,h.claim.caseId);store.observe(h.authority,observation("after-handoff-preparation"));
+ expect(store.execution.pendingHandoffs(h.authority)).toEqual([]);expect(()=>store.execution.handoffContext(h.authority,h.claim.caseId)).toThrow(/settled verified/);
+});

@@ -21,7 +21,7 @@ func (h *Handler) StartEngineeringLocalControl(ctx context.Context) error {
 	if h.EngineeringWorker == nil {
 		return nil
 	}
-	return engineering.StartLocalControl(ctx, h.cfg.EngineeringDatabasePath+".control.sock", h.DrainEngineeringProject)
+	return engineering.StartLocalControl(ctx, h.cfg.EngineeringDatabasePath+".control.sock", h.controlEngineeringRepair)
 }
 
 type engineeringTakeoverCurrent struct {
@@ -81,6 +81,10 @@ func (h *Handler) engineeringTakeoverSource(ctx context.Context, claim json.RawM
 	if err = json.Unmarshal(data, &current); err != nil {
 		return pin, err
 	}
+	return h.engineeringSourceForCurrent(ctx, current)
+}
+func (h *Handler) engineeringSourceForCurrent(ctx context.Context, current engineeringTakeoverCurrent) (db.CreateEngineeringRepairFenceParams, error) {
+	var pin db.CreateEngineeringRepairFenceParams
 	request := current.Request
 	workspace, err := util.ParseUUID(request.WorkspaceID)
 	if err != nil {
