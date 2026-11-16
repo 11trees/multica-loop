@@ -4,6 +4,7 @@ import { constants, createReadStream } from "node:fs";
 import { chmod, copyFile, lstat, mkdir, readdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import {taskPacket,sealTaskPacket} from "./loopwork-task-packet.mjs";
 
 const format = "loopwork-history-archive-v1";
 const quote = (name) => `"${name.replaceAll('"', '""')}"`;
@@ -174,7 +175,7 @@ export async function browseArchive(archive, expectedHash, input) {
     db.exec("PRAGMA query_only=ON; PRAGMA trusted_schema=OFF");
     const source={hash:manifest.hash,commit:manifest.source.commit,captured_at:manifest.captured_at,name:"LoopWork"};
     if(input.action==="list") {
-      const projects=db.prepare("SELECT p.project_id AS id,p.name,p.workspace_root,COUNT(t.task_id) AS task_count,SUM(CASE WHEN t.task_id IS NOT NULL AND t.agile_status NOT IN ('done','cancelled') THEN 1 ELSE 0 END) AS unfinished_count FROM projects p LEFT JOIN tasks t ON t.project_id=p.project_id GROUP BY p.project_id ORDER BY p.name,p.project_id").all();
+      const projects=db.prepare("SELECT p.project_id AS id,p.name,p.workspace_root,p.deleted_at,COUNT(t.task_id) AS task_count,SUM(CASE WHEN t.task_id IS NOT NULL AND t.agile_status NOT IN ('done','cancelled') THEN 1 ELSE 0 END) AS unfinished_count FROM projects p LEFT JOIN tasks t ON t.project_id=p.project_id GROUP BY p.project_id ORDER BY p.name,p.project_id").all();
       const filters=[],params=[];
       if(input.project_id){filters.push("project_id=?");params.push(input.project_id);}
       if(input.search){filters.push("(instr(lower(title),lower(?))>0 OR instr(lower(task_id),lower(?))>0)");params.push(input.search,input.search);}
@@ -183,6 +184,7 @@ export async function browseArchive(archive, expectedHash, input) {
       const tasks=db.prepare(`SELECT task_id AS id,project_id,title,item_type,agile_status AS status,run_state,closure_status,updated_at FROM tasks ${where} ORDER BY updated_at DESC,task_id LIMIT ? OFFSET ?`).all(...params,limit,offset);
       return {historical_only:true,source,projects,tasks,total,offset,limit};
     }
+    if(input.action==="packet") return {historical_only:true,source,packet:sealTaskPacket(taskPacket(db,entry.summary.tables,input.task_id),source)};
     const task=db.prepare("SELECT task_id AS id,project_id,title,item_type,description,agile_status AS status,run_state,closure_status,current_subagent,next_step,blocked_reason,created_at,updated_at,completed_at FROM tasks WHERE task_id=?").get(input.task_id);
     if(!task)return input.action==="document"?{historical_only:true,source,document:null}:{historical_only:true,source,task:null,documents:[]};
     if(input.action==="task") {

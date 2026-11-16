@@ -1,4 +1,4 @@
-import {HistoryAvailabilitySchema,HistoryListSchema,HistoryTaskSchema,HistoryDocumentSchema,type HistoryList,type HistoryTask,type HistoryDocument} from "../history/schema";
+import {HistoryAvailabilitySchema,HistoryListSchema,HistoryTaskSchema,HistoryDocumentSchema,HistoryPacketSchema,type HistoryList,type HistoryTask,type HistoryDocument,type HistoryPacket} from "../history/schema";
 import { EngineeringTeamResponseSchema, type EngineeringTeamResponse, type TeamDefinition } from "../squads/engineering-schema";
 import { FeedbackCaptureSchema, FeedbackCancelledSchema, RequirementReviewConfiguredSchema, RequirementReviewAcknowledgedSchema, EngineeringDeliveryAuthorizationSchema, EngineeringPublicationSchema } from "../issues/engineering-schema";
 import type { ZodType } from "zod";
@@ -3110,6 +3110,7 @@ export class ApiClient {
   }
   async historyTask(workspaceId:string,id:string){const result=parseWithFallback<HistoryTask|null>(await this.fetch<unknown>(`/api/engineering/history/tasks/${encodeURIComponent(id)}`,{headers:workspaceHeader({workspaceId})}),HistoryTaskSchema,null,{endpoint:"GET /api/engineering/history/tasks/:id"});if(!result)throw new Error("Invalid historical task response");return result;}
   async historyDocument(workspaceId:string,taskId:string,documentId:string){const result=parseWithFallback<HistoryDocument|null>(await this.fetch<unknown>(`/api/engineering/history/tasks/${encodeURIComponent(taskId)}/documents/${encodeURIComponent(documentId)}`,{headers:workspaceHeader({workspaceId})}),HistoryDocumentSchema,null,{endpoint:"GET /api/engineering/history/tasks/:id/documents/:id"});if(!result)throw new Error("Invalid historical document response");return result;}
+  async historyPacket(workspaceId:string,taskId:string){const result=parseWithFallback<HistoryPacket|null>(await this.fetch<unknown>(`/api/engineering/history/tasks/${encodeURIComponent(taskId)}/packet`,{headers:workspaceHeader({workspaceId})}),HistoryPacketSchema,null,{endpoint:"GET /api/engineering/history/tasks/:id/packet"});if(!result||result.packet&&result.packet.source_task_id!==taskId)throw new Error("Invalid historical packet response");return result;}
 
   async startEngineeringTeam(issueId:string):Promise<void>{
     const raw=await this.fetch<unknown>(`/api/issues/${issueId}/engineering/team-start`,{method:"POST",body:JSON.stringify({})});

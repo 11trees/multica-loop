@@ -17,7 +17,7 @@ import (
 )
 
 func TestEngineeringHistoryLocalOwner(t *testing.T) {
-	for _, mode := range []string{"list", "task", "document", "machine", "cloud", "foreign-user", "foreign-workspace", "disabled", "missing-worker", "changed-hash", "not-historical", "bad-offset"} {
+	for _, mode := range []string{"list", "task", "document", "packet", "machine", "cloud", "foreign-user", "foreign-workspace", "disabled", "missing-worker", "changed-hash", "not-historical", "bad-offset"} {
 		t.Run(mode, func(t *testing.T) {
 			h := *testHandler
 			h.cfg.LocalAuthEnabled = true
@@ -30,6 +30,9 @@ func TestEngineeringHistoryLocalOwner(t *testing.T) {
 				}
 				if mode == "document" && (input["task_id"] != "原任务" || input["document_id"] != "原报告") {
 					t.Fatal("source IDs were rewritten")
+				}
+				if mode == "packet" && (input["task_id"] != "原任务" || input["action"] != "packet") {
+					t.Fatal("packet identity was rewritten")
 				}
 				hash := h.cfg.EngineeringHistoryHash
 				if mode == "changed-hash" {
@@ -58,7 +61,7 @@ func TestEngineeringHistoryLocalOwner(t *testing.T) {
 			if mode == "missing-worker" {
 				h.EngineeringHistoryWorker = nil
 			}
-			allowed := mode == "list" || mode == "task" || mode == "document" || mode == "changed-hash" || mode == "not-historical" || mode == "bad-offset"
+			allowed := mode == "list" || mode == "task" || mode == "document" || mode == "packet" || mode == "changed-hash" || mode == "not-historical" || mode == "bad-offset"
 			var available struct {
 				Enabled bool `json:"enabled"`
 			}
@@ -77,6 +80,10 @@ func TestEngineeringHistoryLocalOwner(t *testing.T) {
 				rctx.URLParams.Add("sourceDocumentID", "原报告")
 				req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
 				handler = h.GetEngineeringHistoryDocument
+			}
+			if mode == "packet" {
+				req = withURLParam(req, "sourceTaskID", "原任务")
+				handler = h.GetEngineeringHistoryPacket
 			}
 			if mode == "bad-offset" {
 				req.URL.RawQuery = "offset=-1"
@@ -163,6 +170,25 @@ func TestEngineeringHistoryPrivateWorker(t *testing.T) {
 	testutil.Call(t, h.GetEngineeringHistoryDocument, r).Want(http.StatusOK).JSON(&document)
 	if document.Document.Content != "Exact original evidence" {
 		t.Fatal("original evidence changed")
+	}
+	var packet struct {
+		Packet struct {
+			Format       string `json:"format"`
+			Hash         string `json:"hash"`
+			SourceTaskID string `json:"source_task_id"`
+			Ownership    struct {
+				NativeExecutionAuthorized bool `json:"native_execution_authorized"`
+			} `json:"ownership"`
+		} `json:"packet"`
+	}
+	testutil.Call(t, h.GetEngineeringHistoryPacket, r).Want(http.StatusOK).JSON(&packet)
+	if packet.Packet.Format != "loopwork-task-handoff-v1" || len(packet.Packet.Hash) != 64 || packet.Packet.SourceTaskID != "REQ-original" || packet.Packet.Ownership.NativeExecutionAuthorized {
+		t.Fatal("packet changed source ownership or identity", packet)
+	}
+	for _, actor := range []string{"task_token", "cloud_pat"} {
+		denied := r.Clone(r.Context())
+		denied.Header.Set("X-Actor-Source", actor)
+		testutil.Call(t, h.GetEngineeringHistoryPacket, denied).Want(http.StatusForbidden)
 	}
 	if _, err = h.EngineeringHistoryWorker.Call(context.Background(), map[string]any{"action": "direct-run", "expected_hash": capture.Hash}); err == nil {
 		t.Fatal("history worker accepted an execution command")

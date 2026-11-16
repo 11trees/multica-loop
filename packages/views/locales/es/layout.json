@@ -292,6 +292,26 @@
       "done": "Completado",
       "cancelled": "Cancelado",
       "blocked": "Bloqueado"
+    },
+    "deleted_project": "Proyecto eliminado",
+    "packet": {
+      "title": "Material fijado para la migración",
+      "show": "Ver material",
+      "hide": "Ocultar material",
+      "boundary": "Este paquete conserva los objetivos y las versiones originales. No transfiere la ejecución ni aprueba la entrega.",
+      "goal": "Objetivo y contexto",
+      "acceptance": "Criterios de aceptación",
+      "delivery": "Unidades de trabajo y especificaciones",
+      "decisions": "Decisiones y preguntas",
+      "materials": "Borradores y documentos",
+      "feedback": "Comentarios y conversaciones",
+      "deleted": "Este proyecto se eliminó en LoopWork. Sus tareas se conservan como historial.",
+      "incomplete": "Esta versión de origen carece de algunas tablas o campos. El paquete registra estas carencias.",
+      "files": "Los archivos e imágenes siguen siendo referencias. Las pruebas de ejecución y las reparaciones permanecen en el archivo completo.",
+      "fingerprint": "Huella del paquete",
+      "download": "Descargar JSON",
+      "download_failed": "No se pudo descargar. Vuelve a intentarlo.",
+      "counts": "Se cuentan los registros de origen. Un mismo requisito puede aparecer en varios materiales."
     }
   }
 }

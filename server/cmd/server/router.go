@@ -2124,6 +2124,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			r.Get("/api/engineering/history/availability", h.EngineeringHistoryAvailability)
 			r.Get("/api/engineering/history", h.ListEngineeringHistory)
 			r.Get("/api/engineering/history/tasks/{sourceTaskID}", h.GetEngineeringHistoryTask)
+			r.Get("/api/engineering/history/tasks/{sourceTaskID}/packet", h.GetEngineeringHistoryPacket)
 			r.Get("/api/engineering/history/tasks/{sourceTaskID}/documents/{sourceDocumentID}", h.GetEngineeringHistoryDocument)
 			r.Get("/api/engineering/run", h.GetEngineeringRunContext)
 			r.Post("/api/engineering/intervention/request", h.RequestEngineeringIntervention)

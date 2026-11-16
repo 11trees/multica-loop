@@ -6,6 +6,8 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { copyDatabase, createArchive, readArchiveRecord, verifyArchive } from "./loopwork-history.mjs";
+import {browseArchive} from "./loopwork-history-lib.mjs";
+import {packetHash} from "./loopwork-task-packet.mjs";
 
 async function fixture(t) {
   const root=await mkdtemp(join(tmpdir(),"loopwork-history-test-")),sourceRoot=join(root,"source"),dataRoot=join(sourceRoot,"data"),output=join(root,"archive");
@@ -100,4 +102,46 @@ test("native browsing pins the archive, scopes documents to their original task 
  assert.equal((await browseArchive(h.output,m.hash,{action:'document',task_id:'旧任务-2',document_id:'报告-1'})).document,null);
  assert.equal((await browseArchive(h.output,m.hash,{action:'document',task_id:'missing',document_id:'报告-1'})).document,null);
  await assert.rejects(browseArchive(h.output,'0'.repeat(64),{action:'list'}),/configured identity/);assert.deepEqual(await readFile(join(h.output,'loop-ui.db')),before);
+});
+
+test("handoff packets freeze original contracts, scoped draft content and lossless source versions without transferring authority",async(t)=>{
+ const h=await fixture(t);
+ h.business.exec(`
+  ALTER TABLE tasks ADD COLUMN priority TEXT;ALTER TABLE tasks ADD COLUMN evidence TEXT;ALTER TABLE tasks ADD COLUMN risk TEXT;ALTER TABLE tasks ADD COLUMN link TEXT;ALTER TABLE tasks ADD COLUMN external_id TEXT;ALTER TABLE tasks ADD COLUMN external_status TEXT;
+  ALTER TABLE documents ADD COLUMN story_index INTEGER;
+  CREATE TABLE acceptances(acceptance_id TEXT PRIMARY KEY,task_id TEXT,acceptance_key TEXT,scope_type TEXT,story_index INTEGER,statement TEXT,oracle TEXT,source_ref TEXT,source_command_chain_draft_id TEXT,revision INTEGER,lifecycle TEXT,created_at TEXT,updated_at TEXT);
+  INSERT INTO acceptances VALUES('original-acceptance','旧任务-2','A1','requirement',NULL,'Keep the original heading','Read the exact Ready text','original:1','draft-owned',9223372036854775807,'active',NULL,NULL);
+  INSERT INTO acceptances VALUES('foreign-acceptance','旧任务-1','A2','requirement',NULL,'Unrelated obligation','Other oracle','other:1',NULL,1,'active',NULL,NULL);
+  CREATE TABLE agent_work_drafts(draft_id TEXT PRIMARY KEY,work_key TEXT,draft_version INTEGER,draft_type TEXT,task_id TEXT,story_index INTEGER,agent TEXT,status TEXT,change_seq INTEGER,last_execution_id TEXT,terminal_execution_id TEXT,terminal_action TEXT,created_at TEXT,updated_at TEXT,submitted_at TEXT,command_chain_id TEXT,command_chain_variant TEXT);
+  INSERT INTO agent_work_drafts(draft_id,task_id,status) VALUES('draft-owned','旧任务-2','completed'),('foreign-draft','旧任务-1','completed');
+  CREATE TABLE command_chain_artifact_blocks(draft_id TEXT,artifact_id TEXT,block_id TEXT,item_key TEXT,content_format TEXT,content TEXT,ordinal INTEGER,updated_at TEXT,PRIMARY KEY(draft_id,artifact_id,block_id,item_key));
+  INSERT INTO command_chain_artifact_blocks VALUES('draft-owned','context','constraints','C1','markdown','Exact original constraint',0,NULL),('foreign-draft','context','constraints','C2','markdown','Foreign draft must not leak',0,NULL);
+  CREATE TABLE business_analysis_phase_artifacts(draft_id TEXT,phase TEXT,content TEXT,updated_at TEXT,PRIMARY KEY(draft_id,phase));
+  INSERT INTO business_analysis_phase_artifacts VALUES('draft-owned','spec','Original approved specification',NULL),('foreign-draft','spec','Foreign spec must not leak',NULL);
+  CREATE TABLE task_context_chat_sessions(session_id TEXT PRIMARY KEY,task_id TEXT,state TEXT,created_at TEXT,updated_at TEXT,command_token_hash TEXT,provider_session_id TEXT);
+  INSERT INTO task_context_chat_sessions VALUES('session-owned','旧任务-2','idle',NULL,NULL,'source-token-never-authority','source-provider-session'),('foreign-session','旧任务-1','idle',NULL,NULL,'foreign-token','foreign-provider');
+  CREATE TABLE task_context_chat_messages(message_id TEXT PRIMARY KEY,session_id TEXT,role TEXT,content TEXT,created_at TEXT);
+  INSERT INTO task_context_chat_messages VALUES('message-owned','session-owned','user','Original clarification',NULL),('foreign-message','foreign-session','user','Foreign message must not leak',NULL);
+  INSERT INTO documents(document_id,task_id,content,title,revision) VALUES('contract-owned','旧任务-2','Exact original Markdown\\n![File](file:///unmigrated.png)','Original material',2);
+  UPDATE projects SET deleted_at='2026-09-09';
+ `);
+ const before=await bytes(h.dataRoot),capture=await createArchive(h),archiveBytes=await readFile(join(h.output,'loop-ui.db'));
+ const read=()=>browseArchive(h.output,capture.hash,{action:'packet',task_id:'旧任务-2'}),first=await read(),second=await read(),packet=first.packet;
+ assert.deepEqual(first,second);const {hash,...body}=packet;assert.equal(hash,packetHash(body));
+ const reordered=value=>Array.isArray(value)?value.map(reordered):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).reverse().map(([key,item])=>[key,reordered(item)])):value;
+ assert.equal(packetHash(reordered(body)),hash);assert.notEqual(packetHash({...body,source_task_id:'different-task'}),hash);
+ assert.equal(packet.source_task_id,'旧任务-2');assert.equal(packet.source_project.deleted_at,'2026-09-09');assert.equal(packet.source_task_terminal,false);assert.equal(packet.schema_complete,false);
+ assert.deepEqual(packet.ownership,{source_owner:'LoopWork',native_execution_authorized:false});
+ const section=name=>packet.sections.find(s=>s.table===name);
+ assert.equal(section('tasks').rows[0].title,'Original pending');assert.equal(section('acceptances').rows.length,1);assert.deepEqual(section('acceptances').rows[0].revision,{sqlite_integer:'9223372036854775807'});
+ assert.equal(section('command_chain_artifact_blocks').rows[0].content,'Exact original constraint');assert.equal(section('business_analysis_phase_artifacts').rows[0].content,'Original approved specification');
+ assert.equal(section('task_context_chat_messages').rows[0].content,'Original clarification');assert.equal(section('documents').rows[0].content,'Exact original Markdown\\n![File](file:///unmigrated.png)');
+ assert.equal(section('questions').status,'unavailable');assert.ok(section('questions').missing_columns.includes('question'));
+ const serialized=JSON.stringify(packet);for(const text of ['Foreign draft must not leak','Foreign spec must not leak','Foreign message must not leak','Unrelated obligation','source-token-never-authority','source-provider-session','old-command-token-must-not-project'])assert.ok(!serialized.includes(text));
+ assert.equal(section('task_context_chat_sessions').omitted_columns.includes('command_token_hash'),true);
+ assert.deepEqual(await bytes(h.dataRoot),before);assert.deepEqual(await readFile(join(h.output,'loop-ui.db')),archiveBytes);
+ assert.equal((await browseArchive(h.output,capture.hash,{action:'packet',task_id:"' OR 1=1 --"})).packet,null);
+ await assert.rejects(browseArchive(h.output,'0'.repeat(64),{action:'packet',task_id:'旧任务-2'}),/configured identity/);
+ const script=new URL('./loopwork-history.mjs',import.meta.url).pathname,cli=JSON.parse(execFileSync(process.execPath,[script,'packet','--archive',h.output,'--expected-hash',capture.hash,'--task','旧任务-2'],{encoding:'utf8',stdio:['ignore','pipe','pipe']}));assert.deepEqual(cli,first);
+ const terminal=await browseArchive(h.output,capture.hash,{action:'packet',task_id:'旧任务-1'});assert.equal(terminal.packet.source_task_terminal,true);assert.notEqual(terminal.packet.hash,packet.hash);
 });

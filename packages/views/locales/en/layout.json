@@ -292,6 +292,26 @@
       "done": "Done",
       "cancelled": "Cancelled",
       "blocked": "Blocked"
+    },
+    "deleted_project": "Deleted project",
+    "packet": {
+      "title": "Frozen handoff material",
+      "show": "View material",
+      "hide": "Hide material",
+      "boundary": "This package preserves the original goals and source versions. It does not transfer execution or approve delivery.",
+      "goal": "Goal and context",
+      "acceptance": "Acceptances",
+      "delivery": "Delivery units and specifications",
+      "decisions": "Decisions and questions",
+      "materials": "Drafts and documents",
+      "feedback": "Feedback and conversations",
+      "deleted": "This project was deleted in LoopWork. Its tasks remain historical records.",
+      "incomplete": "Some material tables or fields are unavailable in this source version. The package records these gaps.",
+      "files": "Files and images remain references. Run evidence and repair records stay in the full archive.",
+      "fingerprint": "Package fingerprint",
+      "download": "Download JSON",
+      "download_failed": "Could not download the package. Please retry.",
+      "counts": "Counts show source records. The same obligation may appear in several materials."
     }
   }
 }

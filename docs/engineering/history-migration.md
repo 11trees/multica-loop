@@ -126,6 +126,7 @@ The authenticated native routes are:
 - `GET /api/engineering/history?project_id=...&search=...&offset=...`
 - `GET /api/engineering/history/tasks/{original-id}`
 - `GET /api/engineering/history/tasks/{original-id}/documents/{original-id}`
+- `GET /api/engineering/history/tasks/{original-id}/packet`
 
 Only the reserved local human and local workspace can read this deployment's
 archive. Other members/workspaces and task/cloud machine credentials cannot
@@ -158,6 +159,65 @@ The screenshots below contain controlled fixture content only:
 ![Historical task browsing](assets/history-list.png)
 
 ![Historical report on a narrow screen](assets/history-report-narrow.png)
+
+## Frozen task material
+
+Open an original task and choose **Frozen handoff material → View material →
+Download JSON**. The shared Web/Desktop page loads the package only on request,
+shows material counts and source-project deletion, and records schema gaps.
+Counts are source records, not unique obligations or a completion verdict.
+The equivalent offline read is:
+
+```sh
+node scripts/migration/loopwork-history.mjs packet \
+  --archive /absolute/migration/loopwork-capture \
+  --expected-hash the_exact_hash_from_manifest \
+  --task original-task-id
+```
+
+`loopwork-task-handoff-v1` projects 31 named source material tables: original
+project/task context, acceptances, Stories and versioned specifications,
+dependencies and delivery context, draft artifacts and decisions, business
+analysis artifacts, questions/answers, full documents, feedback and context
+conversations. Every indirect lookup follows the original task's draft, batch,
+group or session. Dependency IDs remain references; unrelated task material is
+not expanded. Original JSON fields remain exact text. SQLite integers and blobs
+use the lossless tags described above. Missing tables/fields are explicitly
+unavailable, never silently reported as an empty complete contract. Columns
+outside the fixed projections are listed as omitted.
+
+Each package retains the archive identity, capture time, source task/project IDs,
+source terminal/deleted facts and explicit LoopWork ownership. Its SHA-256 is
+over the UTF-8 JSON body without `hash`, recursively sorting object keys
+lexicographically and preserving array order. No generation timestamp is added;
+repeating a read of the same archive produces the same package identity.
+The downloaded, API-validated representation preserves this canonical digest.
+
+This material does not create a native project, issue, Team binding or run.
+Old approvals, answers and completed drafts remain historical facts; they do not
+authorize a new native workflow or Done. Execution receipts, attempts,
+process/repair ownership and reading records remain in the complete archive,
+outside this material projection. External files/images remain references;
+neither their bytes nor their validity have been established by exporting JSON.
+Tables outside these 31 sections still require explicit cutover reconciliation.
+
+The actual local snapshot produced 38 private packages under
+`~/.multica/migrations/loopwork/20261117-01-task-packets`. Its manifest records
+all 38 package hashes and an independent source-field comparison of 1,484
+project/task/material rows across 31 sections per task. All projected fields
+match and archive bytes remain unchanged. Four of the eight unfinished source
+tasks belong to the active project; the other four belong to deleted projects.
+Those deleted-project tasks remain history, without automatic reactivation.
+This is frozen migration preparation material; native correspondence, exclusive
+ownership transfer and end-to-end cutover remain incomplete.
+
+Controlled browser checks cover material expansion, 1280/390-pixel layouts,
+actual JSON download, lossless versions and independent digest recomputation.
+The screenshots below contain fixture material only:
+
+![Frozen material on a wide screen](assets/history-packet.png)
+
+![Frozen material on a narrow screen](assets/history-packet-narrow.png)
 
 ## Remaining cutover work
 

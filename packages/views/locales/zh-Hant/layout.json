@@ -282,6 +282,26 @@
       "done": "已完成",
       "cancelled": "已取消",
       "blocked": "已封鎖"
+    },
+    "deleted_project": "已刪除專案",
+    "packet": {
+      "title": "遷移凍結資料",
+      "show": "檢視資料",
+      "hide": "收起資料",
+      "boundary": "保留原任務目標與來源版本，供接管時核對。下載資料不會轉移執行權，也不代表交付通過。",
+      "goal": "目標與上下文",
+      "acceptance": "驗收項目",
+      "delivery": "交付單元與規格",
+      "decisions": "決策與問題",
+      "materials": "草稿與文件",
+      "feedback": "回饋與對話",
+      "deleted": "此專案已在 LoopWork 刪除，其中的任務會繼續保留為歷史記錄。",
+      "incomplete": "此來源版本缺少部分資料表或欄位，凍結包已記錄這些缺口。",
+      "files": "檔案與圖片仍為參照；執行證據與修復記錄保留在完整封存中。",
+      "fingerprint": "資料指紋",
+      "download": "下載 JSON",
+      "download_failed": "下載失敗，請重試。",
+      "counts": "依來源記錄計數，同一事項可能出現在多份資料中。"
     }
   }
 }

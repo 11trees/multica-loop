@@ -68,3 +68,6 @@ func (h *Handler) GetEngineeringHistoryTask(w http.ResponseWriter, r *http.Reque
 func (h *Handler) GetEngineeringHistoryDocument(w http.ResponseWriter, r *http.Request) {
 	h.engineeringHistoryRead(w, r, map[string]any{"action": "document", "task_id": chi.URLParam(r, "sourceTaskID"), "document_id": chi.URLParam(r, "sourceDocumentID")})
 }
+func (h *Handler) GetEngineeringHistoryPacket(w http.ResponseWriter, r *http.Request) {
+	h.engineeringHistoryRead(w, r, map[string]any{"action": "packet", "task_id": chi.URLParam(r, "sourceTaskID")})
+}

@@ -5,7 +5,7 @@ import {QueryClient,QueryClientProvider} from "@tanstack/react-query";
 import {fireEvent,screen} from "@testing-library/react";
 import {renderWithI18n} from "../test/i18n";
 import {HistoryPage} from "./history-page";
-const mocks=vi.hoisted(()=>({historyAvailability:vi.fn(),listHistory:vi.fn(),historyTask:vi.fn(),historyDocument:vi.fn()}));
+const mocks=vi.hoisted(()=>({historyAvailability:vi.fn(),listHistory:vi.fn(),historyTask:vi.fn(),historyDocument:vi.fn(),historyPacket:vi.fn()}));
 vi.mock("@multica/core/api",()=>({api:mocks}));
 vi.mock("@multica/core/paths",()=>({useCurrentWorkspace:()=>({id:"workspace"})}));
 vi.mock("@multica/core/auth",()=>({useAuthStore:(select:(state:{user:{id:string}})=>unknown)=>select({user:{id:"owner"}})}));
@@ -20,3 +20,8 @@ it("browses original task and report without creating run controls or loading ol
  fireEvent.click(screen.getByRole("button",{name:"Back to task"}));expect(await screen.findByText("Original frozen goal")).toBeInTheDocument();fireEvent.click(screen.getByRole("button",{name:"Back to history"}));expect(await screen.findByText("Historical reader task")).toBeInTheDocument();
 });
 it("does not read private archive data when availability is denied",async()=>{mocks.historyAvailability.mockResolvedValue({enabled:false});mount();expect(await screen.findByText(/No historical archive/)).toBeInTheDocument();expect(mocks.listHistory).not.toHaveBeenCalled();expect(mocks.historyTask).not.toHaveBeenCalled();});
+it("loads frozen material on demand, exposes coverage gaps and preserves source project deletion",async()=>{
+ mocks.historyPacket.mockResolvedValue({historical_only:true,source,packet:{hash:'b'.repeat(64),source_project:{name:'Original project',deleted_at:'2026-09-09'},schema_complete:false,sections:[{table:'acceptances',rows:[{statement:'Original A1'},{statement:'Original A2'}]}]}});
+ mount();fireEvent.click(await screen.findByRole('button',{name:/Historical reader task/}));expect(await screen.findByText('Original frozen goal')).toBeInTheDocument();expect(mocks.historyPacket).not.toHaveBeenCalled();fireEvent.click(screen.getByRole('button',{name:'View material'}));expect(await screen.findByText(/This project was deleted/)).toBeInTheDocument();expect(screen.getByText(/Some material tables/)).toBeInTheDocument();expect(screen.getByText('Acceptances').parentElement).toHaveTextContent('2');expect(screen.getByRole('button',{name:'Download JSON'})).toBeInTheDocument();expect(mocks.historyPacket).toHaveBeenCalledWith('workspace','REQ-original');
+ fireEvent.click(screen.getByRole('button',{name:'Hide material'}));expect(screen.queryByRole('button',{name:'Download JSON'})).not.toBeInTheDocument();
+});

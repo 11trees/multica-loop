@@ -292,6 +292,26 @@
       "done": "Terminé",
       "cancelled": "Annulé",
       "blocked": "Bloqué"
+    },
+    "deleted_project": "Projet supprimé",
+    "packet": {
+      "title": "Documents figés pour le transfert",
+      "show": "Voir les documents",
+      "hide": "Masquer les documents",
+      "boundary": "Ce paquet conserve les objectifs et les versions sources. Il ne transfère pas l’exécution et ne valide pas la livraison.",
+      "goal": "Objectif et contexte",
+      "acceptance": "Critères d’acceptation",
+      "delivery": "Unités de travail et spécifications",
+      "decisions": "Décisions et questions",
+      "materials": "Brouillons et documents",
+      "feedback": "Retours et conversations",
+      "deleted": "Ce projet a été supprimé dans LoopWork. Ses tâches restent dans l’historique.",
+      "incomplete": "Certaines tables ou certains champs sont absents de cette version source. Le paquet signale ces manques.",
+      "files": "Les fichiers et images restent des références. Les preuves d’exécution et les réparations restent dans l’archive complète.",
+      "fingerprint": "Empreinte du paquet",
+      "download": "Télécharger le JSON",
+      "download_failed": "Téléchargement impossible. Réessayez.",
+      "counts": "Les nombres comptent les enregistrements sources. Une même exigence peut figurer dans plusieurs documents."
     }
   }
 }

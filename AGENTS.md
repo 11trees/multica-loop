@@ -63,6 +63,8 @@ Use `Makefile`, workspace `package.json` files, and `pnpm-workspace.yaml` for cu
 
 - Native history browsing is opt-in for the reserved local human/workspace and a host-pinned archive hash. Reject machine credentials and caller-selected paths/hashes. Use a separate readonly worker mode without engineering-store initialization or execution commands; scope client requests and caches to the explicit workspace and human. Historical state/reading never grants native completion, and unmigrated image/file references must not trigger automatic resource loading.
 
+- Historical task handoff packets use explicit task/project/draft/session/feedback projections and retain original source text, lossless SQLite values and unavailable-schema coverage. Bind their canonical digest to the exact archive and task; retain deleted-project provenance and source ownership. Packet export grants no native execution, Team binding, evidence or reading authority. Keep unprojected history and unmigrated file references explicit before any later cutover.
+
 Run these from the repository root:
 
 | Scope | Checks |

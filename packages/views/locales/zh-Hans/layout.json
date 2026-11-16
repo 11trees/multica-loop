@@ -282,6 +282,26 @@
       "done": "已完成",
       "cancelled": "已取消",
       "blocked": "已阻塞"
+    },
+    "deleted_project": "已删除项目",
+    "packet": {
+      "title": "迁移冻结材料",
+      "show": "查看材料",
+      "hide": "收起材料",
+      "boundary": "保留原任务目标和来源版本，供接管时核对。下载材料不会转移执行权，也不代表交付通过。",
+      "goal": "目标与上下文",
+      "acceptance": "验收项",
+      "delivery": "交付单元与规格",
+      "decisions": "决策与问题",
+      "materials": "草稿与文档",
+      "feedback": "反馈与对话",
+      "deleted": "这个项目已在 LoopWork 删除，其中的任务继续作为历史记录保留。",
+      "incomplete": "此来源版本缺少部分材料表或字段，冻结包已记录这些缺口。",
+      "files": "文件和图片仍为引用；运行证据与修复记录保留在完整归档中。",
+      "fingerprint": "材料指纹",
+      "download": "下载 JSON",
+      "download_failed": "下载失败，请重试。",
+      "counts": "按来源记录计数，同一事项可能出现在多份材料中。"
     }
   }
 }

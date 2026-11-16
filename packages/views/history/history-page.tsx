@@ -12,6 +12,7 @@ import {PageHeader} from "../layout/page-header";
 import {useT} from "../i18n";
 import {useNavigation} from "../navigation";
 import {useDebouncedValue} from "../common/use-debounced-value";
+import {HistoryPacket} from "./history-packet";
 
 export function HistoryPage(){
  const wsId=useCurrentWorkspace()?.id??"",userId=useAuthStore(s=>s.user?.id)??"";
@@ -52,7 +53,7 @@ function HistoryContent({wsId,userId}:{wsId:string;userId:string}){
     {!loading&&!availability.data?.enabled&&!error&&<p className="text-body text-muted-foreground">{t($=>$.history.unavailable)}</p>}
     {availability.data?.enabled&&list.data&&!selected&&<>
      <div className="flex flex-col gap-3 sm:flex-row">
-      <label className="flex min-w-0 flex-col gap-1 text-caption"><span>{t($=>$.history.project)}</span><select className="h-9 rounded-md border border-input bg-background px-3 text-body" value={project} onChange={e=>{setProject(e.target.value);setOffset(0);}}><option value="">{t($=>$.history.all_projects)}</option>{list.data.projects.map(item=><option key={item.id} value={item.id}>{item.name} ({item.task_count})</option>)}</select></label>
+      <label className="flex min-w-0 flex-col gap-1 text-caption"><span>{t($=>$.history.project)}</span><select className="h-9 rounded-md border border-input bg-background px-3 text-body" value={project} onChange={e=>{setProject(e.target.value);setOffset(0);}}><option value="">{t($=>$.history.all_projects)}</option>{list.data.projects.map(item=><option key={item.id} value={item.id}>{item.name} ({item.task_count}){item.deleted_at?` · ${t($=>$.history.deleted_project)}`:""}</option>)}</select></label>
       <label className="flex min-w-0 flex-1 flex-col gap-1 text-caption"><span>{t($=>$.history.search)}</span><Input value={search} onChange={e=>{setSearch(e.target.value);setOffset(0);}} placeholder={t($=>$.history.search_placeholder)}/></label>
      </div>
      <div className="flex flex-wrap justify-between gap-2 text-caption text-muted-foreground"><p>{t($=>$.history.count,{count:list.data.total})}</p><p>{t($=>$.history.captured,{date:new Date(list.data.source.captured_at).toLocaleString()})}</p></div>
@@ -68,6 +69,7 @@ function HistoryContent({wsId,userId}:{wsId:string;userId:string}){
       <div><p className="break-all text-caption text-muted-foreground">{detail.data.task.id}</p><h2 className="mt-1 break-words text-title-lg font-semibold">{detail.data.task.title}</h2><p className="mt-2 text-body text-muted-foreground">{statusNames.get(detail.data.task.status)??detail.data.task.status}</p></div>
       {detail.data.task.blocked_reason&&<p className="whitespace-pre-wrap break-words text-body">{detail.data.task.blocked_reason}</p>}
       {detail.data.task.description&&<Markdown mode="full" renderImage={({alt})=><span className="block rounded-md border border-border px-3 py-2 text-caption text-muted-foreground">{t($=>$.history.image_reference)}{alt?` · ${alt}`:""}</span>}>{detail.data.task.description}</Markdown>}
+      <HistoryPacket key={selected} wsId={wsId} userId={userId} taskId={selected}/>
       <div><h3 className="mb-2 text-body font-medium">{t($=>$.history.documents)}</h3><div className="flex flex-col gap-1">{detail.data.documents.map(item=><Button key={item.id} variant="ghost" className="h-auto w-full justify-start py-3 text-left" onClick={()=>select(selected,item.id)}><FileText className="shrink-0"/><span className="min-w-0 flex-1 whitespace-normal break-words">{item.title}</span><span className="ml-2 shrink-0 text-caption text-muted-foreground">{item.kind} · {t($=>$.history.revision,{revision:item.revision})}</span></Button>)}{!detail.data.documents.length&&<p className="text-body text-muted-foreground">{t($=>$.history.no_documents)}</p>}</div></div>
      </section>}
      {documentId&&document.isPending&&<p role="status" className="text-body text-muted-foreground">{t($=>$.history.loading)}</p>}
