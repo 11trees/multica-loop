@@ -1,6 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
 import { DraftConflictError } from "./runtime";
+import { initializeInterventions } from "./intervention-store";
 const text = z.string().trim().min(1);
 const ownerSchema = z.strictObject({ workspaceId: z.uuid(), issueId: z.uuid(), agentId: z.uuid(), attemptId: text });
 type Owner = z.infer<typeof ownerSchema>;
@@ -13,6 +14,7 @@ export const processRequestSchema = z.discriminatedUnion("operation", [
 /** Physical records survive task termination and protocol surrender. */
 export class EngineeringProcessStore {
     constructor(private readonly db: DatabaseSync) {
+        initializeInterventions(db);
         db.exec(`
  CREATE TABLE IF NOT EXISTS engineering_process_binding(workspace_id TEXT NOT NULL,issue_id TEXT NOT NULL,agent_id TEXT NOT NULL,attempt_id TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(workspace_id,issue_id,agent_id,attempt_id));
  CREATE TABLE IF NOT EXISTS engineering_process(allocation_id TEXT PRIMARY KEY,workspace_id TEXT NOT NULL,issue_id TEXT NOT NULL,attempt_id TEXT NOT NULL,status TEXT NOT NULL,payload TEXT NOT NULL);
@@ -41,6 +43,7 @@ export class EngineeringProcessStore {
         owner = ownerSchema.parse(owner);
         const request = processRequestSchema.parse(input);
         return this.transaction(() => {
+            const blocked = surrendered || !!this.db.prepare("SELECT 1 FROM engineering_intervention WHERE workspace_id=? AND issue_id=? AND attempt_id=? UNION ALL SELECT 1 FROM engineering_intervention_pending WHERE workspace_id=? AND issue_id=? LIMIT 1").get(owner.workspaceId, owner.issueId, owner.attemptId, owner.workspaceId, owner.issueId);
             const row = this.db.prepare("SELECT payload,status FROM engineering_process WHERE allocation_id=?").get(request.allocation_id);
             if (request.operation === "reserve") {
                 if (row) {
@@ -49,7 +52,7 @@ export class EngineeringProcessStore {
                         throw new DraftConflictError("Process allocation ID belongs to another native claim");
                     return { reserved: true, status: row.status };
                 }
-                if (surrendered)
+                if (blocked)
                     throw new DraftConflictError("Surrendered work cannot reserve another provider process");
                 const binding = this.db.prepare("SELECT payload FROM engineering_process_binding WHERE workspace_id=? AND issue_id=? AND agent_id=? AND attempt_id=?").get(owner.workspaceId, owner.issueId, owner.agentId, owner.attemptId);
                 if (!binding)
@@ -68,7 +71,7 @@ export class EngineeringProcessStore {
             if (JSON.stringify(value.owner) !== JSON.stringify(owner) || value.runtimeId !== request.runtime_id || value.hostId !== request.host_id)
                 throw new DraftConflictError("Process mutation belongs to another native claim or host");
             if (request.operation === "bind") {
-                if (surrendered || row.status === "exited")
+                if (blocked || row.status === "exited")
                     throw new DraftConflictError("Inactive process allocation cannot accept a PID");
                 if (request.pid !== request.group_id || value.pid !== null && (value.pid !== request.pid || value.marker !== request.marker || value.groupId !== request.group_id))
                     throw new DraftConflictError("Native process birth identity cannot be replaced");

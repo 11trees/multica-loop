@@ -63,7 +63,7 @@ func (h *Handler) RecordEngineeringController(w http.ResponseWriter, r *http.Req
 		return
 	}
 	admission := input.Operation == "begin" || input.Operation == "workspace" || input.Operation == "process-reserve"
-	if admission && !h.requireEngineeringExecutionAdmission(w, r, task.IssueID, scope.WorkspaceID) {
+	if admission && !h.requireEngineeringExecutionAdmission(w, r, task.IssueID, task.ID, scope.WorkspaceID) {
 		return
 	}
 	result, err := (ownership.Store{Queries: h.Queries, Transactions: h.TxStarter}).RecordController(r.Context(), task, parseUUID(scope.WorkspaceID), ownership.ControllerRequest{ControllerID: id, AllocationID: allocation, Operation: input.Operation, Provider: input.Provider, HostID: input.HostID, PID: input.PID, Marker: input.Marker, GroupID: input.GroupID, WorkspacePath: input.WorkspacePath, Mode: input.Mode, Confirmed: input.Confirmed, NoProviderStarted: input.NoProviderStarted})
@@ -76,17 +76,17 @@ func (h *Handler) RecordEngineeringController(w http.ResponseWriter, r *http.Req
 		return
 	}
 	// The real PID is durable before protocol admission can reject its launch.
-	if input.Operation == "process-bind" && !h.requireEngineeringExecutionAdmission(w, r, task.IssueID, scope.WorkspaceID) {
+	if input.Operation == "process-bind" && !h.requireEngineeringExecutionAdmission(w, r, task.IssueID, task.ID, scope.WorkspaceID) {
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
 }
 
-func (h *Handler) requireEngineeringExecutionAdmission(w http.ResponseWriter, r *http.Request, issueID pgtype.UUID, workspace string) bool {
+func (h *Handler) requireEngineeringExecutionAdmission(w http.ResponseWriter, r *http.Request, issueID, taskID pgtype.UUID, workspace string) bool {
 	if !issueID.Valid {
 		return true
 	}
-	data, err := h.EngineeringWorker.Call(r.Context(), map[string]any{"action": "execution-permission", "actor": map[string]string{"kind": "host", "workspaceId": workspace, "issueId": uuidToString(issueID)}})
+	data, err := h.EngineeringWorker.Call(r.Context(), map[string]any{"action": "execution-permission", "actor": map[string]string{"kind": "host", "workspaceId": workspace, "issueId": uuidToString(issueID)}, "payload": map[string]string{"task_id": uuidToString(taskID)}})
 	var permission struct {
 		Allowed *bool `json:"allowed"`
 	}

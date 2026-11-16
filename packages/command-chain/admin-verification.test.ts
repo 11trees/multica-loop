@@ -7,7 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import { beforeEach, afterEach, it, expect } from "vitest";
 import { AdminStore } from "./admin-store";
 import { originalRepairTargets } from "./repair-verification-input";
-import { handoffReservationHash, handoffReservationSchema, handoffApplicationBodySchema, handoffApplicationSchema, handoffHash, type HandoffReservation, type HandoffApplication } from "./repair-handoff";
+import { handoffReadyHash, handoffReadySchema, handoffPublicationHash, handoffPublicationSchema, handoffReservationHash, handoffReservationSchema, handoffApplicationBodySchema, handoffApplicationSchema, handoffHash, type HandoffReservation, type HandoffApplication } from "./repair-handoff";
 
 let directory:string,filename:string,store:AdminStore,now:number;
 const workspaceId=randomUUID(),issueId=randomUUID();
@@ -371,4 +371,23 @@ it.each(["target","reservation","proposal","task","human","version","draft","kin
  const h=await reservedHandoff();store.execution.recordHandoffReservation(h.authority,h.claim.caseId,h.reservation);const value:HandoffApplication=structuredClone(stagedFixture(h));
  if(changed==="target")value.target_hash="a".repeat(64);if(changed==="reservation")value.reservation_hash="b".repeat(64);if(changed==="proposal")value.preparation_hash="c".repeat(64);if(changed==="task")value.continuation.task_id=randomUUID();if(changed==="human")value.continuation.user_id=randomUUID();if(changed==="version")value.expected_version=version.replaceAll("b","e");if(changed==="draft")value.draft_id=randomUUID();if(changed==="kind")value.root_kind="direct";
  const {hash:_hash,...body}=value;value.hash=handoffHash(body);expect(()=>store.execution.recordHandoffApplication(h.authority,h.claim.caseId,value)).toThrow(/differs/);expect(store.execution.handoffContext(h.authority,h.claim.caseId).application).toBeNull();
+});
+async function publicationFixture(){
+ const h=await reservedHandoff(),application=stagedFixture(h);store.execution.recordHandoffReservation(h.authority,h.claim.caseId,h.reservation);store.execution.recordHandoffApplication(h.authority,h.claim.caseId,application);
+ const body={ready:true as const,target_hash:h.context.target_hash,reservation_hash:h.reservation.hash,application_hash:application.hash,expected_version:version,continuation:h.reservation.continuation},ready=handoffReadySchema.parse({...body,hash:handoffReadyHash(body)}),c=ready.continuation;
+ const p={published:true as const,case_id:h.claim.caseId,verification_attempt_id:h.context.target.verificationAttemptId,target_hash:ready.target_hash,reservation_hash:ready.reservation_hash,application_hash:ready.application_hash,ready_hash:ready.hash,task_id:c.task_id,workspace_id:c.workspace_id,issue_id:c.issue_id,agent_id:c.agent_id,user_id:c.user_id,runtime_id:h.context.target.workspaceBinding.runtimeId};
+ return {...h,value:{ready,publication:handoffPublicationSchema.parse({...p,hash:handoffPublicationHash(p)})}};
+}
+it("retains native publication across restart and observes normal business recovery without closing the Case",async()=>{
+ const h=await publicationFixture();expect(store.execution.recordHandoffPublication(h.authority,h.claim.caseId,h.value)).toEqual(h.value);expect(store.issue(workspaceId,issueId).status).toBe("observing");expect(store.execution.pendingHandoffs(h.authority)).toEqual([]);
+ store.close();store=new AdminStore(filename,()=>now);expect(store.execution.handoffContext(h.authority,h.claim.caseId).publication).toEqual(h.value);expect(store.execution.recordHandoffPublication(h.authority,h.claim.caseId,h.value)).toEqual(h.value);expect(store.issue(workspaceId,issueId).status).toBe("observing");
+ store.execution.setIntent({intent:"stopped",request_id:"stop-published"});expect(()=>store.execution.recordHandoffPublication(h.authority,h.claim.caseId,h.value)).toThrow(/running intent/);
+ now+=30001;const next=store.acquireSupervisor("publication-successor",30000,true)!;store.execution.setIntent({intent:"running",request_id:"resume-published"});expect(()=>store.execution.recordHandoffPublication(h.authority,h.claim.caseId,h.value)).toThrow(/authority/);expect(store.execution.recordHandoffPublication(next,h.claim.caseId,h.value)).toEqual(h.value);
+ store.observe(next,observation("after-publication"));expect(()=>store.execution.handoffContext(next,h.claim.caseId)).toThrow(/settled verified/);
+ const db=new DatabaseSync(filename);expect(db.prepare("SELECT payload FROM admin_handoff_publication").get()!.payload).toBe(JSON.stringify(h.value));db.close();
+});
+it.each(["task","runtime","human","application","ready","case","verification"])("refuses a rehashed native publication with changed %s",async changed=>{
+ const h=await publicationFixture(),value=structuredClone(h.value),p=value.publication;
+ if(changed==="task")p.task_id=randomUUID();if(changed==="runtime")p.runtime_id=randomUUID();if(changed==="human")p.user_id=randomUUID();if(changed==="application")p.application_hash="1".repeat(64);if(changed==="ready")p.ready_hash="2".repeat(64);if(changed==="case")p.case_id="another-case";if(changed==="verification")p.verification_attempt_id="another-verifier";
+ p.hash=handoffPublicationHash(p);expect(handoffPublicationSchema.safeParse(p).success).toBe(true);expect(()=>store.execution.recordHandoffPublication(h.authority,h.claim.caseId,value)).toThrow(/differs/);expect(store.issue(workspaceId,issueId).status).toBe("verified");expect(store.execution.handoffContext(h.authority,h.claim.caseId).publication).toBeNull();
 });

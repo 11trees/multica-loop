@@ -150,6 +150,39 @@ func (q *Queries) CreateEngineeringRepairHandoffReservation(ctx context.Context,
 	return i, err
 }
 
+const createEngineeringRepairPublication = `-- name: CreateEngineeringRepairPublication :one
+INSERT INTO engineering_repair_publication(target_hash,workspace_id,project_id,task_id,payload)
+VALUES($1,$2,$3,$4,$5) RETURNING target_hash, workspace_id, project_id, task_id, payload, created_at
+`
+
+type CreateEngineeringRepairPublicationParams struct {
+	TargetHash  string      `json:"target_hash"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ProjectID   pgtype.UUID `json:"project_id"`
+	TaskID      pgtype.UUID `json:"task_id"`
+	Payload     string      `json:"payload"`
+}
+
+func (q *Queries) CreateEngineeringRepairPublication(ctx context.Context, arg CreateEngineeringRepairPublicationParams) (EngineeringRepairPublication, error) {
+	row := q.db.QueryRow(ctx, createEngineeringRepairPublication,
+		arg.TargetHash,
+		arg.WorkspaceID,
+		arg.ProjectID,
+		arg.TaskID,
+		arg.Payload,
+	)
+	var i EngineeringRepairPublication
+	err := row.Scan(
+		&i.TargetHash,
+		&i.WorkspaceID,
+		&i.ProjectID,
+		&i.TaskID,
+		&i.Payload,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createEngineeringRunGuard = `-- name: CreateEngineeringRunGuard :one
 INSERT INTO engineering_run_guard(controller_id,workspace_id,project_id,task_id,runtime_id,claim_at,provider,host_id,controller_pid,controller_marker,scope_kind,scope_id)
 SELECT $1,p.workspace_id,p.id,t.id,t.runtime_id,t.dispatched_at,$2,$3,$4,$5,CASE WHEN t.issue_id IS NOT NULL THEN 'issue' ELSE 'chat' END,COALESCE(t.issue_id,t.chat_session_id)
@@ -377,6 +410,24 @@ func (q *Queries) GetEngineeringRepairHandoff(ctx context.Context, targetHash st
 		&i.ProjectID,
 		&i.TaskID,
 		&i.Phase,
+		&i.Payload,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getEngineeringRepairPublication = `-- name: GetEngineeringRepairPublication :one
+SELECT target_hash, workspace_id, project_id, task_id, payload, created_at FROM engineering_repair_publication WHERE target_hash = $1
+`
+
+func (q *Queries) GetEngineeringRepairPublication(ctx context.Context, targetHash string) (EngineeringRepairPublication, error) {
+	row := q.db.QueryRow(ctx, getEngineeringRepairPublication, targetHash)
+	var i EngineeringRepairPublication
+	err := row.Scan(
+		&i.TargetHash,
+		&i.WorkspaceID,
+		&i.ProjectID,
+		&i.TaskID,
 		&i.Payload,
 		&i.CreatedAt,
 	)
@@ -1005,6 +1056,74 @@ func (q *Queries) LockEngineeringRunGuard(ctx context.Context, arg LockEngineeri
 		&i.ScopeID,
 	)
 	return i, err
+}
+
+const publishEngineeringRepairReservation = `-- name: PublishEngineeringRepairReservation :execrows
+UPDATE engineering_repair_handoff SET phase='published'
+WHERE target_hash = $1 AND workspace_id = $2 AND project_id = $3 AND phase='reserved' AND payload = $4
+`
+
+type PublishEngineeringRepairReservationParams struct {
+	TargetHash  string      `json:"target_hash"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ProjectID   pgtype.UUID `json:"project_id"`
+	Payload     string      `json:"payload"`
+}
+
+func (q *Queries) PublishEngineeringRepairReservation(ctx context.Context, arg PublishEngineeringRepairReservationParams) (int64, error) {
+	result, err := q.db.Exec(ctx, publishEngineeringRepairReservation,
+		arg.TargetHash,
+		arg.WorkspaceID,
+		arg.ProjectID,
+		arg.Payload,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const releasePublishedEngineeringRepairFence = `-- name: ReleasePublishedEngineeringRepairFence :execrows
+DELETE FROM engineering_repair_fence WHERE workspace_id = $1 AND project_id = $2
+ AND case_id = $3 AND attempt_id = $4 AND generation = $5
+ AND owner_id = $6 AND supervision_token = $7 AND intent_revision = $8
+ AND observation_id = $9 AND source_attempt_id = $10 AND source_revision = $11 AND snapshot_hash = $12 AND phase='owned'
+`
+
+type ReleasePublishedEngineeringRepairFenceParams struct {
+	WorkspaceID      pgtype.UUID `json:"workspace_id"`
+	ProjectID        pgtype.UUID `json:"project_id"`
+	CaseID           string      `json:"case_id"`
+	AttemptID        string      `json:"attempt_id"`
+	Generation       int64       `json:"generation"`
+	OwnerID          string      `json:"owner_id"`
+	SupervisionToken int64       `json:"supervision_token"`
+	IntentRevision   int64       `json:"intent_revision"`
+	ObservationID    string      `json:"observation_id"`
+	SourceAttemptID  string      `json:"source_attempt_id"`
+	SourceRevision   int64       `json:"source_revision"`
+	SnapshotHash     string      `json:"snapshot_hash"`
+}
+
+func (q *Queries) ReleasePublishedEngineeringRepairFence(ctx context.Context, arg ReleasePublishedEngineeringRepairFenceParams) (int64, error) {
+	result, err := q.db.Exec(ctx, releasePublishedEngineeringRepairFence,
+		arg.WorkspaceID,
+		arg.ProjectID,
+		arg.CaseID,
+		arg.AttemptID,
+		arg.Generation,
+		arg.OwnerID,
+		arg.SupervisionToken,
+		arg.IntentRevision,
+		arg.ObservationID,
+		arg.SourceAttemptID,
+		arg.SourceRevision,
+		arg.SnapshotHash,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const replaceEngineeringRepairFenceOwner = `-- name: ReplaceEngineeringRepairFenceOwner :one

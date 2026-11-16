@@ -1,4 +1,4 @@
-import { repairHandoffTargetSchema,handoffPreparationSchema,handoffReservationSchema,handoffApplicationSchema,handoffHash,type HandoffReservation,type HandoffApplication,type RepairHandoffTarget } from "./repair-handoff";
+import { repairHandoffTargetSchema,handoffPreparationSchema,handoffReservationSchema,handoffApplicationSchema,handoffReadySchema,handoffPublicationSchema,handoffHash,type HandoffReservation,type HandoffApplication,type HandoffReady,type HandoffPublication,type RepairHandoffTarget } from "./repair-handoff";
 import { independentCheckSchema, independentCheckResultSchema, independentCheckSteps, independentCheckPassed, compileIndependentReceipt, independentReceiptSchema } from "./repair-verification-receipt";
 import { authorizeRepairPlan, preparedRepairPlanSchema } from "./repair-verification-plan";
 import { originalRepairTargets, repairContentVersionSchema, repairVerificationInputHash, repairVerificationInputSchema } from "./repair-verification-input";
@@ -45,7 +45,8 @@ export function initializeAdminExecution(db: DatabaseSync, version: number) {
         db.exec("ALTER TABLE admin_control ADD COLUMN execution_supported INTEGER NOT NULL DEFAULT 0");
     if (version < 6) db.exec("DROP INDEX IF EXISTS admin_one_live_attempt");
     if(version<8) db.exec("UPDATE admin_case SET status='queued' WHERE current_attempt_id IS NULL AND status IN ('verifying','verification-prepared','verified')");
-    db.exec(`CREATE TABLE IF NOT EXISTS admin_handoff_application(case_id TEXT NOT NULL,verification_attempt_id TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(case_id,verification_attempt_id));
+    db.exec(`CREATE TABLE IF NOT EXISTS admin_handoff_publication(case_id TEXT NOT NULL,verification_attempt_id TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(case_id,verification_attempt_id));
+    CREATE TABLE IF NOT EXISTS admin_handoff_application(case_id TEXT NOT NULL,verification_attempt_id TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(case_id,verification_attempt_id));
     CREATE TABLE IF NOT EXISTS admin_handoff_reservation(case_id TEXT NOT NULL,verification_attempt_id TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(case_id,verification_attempt_id));
     CREATE TABLE IF NOT EXISTS admin_handoff_preparation(case_id TEXT NOT NULL,verification_attempt_id TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(case_id,verification_attempt_id));
  CREATE TABLE IF NOT EXISTS admin_repair_write(attempt_id TEXT PRIMARY KEY,payload TEXT NOT NULL);
@@ -363,7 +364,7 @@ export class AdminExecutionStore {
         const control=this.requireAuthority(authority);
         if(control.desired_intent!=="running")throw new DraftConflictError("Verified handoff requires current running intent");
         const repair=this.db.prepare("SELECT status,current_attempt_id FROM admin_case WHERE case_id=?").get(caseId);
-        if(repair?.status!=="verified"||repair.current_attempt_id!==null)throw new DraftConflictError("Case has no settled verified handoff");
+        if(!["verified","observing"].includes(String(repair?.status))||repair?.current_attempt_id!==null)throw new DraftConflictError("Case has no settled verified handoff");
         const row=this.db.prepare("SELECT payload FROM admin_attempt WHERE case_id=? ORDER BY rowid DESC LIMIT 1").get(caseId);
         if(!row)throw new DraftConflictError("Verified handoff has no execution source");
         const attempt=attemptSchema.parse(JSON.parse(String(row.payload))),basis=this.executionBasisFor(attempt),receipt=this.independentVerificationReceipt(attempt.attemptId),progress=this.progress(attempt.attemptId),request=this.takeover(attempt.attemptId);
@@ -384,7 +385,9 @@ export class AdminExecutionStore {
         if(reservation)this.validateHandoffReservation(reservation,context);
         const staged=this.db.prepare("SELECT payload FROM admin_handoff_application WHERE case_id=? AND verification_attempt_id=?").get(caseId,attempt.attemptId),application=staged?handoffApplicationSchema.parse(JSON.parse(String(staged.payload))):null;
         if(application)this.validateHandoffApplication(application,reservation,preparation);
-        return {...context,reservation,application};
+        const published=this.db.prepare("SELECT payload FROM admin_handoff_publication WHERE case_id=? AND verification_attempt_id=?").get(caseId,attempt.attemptId),publication=published?z.strictObject({ready:handoffReadySchema,publication:handoffPublicationSchema}).parse(JSON.parse(String(published.payload))):null;
+        if(publication)this.validateHandoffPublication(publication,{target,reservation,application});
+        return {...context,reservation,application,publication};
     }
     recordHandoffPreparation(authority:AdminAuthority,caseId:string,raw:unknown){const prepared=handoffPreparationSchema.parse(raw);return this.transaction(()=>{
         const context=this.handoffContext(authority,caseId);
@@ -412,6 +415,18 @@ export class AdminExecutionStore {
         const row=this.db.prepare("SELECT payload FROM admin_handoff_application WHERE case_id=? AND verification_attempt_id=?").get(caseId,context.target.verificationAttemptId);
         if(row&&String(row.payload)!==json(value))throw new DraftConflictError("Applied business handoff cannot be replaced");
         if(!row)this.db.prepare("INSERT INTO admin_handoff_application VALUES(?,?,?)").run(caseId,context.target.verificationAttemptId,json(value));return value;
+    });}
+    private validateHandoffPublication(value:{ready:HandoffReady;publication:HandoffPublication},context:{target:RepairHandoffTarget;reservation:HandoffReservation|null;application:HandoffApplication|null}){
+        const {ready,publication:p}=value,r=context.reservation,a=context.application,c=ready.continuation,t=context.target;
+        if(!r||!a)throw new DraftConflictError("Native publication has no acknowledged staged source");
+        if(ready.target_hash!==r.target_hash||ready.reservation_hash!==r.hash||ready.application_hash!==a.hash||ready.expected_version!==t.expectedVersion||json(c)!==json(r.continuation)||p.case_id!==t.caseId||p.verification_attempt_id!==t.verificationAttemptId||p.target_hash!==r.target_hash||p.reservation_hash!==r.hash||p.application_hash!==a.hash||p.ready_hash!==ready.hash||p.task_id!==c.task_id||p.workspace_id!==c.workspace_id||p.issue_id!==c.issue_id||p.agent_id!==c.agent_id||p.user_id!==c.user_id||p.runtime_id!==t.workspaceBinding.runtimeId)throw new DraftConflictError("Native publication differs from its staged business dispatch");
+    }
+    recordHandoffPublication(authority:AdminAuthority,caseId:string,raw:unknown){const value=z.strictObject({ready:handoffReadySchema,publication:handoffPublicationSchema}).parse(raw);return this.transaction(()=>{
+        const context=this.handoffContext(authority,caseId);this.validateHandoffPublication(value,context);
+        const row=this.db.prepare("SELECT payload FROM admin_handoff_publication WHERE case_id=? AND verification_attempt_id=?").get(caseId,context.target.verificationAttemptId);
+        if(row&&String(row.payload)!==json(value))throw new DraftConflictError("Native publication cannot be replaced");
+        if(!row)this.db.prepare("INSERT INTO admin_handoff_publication VALUES(?,?,?)").run(caseId,context.target.verificationAttemptId,json(value));
+        this.db.prepare("UPDATE admin_case SET status='observing',updated_at=? WHERE case_id=? AND status='verified'").run(this.now(),caseId);return value;
     });}
     private originalObservations(caseId: string) {
         return this.db.prepare("SELECT payload FROM admin_observation WHERE case_id=? AND origin<>'admin' ORDER BY rowid").all(caseId).map(row => JSON.parse(String(row.payload)));

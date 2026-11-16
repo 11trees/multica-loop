@@ -133,7 +133,9 @@ func TestEngineeringReservedBusinessStaging(t *testing.T) {
 				return err
 			}
 			if mode == "success" {
-				err = f.h.ReconcileEngineeringRepairHandoffs(ctx, engineeringAdminAuthority{OwnerID: "current-host", Token: 2})
+				if err = call("reserve-handoff"); err == nil {
+					err = call("stage-handoff")
+				}
 			} else {
 				if err = call("reserve-handoff"); err != nil {
 					t.Fatal("fixture could not reserve successor", err)

@@ -72,7 +72,7 @@ export class BusinessApplication {
   private active(record: Record) { const entry = record.entries.find(item => item.draftId === record.activeDraftId && !item.superseded); if (!entry) throw new Error("Business checkpoint is unavailable"); return entry; }
   private save(record: Record) {
     const expected = record.version; record.version++;
-    const changed = this.db.prepare("UPDATE business_contract SET version=?,payload=? WHERE workspace_id=? AND issue_id=? AND revision=? AND version=? AND NOT EXISTS (SELECT 1 FROM engineering_intervention WHERE workspace_id=? AND issue_id=?)")
+    const changed = this.db.prepare("UPDATE business_contract SET version=?,payload=? WHERE workspace_id=? AND issue_id=? AND revision=? AND version=? AND NOT EXISTS (SELECT 1 FROM engineering_intervention_pending WHERE workspace_id=? AND issue_id=?)")
       .run(record.version, JSON.stringify(record), record.workspaceId, record.issueId, record.revision, expected, record.workspaceId, record.issueId);
     if (changed.changes !== 1) throw new DraftConflictError("Business workflow changed; reload the current checkpoint");
   }
@@ -156,7 +156,7 @@ export class BusinessApplication {
   }
   async continuations() {
     const pending = [];
-    for (const row of this.db.prepare("SELECT payload FROM business_contract root WHERE NOT EXISTS (SELECT 1 FROM engineering_intervention held WHERE held.workspace_id=root.workspace_id AND held.issue_id=root.issue_id)").all()) {
+    for (const row of this.db.prepare("SELECT payload FROM business_contract root WHERE NOT EXISTS (SELECT 1 FROM engineering_intervention_pending held WHERE held.workspace_id=root.workspace_id AND held.issue_id=root.issue_id)").all()) {
       const record = recordSchema.parse(JSON.parse(String(row.payload))); if(record.delivery?.handedOff)continue;let entry = this.active(record), draft = await this.drafts.read(entry.draftId);
       if (draft?.status === "completed" && !entry.settledHash) { this.settle(record, entry, draft); entry = this.active(record); draft = await this.drafts.read(entry.draftId); }
       const comment=record.comments.find(item=>!item.version || item.reviewedBy && !item.nativeResolved);
@@ -216,7 +216,7 @@ export class BusinessApplication {
       this.readonlyExecution(record, entry, execution);
       const existing = this.db.prepare("SELECT payload FROM business_execution WHERE workspace_id=? AND issue_id=? AND revision=? AND agent_id=? AND attempt_id=?").get(record.workspaceId, record.issueId, record.revision, actor.agentId, actor.attemptId);
       if (existing && JSON.stringify(executionSchema.parse(JSON.parse(String(existing.payload)))) !== JSON.stringify(execution)) throw new DraftConflictError("Native business attempt binding cannot be replaced");
-      const changed=this.db.prepare("INSERT INTO business_execution(workspace_id,issue_id,revision,agent_id,attempt_id,payload) SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM business_contract WHERE workspace_id=? AND issue_id=? AND revision=? AND version=?) AND NOT EXISTS(SELECT 1 FROM engineering_intervention WHERE workspace_id=? AND issue_id=?) ON CONFLICT(workspace_id,issue_id,revision,agent_id,attempt_id) DO UPDATE SET payload=business_execution.payload")
+      const changed=this.db.prepare("INSERT INTO business_execution(workspace_id,issue_id,revision,agent_id,attempt_id,payload) SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM business_contract WHERE workspace_id=? AND issue_id=? AND revision=? AND version=?) AND NOT EXISTS(SELECT 1 FROM engineering_intervention_pending WHERE workspace_id=? AND issue_id=?) ON CONFLICT(workspace_id,issue_id,revision,agent_id,attempt_id) DO UPDATE SET payload=business_execution.payload")
         .run(record.workspaceId, record.issueId, record.revision, actor.agentId, actor.attemptId, JSON.stringify(execution),record.workspaceId,record.issueId,record.revision,record.version,record.workspaceId,record.issueId);
       if(changed.changes!==1)throw new DraftConflictError("Business execution binding changed or surrendered execution");
       return { bound: true, repository_path: root };

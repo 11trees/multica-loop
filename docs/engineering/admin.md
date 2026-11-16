@@ -132,8 +132,11 @@ without a fence. Reserved business staging now atomically writes the new draft,
 owner pointers and immutable lineage while retaining the original hold. The API
 rechecks native ownership/content and human/Team authority before management
 acknowledgement, and interrupted acknowledgements replay the same successor. A
-passing/prepared/reserved/staged repair Case still holds its business fence;
-execution release, native queue publication and Case closure remain unconnected.
+passing/prepared/reserved/staged repair Case still holds its business fence.
+Task-specific readiness and atomic native publication now create the fixed task
+and release its exact fence together. Only that authenticated task can open its
+checkpoint on native bind. Publication acknowledgements replay the native ledger
+and enter `observing`; progress observation and Case closure remain unconnected.
 See [the verification protocol](repair-verification.md).
 Diagnosis and external-wait prerequisites remain unconnected. No investigation
 receipt closes the Case or resumes business.
@@ -193,7 +196,9 @@ preparation and native check execution with immutable physical receipts are
 connected. Scoped registered-root write grants and host-recorded candidates now
 connect repair editing to verification. Isolated workspace/build actions,
 independent diagnosis, external dependency
-probes, verified business handoff and runtime updates remain unconnected. Real-provider, Linux runtime and packaged
+probes and runtime updates remain unconnected. Verified business handoff now
+connects controlled task publication and resume; progress observation and Case
+closure still require implementation. Real-provider, Linux runtime and packaged
 acceptance remain unverified. The complete migration stays active.
 
 

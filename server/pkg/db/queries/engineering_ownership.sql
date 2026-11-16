@@ -110,3 +110,20 @@ SELECT * FROM engineering_repair_handoff WHERE target_hash = @target_hash;
 INSERT INTO engineering_repair_handoff(target_hash,workspace_id,project_id,task_id,payload)
 VALUES(@target_hash,@workspace_id,@project_id,@task_id,@payload)
 ON CONFLICT(target_hash) DO NOTHING RETURNING *;
+
+-- name: GetEngineeringRepairPublication :one
+SELECT * FROM engineering_repair_publication WHERE target_hash = @target_hash;
+
+-- name: CreateEngineeringRepairPublication :one
+INSERT INTO engineering_repair_publication(target_hash,workspace_id,project_id,task_id,payload)
+VALUES(@target_hash,@workspace_id,@project_id,@task_id,@payload) RETURNING *;
+
+-- name: PublishEngineeringRepairReservation :execrows
+UPDATE engineering_repair_handoff SET phase='published'
+WHERE target_hash = @target_hash AND workspace_id = @workspace_id AND project_id = @project_id AND phase='reserved' AND payload = @payload;
+
+-- name: ReleasePublishedEngineeringRepairFence :execrows
+DELETE FROM engineering_repair_fence WHERE workspace_id = @workspace_id AND project_id = @project_id
+ AND case_id = @case_id AND attempt_id = @attempt_id AND generation = @generation
+ AND owner_id = @owner_id AND supervision_token = @supervision_token AND intent_revision = @intent_revision
+ AND observation_id = @observation_id AND source_attempt_id = @source_attempt_id AND source_revision = @source_revision AND snapshot_hash = @snapshot_hash AND phase='owned';

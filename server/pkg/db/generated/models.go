@@ -832,6 +832,15 @@ type EngineeringRepairHandoff struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
+type EngineeringRepairPublication struct {
+	TargetHash  string             `json:"target_hash"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	ProjectID   pgtype.UUID        `json:"project_id"`
+	TaskID      pgtype.UUID        `json:"task_id"`
+	Payload     string             `json:"payload"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
 type EngineeringRunGuard struct {
 	ControllerID      pgtype.UUID        `json:"controller_id"`
 	WorkspaceID       pgtype.UUID        `json:"workspace_id"`

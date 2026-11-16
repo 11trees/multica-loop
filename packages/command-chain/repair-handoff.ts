@@ -55,3 +55,14 @@ export const handoffApplicationSchema=handoffApplicationBodySchema.extend({hash}
   if(value.root_kind==="direct"?value.draft_id!==null||value.draft_hash!==null:value.draft_id===null||value.draft_hash===null)ctx.addIssue({code:"custom",message:"Staged draft identity differs from its workflow owner"});
 });
 export type HandoffApplication=z.infer<typeof handoffApplicationSchema>;
+export const handoffReadyBodySchema=z.strictObject({ready:z.literal(true),target_hash:hash,reservation_hash:hash,application_hash:hash,expected_version:repairContentVersionSchema,continuation:handoffContinuationSchema});
+export function handoffReadyHash(value:z.infer<typeof handoffReadyBodySchema>){const c=value.continuation,fields=["multica:repair-dispatch-ready:1",value.target_hash,value.reservation_hash,value.application_hash,value.expected_version,c.workspace_id,c.issue_id,c.agent_id,c.user_id,c.task_id,c.parent_issue_id??"",String(c.expected_revision),String(c.expected_sequence),c.reason],digest=createHash("sha256");for(const field of fields)digest.update(`${Buffer.byteLength(field,"utf8")}:${field}`,"utf8");return digest.digest("hex");}
+export const handoffReadySchema=handoffReadyBodySchema.extend({hash}).superRefine((value,ctx)=>{if(handoffReadyHash(value)!==value.hash)ctx.addIssue({code:"custom",message:"Business dispatch readiness hash changed"});});
+export type HandoffReady=z.infer<typeof handoffReadySchema>;
+const publicationFields=z.strictObject({published:z.literal(true),hash,case_id:text,verification_attempt_id:text,target_hash:hash,reservation_hash:hash,application_hash:hash,ready_hash:hash,task_id:z.uuid(),workspace_id:z.uuid(),issue_id:z.uuid(),agent_id:z.uuid(),user_id:z.uuid(),runtime_id:z.uuid()});
+export type HandoffPublication=z.infer<typeof publicationFields>;
+export function handoffPublicationHash(value:Omit<HandoffPublication,"hash">){
+ const fields=["multica:repair-handoff-publication:1",value.case_id,value.verification_attempt_id,value.target_hash,value.reservation_hash,value.application_hash,value.ready_hash,value.task_id,value.workspace_id,value.issue_id,value.agent_id,value.user_id,value.runtime_id],digest=createHash("sha256");
+ for(const field of fields)digest.update(`${Buffer.byteLength(field,"utf8")}:${field}`,"utf8");return digest.digest("hex");
+}
+export const handoffPublicationSchema=publicationFields.superRefine((value,ctx)=>{if(handoffPublicationHash(value)!==value.hash)ctx.addIssue({code:"custom",message:"Native handoff publication hash changed"});});

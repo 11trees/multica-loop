@@ -43,6 +43,7 @@ func newControllerFixture(t *testing.T) controllerFixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
+		dbfx.Exec(t, "DELETE FROM engineering_repair_publication WHERE project_id=$1", project)
 		dbfx.Exec(t, "DELETE FROM engineering_repair_handoff WHERE project_id=$1", project)
 		dbfx.Exec(t, "DELETE FROM engineering_run_process WHERE controller_id IN (SELECT controller_id FROM engineering_run_guard WHERE task_id=$1)", task)
 		dbfx.Exec(t, "DELETE FROM engineering_run_guard WHERE task_id=$1", task)
@@ -395,5 +396,25 @@ func TestEngineeringControllerClaimFlagIncludesNativeIssuesAndChats(t *testing.T
 				t.Fatalf("Claim ownership flag=%t want %t, failure=%+v", response.EngineeringOwnership, want, failure)
 			}
 		})
+	}
+}
+
+func TestEngineeringControllerAdmissionUsesAuthenticatedTaskIdentity(t *testing.T) {
+	f := newControllerFixture(t)
+	calls := 0
+	f.h.EngineeringWorker = engineeringAdminTestWorker{call: func(input map[string]any) (json.RawMessage, error) {
+		if input["action"] != "execution-permission" {
+			t.Fatal("unexpected controller admission action")
+		}
+		payload, ok := input["payload"].(map[string]string)
+		if !ok || payload["task_id"] != f.task {
+			t.Fatal("controller admission did not pin its authenticated native task")
+		}
+		calls++
+		return json.RawMessage(`{"allowed":true}`), nil
+	}}
+	f.begin(t)
+	if calls != 1 {
+		t.Fatal("controller skipped task-specific execution admission")
 	}
 }

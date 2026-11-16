@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { repairHandoffTargetSchema,handoffProposalSchema } from "./repair-handoff";
+import { repairHandoffTargetSchema,handoffProposalSchema,handoffReadySchema,handoffApplicationSchema,handoffHash } from "./repair-handoff";
 import { readRepairWorkspaceVersion } from "./repair-workspace-version";
 import { hostHandoffReservationFixture } from "./test-helpers/repair-handoff-fixture";
 import { EngineeringTeamStore } from "./team-store";
@@ -254,4 +254,36 @@ it("rejects an old asynchronous runtime bind after its recovery checkpoint is st
   release();await expect(late).rejects.toThrow(/surrendered execution/);
   expect(await invoke(host,"repair-source",{case_id:target.caseId,observation_id:target.observationId,snapshot_hash:target.snapshotHash})).toMatchObject({checkpoint_state:"staged"});
  }finally{release();await late.catch(()=>{});validation.mockRestore();}
+});
+for(const kind of ["direct","yaml"] as const)it(`authorizes only the frozen ${kind} successor and resumes through its native bind`,async()=>{
+ if(kind==="direct"){await direct();await invoke(owner,"direct-run");}else{await invoke(human,"configure",{expected_revision:0,agent_id:agentId,repository_path:repository,sources:[{key:"original",kind:"acceptance",description:"Original entry",oracle:"Original observable behavior",sourceRef:"README.md"}]});await invoke({...owner,kind:"daemon"},"bind",{work_dir:repository,mode:"in_place",overlays:[]});await invoke(owner,"start");}
+ await invoke(owner,"intervention-request",body);
+ const target=await handoffTarget(),reservation=hostHandoffReservationFixture(target,await invoke(host,"repair-handoff-prepare",target)),application=await invoke(host,"repair-handoff-stage",reservation);
+ await expect(invoke(owner,"repair-handoff-ready",application)).rejects.toThrow(/native host/);
+ const ready=handoffReadySchema.parse(await invoke(host,"repair-handoff-ready",application));
+ app.close();app=new EngineeringApplication(database,definition);expect(await invoke(host,"repair-handoff-ready",application)).toEqual(ready);
+ expect(await invoke(host,"execution-permission")).toEqual({allowed:false});expect(await invoke(host,"execution-permission",{task_id:randomUUID()})).toEqual({allowed:false});expect(await invoke(host,"execution-permission",{task_id:ready.continuation.task_id})).toEqual({allowed:true});
+ expect(await invoke({kind:"coordinator"},"continuations")).toEqual([]);await expect(invoke(human,"abandon",{})).rejects.toThrow(/surrendered/);
+ const successor={...owner,attemptId:`${ready.continuation.task_id}:999999`};
+ await expect(invoke(successor,kind==="direct"?"direct-run":"start")).rejects.toThrow(/surrendered/);
+ await invoke({...successor,kind:"daemon"},"bind",{work_dir:repository,mode:"in_place",overlays:[]});
+ expect(await invoke(host,"execution-permission")).toEqual({allowed:true});
+ await expect(invoke(owner,kind==="direct"?"direct-submit":"command",{})).rejects.toThrow(/surrendered/);
+ await expect(invoke({...owner,kind:"daemon"},"bind",{work_dir:repository,mode:"in_place",overlays:[]})).rejects.toThrow(/surrendered/);
+ if(kind==="direct"){await invoke(successor,"direct-run");await invoke(successor,"direct-submit",{summary:"Actual recovered result"});expect(await invoke(host,"completion")).toMatchObject({allowed:true});}
+ else{
+  const state=z.object({draft:z.object({id:z.string(),status:z.string(),phase:z.string().nullable(),attemptId:z.string()})}).parse(await invoke(successor,"start"));
+  expect(state.draft).toMatchObject({id:handoffApplicationSchema.parse(application).draft_id,status:"editing",attemptId:successor.attemptId});
+  const originalDb=new DatabaseSync(database),oldId=String(originalDb.prepare("SELECT draft_id FROM engineering_intervention").get()!.draft_id);originalDb.close();const drafts=new SqliteDraftStore(database);try{const old=await drafts.read(oldId);expect(old).toBeDefined();await expect(drafts.save({...old!,sequence:old!.sequence+1},old!.sequence)).rejects.toThrow(/Draft changed/);}finally{drafts.close();}
+ }
+ const db=new DatabaseSync(database);expect(db.prepare("SELECT state,attempt_id FROM engineering_repair_dispatch").get()).toMatchObject({state:"active",attempt_id:successor.attemptId});expect(db.prepare("SELECT count(*) AS n FROM engineering_intervention").get()!.n).toBe(1);db.close();
+});
+it("keeps dispatch held when the applied witness, candidate content or physical exit changes",async()=>{
+ await direct();await invoke(owner,"direct-run");await invoke(owner,"intervention-request",body);
+ const target=await handoffTarget(),reservation=hostHandoffReservationFixture(target,await invoke(host,"repair-handoff-prepare",target)),application=handoffApplicationSchema.parse(await invoke(host,"repair-handoff-stage",reservation));
+ const {hash:_hash,...wrong}=application,changed={...wrong,reservation_hash:"f".repeat(64)};
+ await expect(invoke(host,"repair-handoff-ready",{...changed,hash:handoffHash(changed)})).rejects.toThrow(/exact applied/);
+ await writeFile(join(repository,"late-candidate.txt"),"Candidate changed after verification");await expect(invoke(host,"repair-handoff-ready",application)).rejects.toThrow(/content changed/);await rm(join(repository,"late-candidate.txt"));
+ const db=new DatabaseSync(database);db.prepare("INSERT INTO engineering_process VALUES(?,?,?,?,?,?)").run(randomUUID(),human.workspaceId,human.issueId,owner.attemptId,"launching","{}");
+ await expect(invoke(host,"repair-handoff-ready",application)).rejects.toThrow(/physical exit/);expect(db.prepare("SELECT count(*) AS n FROM engineering_repair_dispatch").get()!.n).toBe(0);expect(await invoke(host,"execution-permission")).toEqual({allowed:false});db.close();
 });

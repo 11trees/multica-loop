@@ -106,7 +106,7 @@ func (c *LocalControlClient) Call(ctx context.Context, input any) (json.RawMessa
 		// checks; reservation repeats authorization under the admission lock.
 		timeout = 40 * time.Second
 	}
-	if operation.Action == "stage-handoff" {
+	if operation.Action == "stage-handoff" || operation.Action == "publish-handoff" {
 		timeout = 60 * time.Second
 	}
 	response, err := (&http.Client{Transport: transport, Timeout: timeout}).Do(request)

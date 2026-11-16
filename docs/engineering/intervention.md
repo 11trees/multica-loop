@@ -115,7 +115,9 @@ draft and owner pointers atomically, retaining original drafts, exact binding
 history and the business hold. Successor stages restart with fresh derived conclusions while
 retaining original obligations, scenarios and authenticated human choices. Old
 attempts and surrendered draft IDs remain revoked independently of active-hold
-lookup. Execution release, queue publication and closure remain incomplete. Recheck actual content,
+lookup. Task-specific readiness and atomic native publication now resume only the
+frozen successor through its authenticated native bind, retaining immutable
+publication replay. Case observation and closure remain incomplete. Recheck actual content,
 native project/cohort, the task's frozen Team policy and saved human authority
 before acting. Later Team profile edits do not reconfigure the interrupted task.
 Management intent, the business checkpoint and the PostgreSQL fence/queue live in

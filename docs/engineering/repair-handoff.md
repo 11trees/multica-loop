@@ -1,15 +1,16 @@
-# Verified business handoff staging
+# Verified business handoff
 
 The independent host prepares a successor, reserves its native task identity and
 stages its business checkpoint after repair verification. Business staging writes
 a new draft and its owner's pointers atomically while retaining the intervention
-hold and native reservation. It does not enqueue a task, open execution, release
-the project fence or close the Case.
+hold and native reservation. A separate native publication then commits the fixed
+task and fence release together. Only that authenticated task can activate the
+ready business checkpoint; the Case enters observation rather than closure.
 
 ## Verified management context
 
-Management schema 11 retains preparation/reservation ledgers and adds
-`admin_handoff_application`. The host reads `handoff-pending` only
+Management schema 12 retains preparation, reservation and application ledgers and
+adds `admin_handoff_publication`. The host reads `handoff-pending` only
 under current running intent and obtains `handoff-context` with management
 authority. Agent commands expose neither action. A display status alone is
 insufficient: context recompiles the entire ordered native receipt, compares its
@@ -94,7 +95,7 @@ is checked separately. Stopped intent or new original observations refuse reuse.
 
 Reserved records participate in the database admission and project/resource
 mutation guards. Even if a fence is absent, an outstanding reservation prevents
-controller/task admission and resource changes until publication is implemented.
+controller/task admission and resource changes until publication commits.
 The normal reservation path retains its exact owned fence and business hold.
 
 ## Successor evidence and retired authority
@@ -158,20 +159,49 @@ acknowledgement replays the same applied checkpoint under fresh running intent.
 The Case remains `verified`, the original intervention remains pending, and
 both reservation and project fence remain held.
 
-## Native publication still required
+## Task-specific readiness and native publication
 
-Staging is complete while business execution stays held. Revalidate code-bound
-upstream references and coordinate removal of the business hold with native
-publication. Publish the stable task and release the matching fence in one native
-transaction after validating the applied business receipt. A crash after business
-activation must leave native admission blocked until that final transaction can
-replay. Do not expose a claimable task before its business checkpoint is ready.
+Independent discovery follows staging with private `publish-handoff`. The API
+loads the acknowledged application, rechecks original source/fence/cohort,
+physical cleanup, current intent and saved human/Team/resources, and prepares
+ordinary TaskService enqueue parameters without creating work. Under the project
+admission lock it validates again and obtains host-only `repair-handoff-ready`.
+The business worker checks actual content before and after its SQLite transaction,
+exact applied root/draft/sidecars and original bindings, and physical exit.
+
+`engineering_repair_dispatch` persists a ready grant for only the frozen native
+task ID. The ordinary coordinator, human writes and unrelated tasks remain held.
+The host's execution-admission request supplies the authenticated native task ID;
+selection may inspect this task's prepared scope before binding. Only its actual
+daemon claim can activate the successor at repository bind. The pending-hold view
+then excludes this original observation while immutable surrender history remains.
+Original task/daemon attempts and draft IDs stay revoked; process reserve/bind
+also recheck durable surrender within their own transaction. Exit receipts remain
+permitted. A failed native publication leaves readiness held with no new task.
+
+Migration 668 adds PostgreSQL `engineering_repair_publication` and blocks unrelated
+queued inserts while a project has a reserved handoff. The publication transaction
+marks the exact reservation published, deletes only its matching owned fence,
+creates the stable task through ordinary TaskService parameters, and stores the
+immutable ready/publication envelope. These become visible together. The native
+scheduler is notified only after commit. Task creation or receipt failure rolls
+back the fence, reservation and queue changes together. The business hold still
+waits for this task's first authenticated native bind.
+
+A lost management acknowledgement replays the native publication ledger first.
+It validates the stored task identity and current management authority/intent;
+it does not prepare or stage again against an old root that the successor may
+already have changed. Replays may notify a queued task, but never recreate a task
+or re-enqueue a terminal one. Native and Node hash the same length-prefixed UTF-8
+ready/publication fields. Management saves its exact immutable envelope and moves
+the Case to `observing`. Restart and supervisor replacement retain that receipt.
+
+## Remaining recovery work
 
 Observe a new ordinary result application before closing the management Case.
-Preparing or activating recovery cannot satisfy a Team phase or native Done.
-Business execution release, native queue publication, progress observation and
-closure remain unimplemented. Broader revocation, runtime/service identity and
-shared-path recovery retain their separate migration requirements.
+Publication or activation cannot satisfy a Team phase or native Done. Progress
+observation and closure remain unimplemented. Broader revocation, runtime/service
+identity and shared-path recovery retain their separate migration requirements.
 
 ## Controlled evidence
 
@@ -216,10 +246,22 @@ delivery acceptance run. Real temporary Git content is used throughout. Root and
 Feedback-sidecar failure injection proves transaction rollback and same-identity
 retry. Restart, unchanged original receipts, changed draft content, missing
 bindings and a delayed old runtime bind are checked. Separate PostgreSQL/private
-socket tests exercise the complete preparation/reservation/staging control chain
+socket tests exercise the preparation/reservation/staging control chain
 with isolated management/business ports, retaining both barriers and refusing
 changed version/proposal/lineage, released-hold replies, late writers, stopped
 intent and existing tasks. Management tests preserve application receipts across
 restart/supervisor replacement, reject mismatched rehashed scopes, and retain
 previous ledgers during the schema-ten upgrade. None of these checks opens a
 native dispatch or establishes a real-provider recovery acceptance result.
+
+Publication tests use real PostgreSQL and the private socket with simulated
+management/business ports. They check precommit invisibility, queued admission,
+stopped intent before and after admission-lock waiting, changed ready
+scope/hash/content, task/receipt rollback, and lost acknowledgement replay after the successor becomes terminal and the old staged
+source is no longer readable. Node tests separately resume Direct and YAML via
+the authenticated-bind boundary, keep other callers held before activation,
+complete Direct's ordinary RUN/SUBMIT, and reject old task/draft/process writes.
+Management tests retain `observing` across restart, refuse rehashed mismatched
+publication fields and preserve staged receipts during the schema-eleven upgrade.
+These are separate controlled layers; real-provider recovery and Case closure
+acceptance remain outstanding.

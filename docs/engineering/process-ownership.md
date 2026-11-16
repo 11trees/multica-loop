@@ -192,6 +192,7 @@ deadline; inherited Git directory/index settings cannot redirect them.
 
 Controlled content tests and the bundled private-worker integration cover these
 reads and changed uncommitted content. Original code/kernel/host versions remain
-unchanged. This is source identity only: immutable candidate preparation, repair
-write authority, running-service identity, independent command verification and
-verified business handoff remain incomplete.
+unchanged. These reads establish source identity only. Scoped repair write grants,
+candidate capture, independent native check execution and controlled business
+publication have their own protocols. Running-service identity and full
+real-provider recovery acceptance remain incomplete.

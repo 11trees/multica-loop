@@ -8,8 +8,30 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/multica-ai/multica/server/internal/attribution"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/multica-ai/multica/server/pkg/protocol"
 )
+
+type EngineeringContinuationPlan struct {
+	Params      db.CreateAgentTaskParams
+	attribution attribution.Result
+}
+
+// Preparation shares the ordinary enqueue's attribution, access and resource
+// rules. The caller creates Params in its ownership transaction before waking.
+func (s *TaskService) PrepareEngineeringContinuation(ctx context.Context, issue db.Issue, agentID, userID, taskID pgtype.UUID, note string) (EngineeringContinuationPlan, error) {
+	params, attr, err := s.prepareMentionTaskWithCommentPlan(ctx, issue, agentID, pgtype.UUID{}, nil, false, pgtype.UUID{}, false, note, userID, pgtype.UUID{}, OriginDerived, false, taskID)
+	return EngineeringContinuationPlan{Params: params, attribution: attr}, err
+}
+func (s *TaskService) EngineeringContinuationPublished(ctx context.Context, plan EngineeringContinuationPlan, task db.AgentTaskQueue) {
+	s.RecordHumanDelegation(ctx, plan.attribution)
+	s.NotifyEngineeringContinuation(ctx, task)
+}
+func (s *TaskService) NotifyEngineeringContinuation(ctx context.Context, task db.AgentTaskQueue) {
+	s.broadcastTaskEvent(ctx, protocol.EventTaskQueued, task)
+	s.NotifyTaskEnqueued(ctx, task)
+}
 
 // EnqueueEngineeringRun names the frozen role without changing the issue assignee.
 func (s *TaskService) EnqueueEngineeringRun(ctx context.Context, issue db.Issue, agentID, actorUserID pgtype.UUID, note string) (db.AgentTaskQueue, error) {

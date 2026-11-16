@@ -46,7 +46,7 @@ export class FeedbackStore {
  private saveComment(batch:FeedbackBatch,id:string,value:z.infer<typeof commentStateSchema>){this.db.prepare("INSERT INTO engineering_feedback_comment(workspace_id,issue_id,comment_id,payload) VALUES(?,?,?,?) ON CONFLICT(workspace_id,issue_id,comment_id) DO UPDATE SET payload=excluded.payload").run(batch.workspaceId,batch.issueId,id,JSON.stringify(value));}
  private save(batch:FeedbackBatch,expectedVersion:number){
   batch.version=expectedVersion+1;batchSchema.parse(batch);
-  const result=this.db.prepare("UPDATE engineering_feedback_batch SET version=?,payload=? WHERE workspace_id=? AND issue_id=? AND batch_id=? AND version=? AND NOT EXISTS(SELECT 1 FROM engineering_intervention WHERE workspace_id=? AND issue_id=?)").run(batch.version,JSON.stringify(batch),batch.workspaceId,batch.issueId,batch.id,expectedVersion,batch.workspaceId,batch.issueId);
+  const result=this.db.prepare("UPDATE engineering_feedback_batch SET version=?,payload=? WHERE workspace_id=? AND issue_id=? AND batch_id=? AND version=? AND NOT EXISTS(SELECT 1 FROM engineering_intervention_pending WHERE workspace_id=? AND issue_id=?)").run(batch.version,JSON.stringify(batch),batch.workspaceId,batch.issueId,batch.id,expectedVersion,batch.workspaceId,batch.issueId);
   if(result.changes !== 1)throw new DraftConflictError("Feedback batch changed; reload its current version");
  }
  private atomic<T>(work:()=>T){this.db.exec("BEGIN IMMEDIATE");try{const result=work();this.db.exec("COMMIT");return result;}catch(error){this.db.exec("ROLLBACK");throw error;}}

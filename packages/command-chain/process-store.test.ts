@@ -51,3 +51,16 @@ it("binds one exact process birth, permits cleanup after surrender, and rejects 
         db.close();
     }
 });
+it("rechecks durable surrender inside process mutation even after the active hold is released", () => {
+    const db = new DatabaseSync(":memory:"), store = new EngineeringProcessStore(db), scope = owner(), id = identity();
+    try {
+        store.bind(scope, undefined, "/fixture/repository", "in_place");
+        store.invoke(scope, { ...id, operation: "reserve", provider: "codex" });
+        db.prepare("INSERT INTO engineering_intervention VALUES(?,?,?,?,?)").run(scope.workspaceId, scope.issueId, scope.attemptId, null, JSON.stringify({ observationId: "original" }));
+        db.prepare("INSERT INTO engineering_repair_dispatch VALUES(?,?,?,?,?,'active',?,?)").run("target", "original", scope.workspaceId, scope.issueId, randomUUID(), "{}", "new-claim");
+        expect(db.prepare("SELECT 1 FROM engineering_intervention_pending").get()).toBeUndefined();
+        expect(() => store.invoke(scope, { ...id, operation: "bind", pid: 42, group_id: 42, marker: "late-birth" })).toThrow(/Inactive/);
+        expect(store.invoke(scope, { ...id, operation: "exit", pid: 0, exit_confirmed: true })).toEqual({ exited: true });
+        expect(() => store.invoke(scope, { ...identity(), operation: "reserve", provider: "codex" })).toThrow(/Surrendered/);
+    } finally { db.close(); }
+});

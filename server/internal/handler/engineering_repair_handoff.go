@@ -18,6 +18,7 @@ type engineeringHandoffContext struct {
 	TargetHash            string                         `json:"target_hash"`
 	Preparation           *engineeringHandoffPreparation `json:"preparation"`
 	Reservation           *engineeringHandoffReservation `json:"reservation"`
+	Application           json.RawMessage                `json:"application"`
 }
 
 type engineeringHandoffPreparation struct {
@@ -46,6 +47,10 @@ func (h *Handler) controlEngineeringRepair(ctx context.Context, raw json.RawMess
 		return h.runEngineeringRepairHandoff(ctx, raw, true)
 	case "stage-handoff":
 		return h.stageEngineeringRepairHandoff(ctx, raw)
+	case "publication-status":
+		return h.engineeringRepairPublicationStatus(ctx, raw)
+	case "publish-handoff":
+		return h.publishEngineeringRepairHandoff(ctx, raw)
 	default:
 		return nil, fmt.Errorf("unknown native repair control action")
 	}
@@ -68,6 +73,22 @@ func (h *Handler) ReconcileEngineeringRepairHandoffs(ctx context.Context, author
 		return err
 	}
 	for _, item := range pending {
+		status, err := h.EngineeringTakeoverControl.Call(ctx, map[string]any{"action": "publication-status", "authority": authority, "case_id": item.CaseID})
+		if err != nil {
+			return err
+		}
+		var current struct {
+			Published bool `json:"published"`
+		}
+		if err = json.Unmarshal(status, &current); err != nil {
+			return err
+		}
+		if current.Published {
+			if _, err = h.EngineeringTakeoverControl.Call(ctx, map[string]any{"action": "publish-handoff", "authority": authority, "case_id": item.CaseID}); err != nil {
+				return err
+			}
+			continue
+		}
 		if _, err = h.EngineeringTakeoverControl.Call(ctx, map[string]any{"action": "prepare-handoff", "authority": authority, "case_id": item.CaseID}); err != nil {
 			return err
 		}
@@ -75,6 +96,9 @@ func (h *Handler) ReconcileEngineeringRepairHandoffs(ctx context.Context, author
 			return err
 		}
 		if _, err = h.EngineeringTakeoverControl.Call(ctx, map[string]any{"action": "stage-handoff", "authority": authority, "case_id": item.CaseID}); err != nil {
+			return err
+		}
+		if _, err = h.EngineeringTakeoverControl.Call(ctx, map[string]any{"action": "publish-handoff", "authority": authority, "case_id": item.CaseID}); err != nil {
 			return err
 		}
 	}
