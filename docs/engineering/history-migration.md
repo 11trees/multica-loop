@@ -492,6 +492,45 @@ issues were not adopted or replaced. Task staging does not clear the project
 hold, launch a provider, accept the library working tree or transfer old reading
 and completion authority.
 
+## Workspace content baseline
+
+The operator can capture the current prepared work directory while source and
+native execution remain held:
+
+```sh
+make env-exec ARGS="-- node scripts/migration/loopwork-cutover.mjs workspace --id SAVED_CUTOVER_UUID"
+make env-exec ARGS="-- node scripts/migration/loopwork-cutover.mjs workspace-check --id SAVED_CUTOVER_UUID --expected-workspace SAVED_WORKSPACE_SHA256"
+```
+
+These commands derive the path from the hash-pinned source packet and preparation;
+they accept no replacement path. The observation retains HEAD, the staged index,
+tracked/deleted paths, executable modes, symlink identity and every nonignored
+untracked file, including `.tmp`. Two complete passes must agree. Git inspection
+disables optional index writes and configured filesystem monitors; capture does
+not reset, clean, stage or commit the working tree. The native receipt stores
+paths, modes and digests, never file contents. This is a content witness, not a
+backup; ignored paths outside HEAD/index, Git metadata, symlink target bytes and
+external evidence/image files remain excluded.
+
+Capture rechecks source guards and the named local registered-writer proof.
+Identical retries reuse the latest content hash. A new observed version appends
+history; `workspace-check` requires the explicitly named latest hash and refuses
+changed bytes, index, paths or HEAD without replacing the saved baseline. Freeze
+retries and pre-activation rollback retain every workspace observation. A match
+does not accept the code, transfer ownership, configure a runtime, release either
+hold or enqueue a task. Final activation must repeat these checks in its own
+authorized protocol; that activation protocol remains incomplete.
+
+The actual `/Users/landi/Products/library` observation is
+`8db6d16dbecc9eb2f1668de987734237f253335fe1e46e3f283ac869ae40cecb`,
+at HEAD `d869849b5ebaa744eac6fa2444c4522dc2e62d99`. It covers 297 paths,
+including 73 untracked files and one deleted tracked file, with no symlinks.
+An explicit-hash recheck matched. Existing user changes remain in place and all
+four native tasks remain held. Controlled Git/PostgreSQL/SQLite tests cover
+dirty/staged divergence, deleted directories, untracked bytes with unchanged
+HEAD/index, executable modes, inert symlinks, inherited Git configuration,
+observation replay, drift refusal and preservation across freeze/rollback.
+
 ## Remaining cutover work
 
 1. Reconcile and activate the staged native Team tasks against their saved

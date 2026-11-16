@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { browseArchive, verifyArchive } from "./loopwork-history-lib.mjs";
 import { changeSourceFence, cutoverDigest, inspectSourceFence, prepareSourceFence, sourceNamespace } from "./loopwork-source-fence.mjs";
 import { probeSourceProcesses } from "./loopwork-source-processes.mjs";
+import { captureWorkspace } from "./loopwork-workspace.mjs";
 
 export const cutoverWorkspace = "323d1db3-abcf-4890-a2ca-df15a057fdf7";
 export const cutoverHuman = "db20ef47-8076-41a0-af0d-2814950fbe42";
@@ -102,6 +103,50 @@ function canonical(value) {
 }
 export const stableDigest = value => cutoverDigest(canonical(value));
 
+// Capture current source workspaces without copying, resetting or accepting
+// their code. Paths come from the pinned source packets, never CLI input.
+export async function observeCutoverWorkspaces(client, archive, id, expectedWorkspaceHash = null, inspectHost) {
+  return transaction(client, async () => {
+    const saved = await record(client, id, true);
+    if (saved.phase !== "source_frozen") throw new Error("Workspace observation requires the frozen phase");
+    await noAdoption(client, saved.project_ids, id);
+    if ((await inspectSourceFence(archive, identity(saved))).state !== "frozen") throw new Error("Workspace observation requires the entire source frozen");
+    const previous = saved.receipt?.workspace_observations ?? [];
+    if (previous.some(row => stableDigest(row.payload) !== row.hash || row.payload.cutover_id !== id || row.payload.scope_hash !== saved.scope_hash)) throw new Error("Saved workspace observation changed");
+    if (expectedWorkspaceHash && previous.at(-1)?.hash !== expectedWorkspaceHash) throw new Error("Expected workspace baseline is not the latest saved observation");
+    const workspaces = [], projects = new Set();
+    for (const preparation of saved.payload.preparations) {
+      const native = await client.query("SELECT * FROM engineering_history_preparation WHERE id=$1 AND workspace_id=$2", [preparation.id, cutoverWorkspace]);
+      const row = native.rows[0];
+      const { packet } = await browseArchive(archive, saved.archive_hash, { action: "packet", task_id: preparation.source_task_id });
+      if (!row || row.project_id !== preparation.project_id || row.packet_hash !== preparation.packet_hash
+        || row.archive_hash !== saved.archive_hash || row.source_namespace !== saved.source_namespace
+        || row.source_task_id !== preparation.source_task_id || row.revision !== preparation.revision
+        || row.team_id !== preparation.team_id || row.team_revision !== preparation.team_revision
+        || row.source_project_id !== packet?.source_project.id || row.payload.packet?.hash !== packet?.hash
+        || packet?.hash !== preparation.packet_hash || !packet.schema_complete || packet.source_project.deleted_at !== null) {
+        throw new Error("Workspace preparation or original packet changed");
+      }
+      const key = `${packet.source_project.id}:${row.project_id}`;
+      if (projects.has(key)) continue;
+      projects.add(key);
+      workspaces.push({ source_project_id: packet.source_project.id, project_id: row.project_id, content: await captureWorkspace(packet.source_project.workspace_root) });
+    }
+    if (!workspaces.length) throw new Error("Cutover has no prepared workspace");
+    const proof = await probeSourceProcesses(archive, saved.archive_hash, identity(saved), inspectHost);
+    if (!proof.registered_writers_quiesced) throw new Error("Source registered writers require reconciliation");
+    const payload = { format: "loopwork-cutover-workspaces-v1", cutover_id: id, scope_hash: saved.scope_hash, archive_hash: saved.archive_hash, source_namespace: saved.source_namespace, workspaces, execution_authorized: false };
+    const hash = stableDigest(payload);
+    const latest = previous.at(-1);
+    if (expectedWorkspaceHash && (stableDigest(latest.payload) !== expectedWorkspaceHash || hash !== expectedWorkspaceHash)) throw new Error("Workspace differs from the saved baseline; preserve changes and review a new observation");
+    if (!expectedWorkspaceHash && latest?.hash !== hash) {
+      previous.push({ hash, observed_at: new Date().toISOString(), payload });
+      await client.query("UPDATE engineering_history_cutover SET receipt=$2,updated_at=now() WHERE id=$1", [id, { ...saved.receipt, workspace_observations: previous }]);
+    }
+    return { ...projection(saved), workspace_hash: hash, matches_saved_baseline: expectedWorkspaceHash ? true : null, workspaces: workspaces.map(({ source_project_id, project_id, content }) => ({ source_project_id, project_id, root: content.root, head: content.head, dirty: content.dirty, files: content.files.length, untracked_files: content.untracked_count, deleted_files: content.deleted_count, symlinks: content.files.filter(row => row.kind === "symlink").length })), registered_writers_quiesced: true };
+  });
+}
+
 export async function probeCutoverSource(client, archive, expectedHash) {
   await authorized(client);
   return probeSourceProcesses(archive, expectedHash);
@@ -137,7 +182,7 @@ export async function freezeCutover(client, archive, id) {
       if (current.phase !== saved.phase) throw new Error("Native cutover barrier changed");
     });
     if (receipt.state !== "frozen") throw new Error("Source cohort is not fully frozen");
-    await client.query("UPDATE engineering_history_cutover SET phase='source_frozen',receipt=$2,updated_at=now() WHERE id=$1", [id, { ...receipt, physical_observations: saved.receipt?.physical_observations ?? [] }]);
+    await client.query("UPDATE engineering_history_cutover SET phase='source_frozen',receipt=$2,updated_at=now() WHERE id=$1", [id, { ...receipt, physical_observations: saved.receipt?.physical_observations ?? [], workspace_observations: saved.receipt?.workspace_observations ?? [] }]);
     return { ...projection({ ...saved, phase: "source_frozen" }), source: receipt };
   });
 }
@@ -160,7 +205,7 @@ export async function rollbackCutover(client, archive, id) {
     });
     if (receipt.state !== "unfenced") throw new Error("Source cohort is still fenced");
     await noAdoption(client, saved.project_ids);
-    await client.query("UPDATE engineering_history_cutover SET phase='cancelled',receipt=$2,updated_at=now() WHERE id=$1", [id, { ...receipt, physical_observations: saved.receipt?.physical_observations ?? [] }]);
+    await client.query("UPDATE engineering_history_cutover SET phase='cancelled',receipt=$2,updated_at=now() WHERE id=$1", [id, { ...receipt, physical_observations: saved.receipt?.physical_observations ?? [], workspace_observations: saved.receipt?.workspace_observations ?? [] }]);
     return { ...projection({ ...saved, phase: "cancelled" }), source: receipt };
   });
 }

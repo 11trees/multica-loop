@@ -1,7 +1,7 @@
 import pg from "pg";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
-import { freezeCutover, holdCutover, observeCutoverProcesses, planCutover, probeCutoverSource, rollbackCutover, statusCutover } from "./loopwork-cutover-lib.mjs";
+import { freezeCutover, holdCutover, observeCutoverProcesses, observeCutoverWorkspaces, planCutover, probeCutoverSource, rollbackCutover, statusCutover } from "./loopwork-cutover-lib.mjs";
 
 export async function nativeAdoption(api,workspace,action,id,scope) {
   const root=new URL(api);
@@ -15,7 +15,8 @@ export async function nativeAdoption(api,workspace,action,id,scope) {
 
 export async function main(args, env = process.env) {
   const [action, flag, value, ...extra] = args;
-  if (extra.length || !["plan", "probe", "hold", "status", "freeze", "observe", "stage", "withdraw", "rollback"].includes(action) || (["plan", "probe"].includes(action) ? flag !== undefined : !value || flag !== (action === "hold" ? "--expected-scope" : "--id"))) throw new Error("Usage: plan|probe | hold --expected-scope sha256 | status|freeze|observe|stage|withdraw|rollback --id native-cutover-uuid");
+  const checking = action === "workspace-check";
+  if ((checking ? extra.length !== 2 || extra[0] !== "--expected-workspace" || !/^[a-f0-9]{64}$/.test(extra[1]) : extra.length) || !["plan", "probe", "hold", "status", "freeze", "observe", "workspace", "workspace-check", "stage", "withdraw", "rollback"].includes(action) || (["plan", "probe"].includes(action) ? flag !== undefined : !value || flag !== (action === "hold" ? "--expected-scope" : "--id"))) throw new Error("Usage: plan|probe | hold --expected-scope sha256 | status|freeze|observe|workspace|stage|withdraw|rollback --id native-cutover-uuid | workspace-check --id native-cutover-uuid --expected-workspace sha256");
   if (!["plan", "probe"].includes(action) && !(action === "hold" ? /^[a-f0-9]{64}$/ : /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/).test(value)) throw new Error("Invalid cutover identity");
   const archive = env.MULTICA_LOOPWORK_HISTORY_ARCHIVE, hash = env.MULTICA_LOOPWORK_HISTORY_HASH;
   if (!archive || !/^[a-f0-9]{64}$/.test(hash ?? "") || !env.DATABASE_URL) throw new Error("Use the managed environment with its pinned history archive and native database");
@@ -33,6 +34,7 @@ export async function main(args, env = process.env) {
     // Status and mutations remain bound to the environment's configured hash.
     const existing = await client.query("SELECT archive_hash,workspace_id,scope_hash FROM engineering_history_cutover WHERE id=$1", [value]);
     if (existing.rows[0]?.archive_hash !== hash) throw new Error("Cutover differs from the configured archive; restore its original configuration");
+    if (["workspace", "workspace-check"].includes(action)) return await observeCutoverWorkspaces(client, archive, value, checking ? extra[1] : null);
     if(["stage","withdraw"].includes(action))return await nativeAdoption(env.NEXT_PUBLIC_API_URL||`http://localhost:${env.PORT}`,existing.rows[0].workspace_id,action,value,existing.rows[0].scope_hash);
     return await ({ status: statusCutover, freeze: freezeCutover, observe: observeCutoverProcesses, rollback: rollbackCutover })[action](client, archive, value);
   } finally { await client.end(); }

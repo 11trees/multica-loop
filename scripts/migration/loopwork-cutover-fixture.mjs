@@ -1,18 +1,27 @@
 import { execFileSync } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { createArchive } from "./loopwork-history-lib.mjs";
 import { taskPacket } from "./loopwork-task-packet.mjs";
 
-export async function cutoverFixture(t) {
+export async function cutoverFixture(t, { workspaceRoot = null } = {}) {
   const root = await mkdtemp(join(tmpdir(), "multica-cutover-test-")), sourceRoot = join(root, "source"), dataRoot = join(sourceRoot, "data"), archive = join(root, "archive");
   await mkdir(dataRoot, { recursive: true });
   execFileSync("git", ["init", "-q", sourceRoot]);
   await writeFile(join(sourceRoot, "README.md"), "Isolated source baseline\n");
   execFileSync("git", ["-C", sourceRoot, "add", "README.md"]);
   execFileSync("git", ["-C", sourceRoot, "-c", "user.name=Cutover fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "Baseline"]);
+  if (workspaceRoot === true) {
+    workspaceRoot = join(root, "work-repository");
+    await mkdir(workspaceRoot);
+    execFileSync("git", ["init", "-q", workspaceRoot]);
+    await writeFile(join(workspaceRoot, "README.md"), "Existing work\n");
+    execFileSync("git", ["-C", workspaceRoot, "add", "."]);
+    execFileSync("git", ["-C", workspaceRoot, "-c", "user.name=Cutover fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "Work baseline"]);
+    workspaceRoot = await realpath(workspaceRoot);
+  }
   const dbs = {};
   for (const name of ["loopwork.db", "loop-ui.db", "admin-management.db"]) {
     const db = new DatabaseSync(join(dataRoot, name));
@@ -34,6 +43,7 @@ export async function cutoverFixture(t) {
     CREATE TABLE execution_attempts(execution_id TEXT PRIMARY KEY,status TEXT); INSERT INTO execution_attempts VALUES('attempt','applied');
     CREATE TABLE loop_managed_processes(process_id TEXT PRIMARY KEY,status TEXT,pid INTEGER,process_start_marker TEXT,registered_at TEXT); INSERT INTO loop_managed_processes VALUES('process','exited',424242,'Sat Jan 1 00:00:00 2000','2000-01-01 00:00:00');
     CREATE TABLE execution_processes(allocation_id TEXT PRIMARY KEY,pid INTEGER,process_start_marker TEXT,process_group_id INTEGER,created_at TEXT,status TEXT);`);
+  if (workspaceRoot) business.prepare("UPDATE projects SET workspace_root=? WHERE project_id='project'").run(workspaceRoot);
   admin.exec("CREATE TABLE admin_control(singleton INTEGER PRIMARY KEY,desired_intent TEXT); INSERT INTO admin_control VALUES(1,'stopped'); CREATE TABLE repair_cases(case_id TEXT PRIMARY KEY,original_json TEXT); INSERT INTO repair_cases VALUES('case','Original failure provenance'); CREATE TABLE admin_runtime_cli_processes(allocation_id TEXT PRIMARY KEY,status TEXT)");
   admin.exec("CREATE TABLE repair_attempts(attempt_id TEXT PRIMARY KEY,pid INTEGER,start_marker TEXT,process_group_id INTEGER,started_at TEXT)");
   for (const table of ["admin_business_worker_processes", "admin_harness_build_processes", "admin_runtime_host_processes", "admin_runtime_ui_processes", "admin_runtime_cli_processes", "admin_runtime_update_processes"]) {
@@ -51,5 +61,5 @@ export async function cutoverFixture(t) {
   }
   t.after(async () => { for (const db of Object.values(dbs)) if(db.isOpen)db.close(); await rm(root, { recursive: true, force: true }); });
   const capture = await createArchive({ sourceRoot, dataRoot, output: archive });
-  return { root, sourceRoot, dataRoot, archive, hash: capture.hash, dbs, business, app, admin };
+  return { root, sourceRoot, dataRoot, archive, hash: capture.hash, dbs, business, app, admin, workspaceRoot };
 }

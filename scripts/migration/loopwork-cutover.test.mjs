@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import pg from "pg";
 import test from "node:test";
 import { browseArchive } from "./loopwork-history-lib.mjs";
 import { cutoverFixture } from "./loopwork-cutover-fixture.mjs";
-import { cutoverHuman, cutoverWorkspace, freezeCutover, holdCutover, observeCutoverProcesses, planCutover, rollbackCutover, statusCutover } from "./loopwork-cutover-lib.mjs";
+import { cutoverHuman, cutoverWorkspace, freezeCutover, holdCutover, observeCutoverProcesses, observeCutoverWorkspaces, planCutover, rollbackCutover, statusCutover } from "./loopwork-cutover-lib.mjs";
 import { sourceNamespace } from "./loopwork-source-fence.mjs";
 import { verifyArchive } from "./loopwork-history-lib.mjs";
 import { main } from "./loopwork-cutover.mjs";
@@ -13,11 +14,13 @@ import { main } from "./loopwork-cutover.mjs";
 test("operator arguments reject missing scope and nonlocal database before connecting", async () => {
   await assert.rejects(main(["freeze"]), /Usage/);
   await assert.rejects(main(["hold", "--expected-scope", "wrong"]), /Invalid/);
+  await assert.rejects(main(["workspace-check", "--id", randomUUID()]), /Usage/);
+  await assert.rejects(main(["workspace-check", "--id", randomUUID(), "--expected-workspace", "wrong"]), /Usage/);
   await assert.rejects(main(["plan"], { DATABASE_URL: "postgres://example.invalid/db", MULTICA_LOOPWORK_HISTORY_ARCHIVE: "/archive", MULTICA_LOOPWORK_HISTORY_HASH: "a".repeat(64) }), /local single-user/);
 });
 
 test("native barrier, source freeze and pre-adoption rollback survive retries in isolated PostgreSQL/SQLite", { skip: !process.env.MULTICA_CUTOVER_TEST_DATABASE_URL }, async t => {
-  const f = await cutoverFixture(t), schema = "cutover_" + randomUUID().replaceAll("-", ""), client = new pg.Client({ connectionString: process.env.MULTICA_CUTOVER_TEST_DATABASE_URL });
+  const f = await cutoverFixture(t, { workspaceRoot: true }), schema = "cutover_" + randomUUID().replaceAll("-", ""), client = new pg.Client({ connectionString: process.env.MULTICA_CUTOVER_TEST_DATABASE_URL });
   await client.connect();
   t.after(async () => { await client.query("ROLLBACK"); await client.query("SET search_path=public"); await client.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`); await client.end(); });
   await client.query(`CREATE SCHEMA ${schema}; SET search_path=${schema}`);
@@ -57,6 +60,7 @@ test("native barrier, source freeze and pre-adoption rollback survive retries in
   assert.equal((await statusCutover(client, f.archive, held.id)).source.state, "unfenced");
   assert.equal((await main(["status", "--id", held.id], operatorEnv)).id, held.id);
   await assert.rejects(observeCutoverProcesses(client, f.archive, held.id), /frozen phase/);
+  await assert.rejects(observeCutoverWorkspaces(client, f.archive, held.id), /frozen phase/);
   assert.equal((await client.query("SELECT engineering_history_project_held($1) AS held", [project])).rows[0].held, true);
   await assert.rejects(client.query("INSERT INTO engineering_run_guard VALUES($1,'waiting',false)", [project]), /cutover holds/);
   const issue = randomUUID(); await client.query("INSERT INTO issue(id,project_id) VALUES($1,$2)", [issue, project]);
@@ -101,9 +105,26 @@ test("native barrier, source freeze and pre-adoption rollback survive retries in
   assert.equal(observed.physical_quiescence_confirmed, false);
   assert.equal((await observeCutoverProcesses(client, f.archive, held.id, async () => host)).observation_hash, observed.observation_hash);
   await observeCutoverProcesses(client, f.archive, held.id, async () => ({ ...host, observed_at: "2026-01-01T00:00:01Z" }));
+  const workspace = await observeCutoverWorkspaces(client, f.archive, held.id, null, async () => host);
+  assert.equal(workspace.workspaces[0].source_project_id, "project");
+  assert.equal(workspace.workspaces[0].project_id, project);
+  assert.equal(workspace.workspaces[0].dirty, false);
+  assert.equal(workspace.execution_authorized, false);
+  assert.equal((await observeCutoverWorkspaces(client, f.archive, held.id, workspace.workspace_hash, async () => host)).matches_saved_baseline, true);
+  assert.equal((await observeCutoverWorkspaces(client, f.archive, held.id, null, async () => host)).workspace_hash, workspace.workspace_hash);
+  assert.equal((await client.query("SELECT receipt FROM engineering_history_cutover WHERE id=$1", [held.id])).rows[0].receipt.workspace_observations.length, 1);
+  await writeFile(join(f.workspaceRoot, "untracked.md"), "Keep existing human changes\n");
+  await assert.rejects(observeCutoverWorkspaces(client, f.archive, held.id, workspace.workspace_hash, async () => host), /differs from the saved baseline/);
+  const updatedWorkspace = await observeCutoverWorkspaces(client, f.archive, held.id, null, async () => host);
+  assert.notEqual(updatedWorkspace.workspace_hash, workspace.workspace_hash);
+  assert.equal(updatedWorkspace.workspaces[0].dirty, true);
+  assert.equal(updatedWorkspace.workspaces[0].untracked_files, 1);
+  await assert.rejects(observeCutoverWorkspaces(client, f.archive, held.id, workspace.workspace_hash, async () => host), /not the latest saved/);
+  await assert.rejects(observeCutoverWorkspaces(client, f.archive, held.id, null, async () => ({ ...host, database_holders: [{ pid: 42, path: "source.db" }] })), /require reconciliation/);
   await assert.rejects(observeCutoverProcesses(client, f.archive, held.id, async () => ({ ...host, database_holders: [{ pid: 42, path: "source.db" }] })), /require reconciliation/);
   await freezeCutover(client, f.archive, held.id);
   assert.equal((await client.query("SELECT receipt FROM engineering_history_cutover WHERE id=$1", [held.id])).rows[0].receipt.physical_observations.length, 2);
+  assert.equal((await client.query("SELECT receipt FROM engineering_history_cutover WHERE id=$1", [held.id])).rows[0].receipt.workspace_observations.length, 2);
   const stagedIssue=randomUUID();
   await client.query("INSERT INTO issue(id,project_id,workspace_id,status,assignee_type,assignee_id,creator_type,creator_id) VALUES($1,$2,$3,'backlog','squad',$4,'member',$5)",[stagedIssue,project,cutoverWorkspace,team,cutoverHuman]);
   await client.query("INSERT INTO engineering_history_adoption(cutover_id,workspace_id,source_namespace,source_task_id,preparation_id,issue_id,payload) VALUES($1,$2,$3,'pending',$4,$5,'{}')",[held.id,cutoverWorkspace,namespace,preparation,stagedIssue]);
@@ -131,6 +152,8 @@ test("native barrier, source freeze and pre-adoption rollback survive retries in
   const rollback = await rollbackCutover(client, f.archive, held.id);
   assert.equal(rollback.phase, "cancelled"); assert.equal(rollback.source.state, "unfenced");
   assert.equal((await client.query("SELECT receipt FROM engineering_history_cutover WHERE id=$1", [held.id])).rows[0].receipt.physical_observations.length, 2);
+  assert.equal((await client.query("SELECT receipt FROM engineering_history_cutover WHERE id=$1", [held.id])).rows[0].receipt.workspace_observations.length, 2);
+  await assert.rejects(observeCutoverWorkspaces(client, f.archive, held.id), /frozen phase/);
   assert.equal((await rollbackCutover(client, f.archive, held.id)).id, held.id);
   assert.equal((await client.query("SELECT engineering_history_project_held($1) AS held", [project])).rows[0].held, false);
   await assert.rejects(client.query("INSERT INTO agent_task_queue(id,issue_id,status) VALUES($1,$2,'queued')",[randomUUID(),stagedIssue]),/migration task/);
