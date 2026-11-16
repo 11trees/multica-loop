@@ -18,7 +18,7 @@ import (
 // Native claims/queue/controllers/publications are real. Node tests own the
 // checkpoint and immutable business outbox; management tests own Case storage.
 func TestEngineeringRecoveryFault(t *testing.T) {
-	for _, mode := range []string{"failed", "completed-no-result", "unknown-exit", "continuation", "running", "cancelled", "human-wait", "retry-queued", "retry-deferred", "retry-running", "changed-claim", "changed-draft", "changed-sequence", "changed-context-hint", "stop-before-hold", "stop-after-hold", "hold-ack-lost", "observe-ack-lost", "business-ack-lost", "changed-held-case"} {
+	for _, mode := range []string{"prebind-failed", "prebind-no-claim", "prebind-bound-claim", "failed", "completed-no-result", "unknown-exit", "continuation", "running", "cancelled", "human-wait", "retry-queued", "retry-deferred", "retry-running", "changed-claim", "changed-draft", "changed-sequence", "changed-context-hint", "stop-before-hold", "stop-after-hold", "hold-ack-lost", "observe-ack-lost", "business-ack-lost", "changed-held-case"} {
 		t.Run(mode, func(t *testing.T) {
 			ctx := context.Background()
 			f := newTakeoverControlFixture(t)
@@ -71,6 +71,16 @@ func TestEngineeringRecoveryFault(t *testing.T) {
 			current["application"] = application
 			current["publication"] = published
 			checkpoint := engineeringRecoveryCheckpoint{Hash: strings.Repeat("a", 64), CaseID: publication.CaseID, VerificationAttemptID: publication.VerificationAttemptID, TargetHash: target, ApplicationHash: application.Hash, ReadyHash: ready.Hash, EntryTaskID: taskID, TaskID: taskID, AttemptID: taskID + ":" + strconv.FormatInt(task.DispatchedAt.Time.UnixMicro(), 10), WorkspaceID: testWorkspaceID, IssueID: f.issue, AgentID: item.AgentID, UserID: testUserID, ProjectID: f.project, RuntimeID: publication.RuntimeID, DraftID: &draftID, Revision: 1, Sequence: 6}
+			if strings.HasPrefix(mode, "prebind-") {
+				checkpoint.Preparation = &engineeringRecoveryPreparation{ObservationID: "original-source", ReceiptHash: strings.Repeat("4", 64), SourceAttemptID: uuidToString(original.ID) + ":" + strconv.FormatInt(original.DispatchedAt.Time.UnixMicro(), 10), BindingsHash: strings.Repeat("5", 64)}
+				checkpoint.AttemptID = ""
+				if mode == "prebind-no-claim" {
+					dbfx.Exec(t, "UPDATE agent_task_queue SET dispatched_at=NULL WHERE id=$1", taskID)
+				}
+				if mode == "prebind-bound-claim" {
+					checkpoint.AttemptID = taskID + ":123"
+				}
+			}
 			if mode == "continuation" || mode == "changed-context-hint" {
 				hint := engineeringEntryRecoveryHint(ready, &draftID)
 				hint.Kind = "continuation"
@@ -186,7 +196,7 @@ func TestEngineeringRecoveryFault(t *testing.T) {
 						fault.CaseID = "another-case"
 						fault.Hash = engineeringRecoveryFaultHash(fault)
 					}
-					held, _ = json.Marshal(map[string]any{"workspaceId": testWorkspaceID, "issueId": f.issue, "agentId": item.AgentID, "attemptId": checkpoint.AttemptID, "chain": "verification", "observationId": "recovery-fault:" + target, "summary": "Native recovery failed without an applied result", "snapshotHash": strings.Repeat("b", 64), "requestHash": strings.Repeat("d", 64), "kernelVersion": "sha256:" + strings.Repeat("e", 64), "hostVersion": f.h.EngineeringHostVersion, "recovery": fault})
+					held, _ = json.Marshal(map[string]any{"workspaceId": testWorkspaceID, "issueId": f.issue, "agentId": item.AgentID, "attemptId": fault.AttemptID, "chain": "verification", "observationId": "recovery-fault:" + target, "summary": "Native recovery failed without an applied result", "snapshotHash": strings.Repeat("b", 64), "requestHash": strings.Repeat("d", 64), "kernelVersion": "sha256:" + strings.Repeat("e", 64), "hostVersion": f.h.EngineeringHostVersion, "recovery": fault})
 					if mode == "stop-after-hold" {
 						stopped = true
 					}
@@ -231,7 +241,7 @@ func TestEngineeringRecoveryFault(t *testing.T) {
 					err = f.h.ReconcileEngineeringAdmin(ctx, authority)
 				}
 			}
-			refused := mode == "changed-sequence" || mode == "changed-context-hint" || mode == "changed-claim" || mode == "changed-draft" || mode == "stop-before-hold" || mode == "changed-held-case"
+			refused := mode == "prebind-no-claim" || mode == "prebind-bound-claim" || mode == "changed-sequence" || mode == "changed-context-hint" || mode == "changed-claim" || mode == "changed-draft" || mode == "stop-before-hold" || mode == "changed-held-case"
 			waiting := mode == "running" || mode == "cancelled" || mode == "human-wait" || strings.HasPrefix(mode, "retry-")
 			if refused {
 				if err == nil {
@@ -293,5 +303,20 @@ func TestEngineeringRecoveryFaultHashMatchesKernel(t *testing.T) {
 	fault.CaseID = "another-case"
 	if engineeringRecoveryFaultHash(fault) == fault.Hash {
 		t.Fatal("fault lost its original Case")
+	}
+}
+
+func TestEngineeringPrebindFaultHashMatchesKernel(t *testing.T) {
+	raw, err := os.ReadFile("../../../packages/command-chain/test-helpers/repair-prebind-fault.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var value engineeringRecoveryFault
+	if json.Unmarshal(raw, &value) != nil || value.Preparation == nil || engineeringRecoveryFaultHash(value) != value.Hash {
+		t.Fatal("prepared fault provenance differs between native and kernel")
+	}
+	value.Preparation.SourceAttemptID = "changed-source"
+	if engineeringRecoveryFaultHash(value) == value.Hash {
+		t.Fatal("prepared fault lost retained source authority")
 	}
 }

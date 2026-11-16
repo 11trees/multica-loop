@@ -39,35 +39,39 @@ type engineeringTakeoverCurrent struct {
 			Authority  engineeringAdminAuthority `json:"authority"`
 		} `json:"claim"`
 		Inspection struct {
-			ProjectID      string  `json:"project_id"`
-			RuntimeID      string  `json:"runtime_id"`
-			RegisteredPath string  `json:"registered_repository_path"`
-			ExecutionPath  string  `json:"execution_repository_path"`
-			Mode           string  `json:"mode"`
-			ReceiptHash    string  `json:"receipt_hash"`
-			CodeVersion    string  `json:"code_version"`
-			KernelVersion  *string `json:"kernel_version"`
-			HostVersion    *string `json:"host_version"`
+			ProjectID                string  `json:"project_id"`
+			RuntimeID                string  `json:"runtime_id"`
+			RegisteredPath           string  `json:"registered_repository_path"`
+			ExecutionPath            string  `json:"execution_repository_path"`
+			ExecutionBindingOrigin   *string `json:"execution_binding_origin,omitempty"`
+			ExecutionSourceAttemptID *string `json:"execution_source_attempt_id,omitempty"`
+			Mode                     string  `json:"mode"`
+			ReceiptHash              string  `json:"receipt_hash"`
+			CodeVersion              string  `json:"code_version"`
+			KernelVersion            *string `json:"kernel_version"`
+			HostVersion              *string `json:"host_version"`
 		} `json:"inspection"`
 	} `json:"request"`
 }
 type engineeringTakeoverSource struct {
-	WorkspaceID    string  `json:"workspace_id"`
-	IssueID        string  `json:"issue_id"`
-	AgentID        string  `json:"agent_id"`
-	AttemptID      string  `json:"attempt_id"`
-	ObservationID  string  `json:"observation_id"`
-	CaseID         string  `json:"case_id"`
-	SnapshotHash   string  `json:"snapshot_hash"`
-	RegisteredPath string  `json:"registered_repository_path"`
-	ExecutionPath  string  `json:"execution_repository_path"`
-	Mode           string  `json:"mode"`
-	ReceiptHash    string  `json:"receipt_hash"`
-	CodeVersion    string  `json:"code_version"`
-	KernelVersion  *string `json:"kernel_version"`
-	HostVersion    *string `json:"host_version"`
-	Revision       int64   `json:"revision"`
-	Sequence       int64   `json:"sequence"`
+	WorkspaceID              string  `json:"workspace_id"`
+	IssueID                  string  `json:"issue_id"`
+	AgentID                  string  `json:"agent_id"`
+	AttemptID                string  `json:"attempt_id"`
+	ObservationID            string  `json:"observation_id"`
+	CaseID                   string  `json:"case_id"`
+	SnapshotHash             string  `json:"snapshot_hash"`
+	RegisteredPath           string  `json:"registered_repository_path"`
+	ExecutionPath            string  `json:"execution_repository_path"`
+	ExecutionBindingOrigin   *string `json:"execution_binding_origin,omitempty"`
+	ExecutionSourceAttemptID *string `json:"execution_source_attempt_id,omitempty"`
+	Mode                     string  `json:"mode"`
+	ReceiptHash              string  `json:"receipt_hash"`
+	CodeVersion              string  `json:"code_version"`
+	KernelVersion            *string `json:"kernel_version"`
+	HostVersion              *string `json:"host_version"`
+	Revision                 int64   `json:"revision"`
+	Sequence                 int64   `json:"sequence"`
 }
 
 // Read authoritative protocol and native state, never caller-provided paths.
@@ -104,7 +108,7 @@ func (h *Handler) engineeringSourceForCurrent(ctx context.Context, current engin
 	}
 	var source engineeringTakeoverSource
 	equalVersion := func(a, b *string) bool { return a != nil && b != nil && *a != "" && *a == *b }
-	if json.Unmarshal(raw, &source) != nil || source.WorkspaceID != request.WorkspaceID || source.IssueID != request.IssueID || source.CaseID != request.CaseID || source.ObservationID != request.ObservationID || source.SnapshotHash != request.SnapshotHash || source.AttemptID != request.SourceAttemptID || source.Revision < 1 || source.Sequence < 0 || source.ReceiptHash == "" || source.ReceiptHash != request.Inspection.ReceiptHash || source.RegisteredPath != request.Inspection.RegisteredPath || source.ExecutionPath != request.Inspection.ExecutionPath || source.Mode != request.Inspection.Mode || source.CodeVersion != request.Inspection.CodeVersion || !equalVersion(source.KernelVersion, request.Inspection.KernelVersion) || !equalVersion(source.HostVersion, request.Inspection.HostVersion) {
+	if json.Unmarshal(raw, &source) != nil || source.WorkspaceID != request.WorkspaceID || source.IssueID != request.IssueID || source.CaseID != request.CaseID || source.ObservationID != request.ObservationID || source.SnapshotHash != request.SnapshotHash || source.AttemptID != request.SourceAttemptID || source.Revision < 1 || source.Sequence < 0 || source.ReceiptHash == "" || source.ReceiptHash != request.Inspection.ReceiptHash || source.RegisteredPath != request.Inspection.RegisteredPath || source.ExecutionPath != request.Inspection.ExecutionPath || source.Mode != request.Inspection.Mode || engineeringOptionalText(source.ExecutionBindingOrigin) != engineeringOptionalText(request.Inspection.ExecutionBindingOrigin) || engineeringOptionalText(source.ExecutionSourceAttemptID) != engineeringOptionalText(request.Inspection.ExecutionSourceAttemptID) || source.CodeVersion != request.Inspection.CodeVersion || !equalVersion(source.KernelVersion, request.Inspection.KernelVersion) || !equalVersion(source.HostVersion, request.Inspection.HostVersion) {
 		return pin, fmt.Errorf("original repair checkpoint or source versions changed")
 	}
 	taskText, claimText, ok := strings.Cut(source.AttemptID, ":")

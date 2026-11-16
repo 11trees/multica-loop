@@ -53,12 +53,13 @@ export class DirectApplication {
     const row = this.db.prepare("SELECT payload FROM direct_contract WHERE workspace_id=? AND issue_id=?").get(workspaceId, issueId);
     return row ? recordSchema.parse(JSON.parse(String(row.payload))) : undefined;
   }
-  repairSuccessor(reservation:HandoffReservation):HandoffRootChange {
+  repairSuccessor(reservation:HandoffReservation,preparation=false):HandoffRootChange {
     const c=reservation.continuation,record=this.current(c.workspace_id,c.issue_id);
-    if(!record||record.version+1!==c.expected_sequence||record.activeAttemptId!==reservation.fence.source_attempt_id||record.result||record.nativeCompleted)throw new DraftConflictError("Direct source changed before staging recovery");
+    if(!record||record.version+1!==c.expected_sequence||(preparation?record.activeAttemptId!==undefined:record.activeAttemptId!==reservation.fence.source_attempt_id)||record.result||record.nativeCompleted)throw new DraftConflictError("Direct source changed before staging recovery");
     return {payload:JSON.stringify(recordSchema.parse({...record,version:record.version+1,initialCommit:reservation.expected_version.split(":")[1],activeAttemptId:undefined}))};
   }
   repairFailureSnapshot(original:InterventionRecord,attemptId:string){const record=this.current(original.workspaceId,original.issueId);if(!record||record.result||record.nativeCompleted||record.activeAttemptId!==attemptId||record.agentId!==original.agentId||record.contractHash!==z.object({direct:z.object({contract_hash:text})}).parse(original.snapshot).direct.contract_hash)throw new DraftConflictError("Direct recovery no longer owns this unfinished attempt");const {instructions:_,...snapshot}=this.view(record);return snapshot;}
+  repairPreparedSnapshot(original:InterventionRecord){const record=this.current(original.workspaceId,original.issueId);if(!record||record.result||record.nativeCompleted||record.activeAttemptId!==undefined||record.agentId!==original.agentId||record.contractHash!==z.object({direct:z.object({contract_hash:text})}).parse(original.snapshot).direct.contract_hash)throw new DraftConflictError("Prepared Direct recovery changed before surrender");const {instructions:_,...snapshot}=this.view(record);return snapshot;}
   repairAppliedResult(original:InterventionRecord,attemptId:string){
     const record=this.current(original.workspaceId,original.issueId);if(!record?.result)return undefined;
     const result=this.result(record);if(record.contractHash!==z.object({direct:z.object({contract_hash:text})}).parse(original.snapshot).direct.contract_hash||record.agentId!==original.agentId||result.attemptId!==attemptId||record.activeAttemptId!==attemptId)throw new DraftConflictError("Recovery result belongs to another Direct execution");

@@ -27,7 +27,13 @@ export function initializeInterventions(db: DatabaseSync) {
     CREATE TABLE IF NOT EXISTS engineering_intervention_delivery(observation_id TEXT PRIMARY KEY,case_id TEXT NOT NULL,snapshot_hash TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS engineering_repair_dispatch(target_hash TEXT PRIMARY KEY,observation_id TEXT NOT NULL UNIQUE,workspace_id TEXT NOT NULL,issue_id TEXT NOT NULL,task_id TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN ('ready','active')),payload TEXT NOT NULL,attempt_id TEXT);
     CREATE TABLE IF NOT EXISTS engineering_repair_retired_claim(workspace_id TEXT NOT NULL,issue_id TEXT NOT NULL,attempt_id TEXT NOT NULL,target_hash TEXT NOT NULL,PRIMARY KEY(workspace_id,issue_id,attempt_id));
-    CREATE VIEW IF NOT EXISTS engineering_intervention_pending AS SELECT original.* FROM engineering_intervention original WHERE NOT EXISTS(SELECT 1 FROM engineering_repair_dispatch dispatch WHERE dispatch.observation_id=json_extract(original.payload,'$.observationId') AND dispatch.state='active')`);
+    CREATE TABLE IF NOT EXISTS engineering_repair_prebind(target_hash TEXT PRIMARY KEY,observation_id TEXT NOT NULL UNIQUE,source_observation_id TEXT NOT NULL,payload TEXT NOT NULL)`);
+  const view=db.prepare("SELECT sql FROM sqlite_master WHERE type='view' AND name='engineering_intervention_pending'").get();
+  if(!String(view?.sql??"").includes("engineering_repair_prebind"))db.exec(`SAVEPOINT intervention_view_upgrade;DROP VIEW IF EXISTS engineering_intervention_pending;
+    CREATE VIEW engineering_intervention_pending AS SELECT original.* FROM engineering_intervention original WHERE
+    NOT EXISTS(SELECT 1 FROM engineering_repair_dispatch dispatch WHERE dispatch.observation_id=json_extract(original.payload,'$.observationId') AND dispatch.state='active')
+    AND NOT EXISTS(SELECT 1 FROM engineering_repair_prebind prebind WHERE prebind.source_observation_id=json_extract(original.payload,'$.observationId'));
+    RELEASE intervention_view_upgrade`);
 }
 
 /** The immutable terminal receipt is also the durable pending Admin observation. */
@@ -132,9 +138,15 @@ export class InterventionStore {
   holdRecovery(scope:{workspaceId:string;issueId:string},checkpoint:{chain:string;draftId:string|null;phase:string;revision:number;sequence:number},snapshot:unknown,recovery:RepairRecoveryFault,hostVersion?:string){
     const native=repairRecoveryFaultSchema.parse(recovery);
     if(native.workspace_id!==scope.workspaceId||native.issue_id!==scope.issueId)throw new DraftConflictError("Recovery fault belongs to another business scope");
-    const body=interventionRequestSchema.parse({summary:"Recovery execution ended without an applied business result",reason:`Native execution ${native.status}${native.failure_reason?`: ${native.failure_reason}`:""}; retain the current checkpoint for independent investigation`,evidence:JSON.stringify(native)});
+    const body=interventionRequestSchema.parse({summary:native.preparation?"Recovery task ended before business binding":"Recovery execution ended without an applied business result",reason:`Native task ${native.status}${native.failure_reason?`: ${native.failure_reason}`:""}; retain the current checkpoint for independent investigation`,evidence:JSON.stringify(native)});
     const original={...body,...checkpoint,workspaceId:scope.workspaceId,issueId:scope.issueId,attemptId:native.attempt_id,agentId:native.agent_id,recovery:native,...(this.kernelVersion?{kernelVersion:this.kernelVersion}:{}),...(hostVersion?{hostVersion}:{}),id:randomUUID(),requestedAt:new Date().toISOString(),snapshot,snapshotHash:hash(snapshot),requestHash:hash(body),observationId:`multica:recovery-fault:${native.target_hash}:${native.attempt_id}`};
-    const record=recordSchema.parse({...original,receiptHash:hash(original)});this.insert(record);return record;
+    const record=recordSchema.parse({...original,receiptHash:hash(original)});
+    if(native.preparation){
+      const source=this.pending(scope.workspaceId,scope.issueId),grant=this.db.prepare("SELECT observation_id,state,attempt_id FROM engineering_repair_dispatch WHERE target_hash=?").get(native.target_hash);
+      if(!source||source.observationId!==native.preparation.observation_id||source.receiptHash!==native.preparation.receipt_hash||source.attemptId!==native.preparation.source_attempt_id||grant?.observation_id!==source.observationId||grant.state!=="ready"||grant.attempt_id!==null)throw new DraftConflictError("Prepared recovery changed before surrender");
+      this.db.prepare("INSERT INTO engineering_repair_prebind VALUES(?,?,?,?)").run(native.target_hash,record.observationId,source.observationId,JSON.stringify(native));
+    }
+    this.insert(record);return record;
   }
   receipt(record: Record) { return { submitted: true, owner: "admin", agent_action: "end_execution", intervention: this.view(record) }; }
   view(record: Record) { return { id: record.id, status: "pending_admin", chain: record.chain, phase: record.phase, draft_id: record.draftId,

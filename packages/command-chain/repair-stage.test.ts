@@ -17,8 +17,9 @@ import { reviewContractSchema, reviewProfile } from "./review";
 import { feedbackTriageProfile, feedbackVerifyProfile, feedbackVerifyContractSchema } from "./feedback";
 import { planningContractSchema, planningProfile } from "./planning";
 import { reproductionContractSchema, reproductionProfile } from "./reproduction";
-import { hostHandoffTargetFixture, hostHandoffReservationFixture } from "./test-helpers/repair-handoff-fixture";
-import { handoffApplicationSchema } from "./repair-handoff";
+import { hostHandoffTargetFixture, hostHandoffReservationFixture,hostRecoveryFaultFixture } from "./test-helpers/repair-handoff-fixture";
+import {z} from "zod";
+import { handoffApplicationSchema,handoffReadySchema } from "./repair-handoff";
 
 // Typed owner fixtures exercise pointer/sidecar activation. Their accepted-work
 // evidence is synthetic; normal delivery and native ownership have separate tests.
@@ -101,4 +102,11 @@ it("refuses changed successor or surrendered draft content when reading staged l
  db.prepare("UPDATE chain_drafts SET payload=? WHERE id=?").run(String(saved),applied.draft_id!);expect(await app.invoke({actor:host,action:"repair-source",payload:f.pin})).toMatchObject({checkpoint_state:"staged"});
  const original=JSON.parse(String(db.prepare("SELECT payload FROM chain_drafts WHERE id=?").get(f.draftId)!.payload));original.inputs.injected="Rewritten original";db.prepare("UPDATE chain_drafts SET payload=? WHERE id=?").run(JSON.stringify(original),f.draftId);
  await expect(app.invoke({actor:host,action:"repair-source",payload:f.pin})).rejects.toThrow(/draft changed/);
+});
+
+it.each(["review","feedback-triage","feedback-verify","feedback-planning","feedback-reproduction"] as const)("preserves unbound %s owner facts through failure and a second staged handoff",async mode=>{
+ const f=await fixture(mode),target=await hostHandoffTargetFixture(f.original,{...human,projectId,repositoryPath:repository,caseId:f.pin.case_id}),reservation=hostHandoffReservationFixture(target,await app.invoke({actor:host,action:"repair-handoff-prepare",payload:target})),application=await app.invoke({actor:host,action:"repair-handoff-stage",payload:reservation}),ready=handoffReadySchema.parse(await app.invoke({actor:host,action:"repair-handoff-ready",payload:application})),pin={target_hash:ready.target_hash,application_hash:ready.application_hash,ready_hash:ready.hash};
+ const source=z.object({checkpoint:z.record(z.string(),z.unknown()),reason:z.literal("prepared")}).parse(await app.invoke({actor:host,action:"repair-recovery-checkpoint",payload:pin})),native=hostRecoveryFaultFixture(source.checkpoint,`${ready.continuation.task_id}:999999`),held=z.object({held:z.object({observationId:z.string(),snapshotHash:z.string()}).passthrough()}).parse(await app.invoke({actor:host,action:"repair-recovery-hold",payload:{...pin,native}})).held;
+ const nextPin={case_id:target.caseId,observation_id:held.observationId,snapshot_hash:held.snapshotHash};await app.invoke({actor:host,action:"repair-observation-ack",payload:nextPin});expect(await app.invoke({actor:host,action:"repair-source",payload:nextPin})).toMatchObject({checkpoint_state:"prepared",execution_source_attempt_id:owner.attemptId,attempt_id:native.attempt_id});
+ const nextTarget=await hostHandoffTargetFixture(held,{...human,projectId,repositoryPath:repository,caseId:target.caseId});nextTarget.verificationAttemptId=`verified-again-${randomUUID()}`;const nextReservation=hostHandoffReservationFixture(nextTarget,await app.invoke({actor:host,action:"repair-handoff-prepare",payload:nextTarget}));expect(await app.invoke({actor:host,action:"repair-handoff-stage",payload:nextReservation})).toMatchObject({staged:true,hold_retained:true});expect(JSON.parse(String(db.prepare("SELECT payload FROM requirement_contract").get()!.payload)).accepted).toEqual(f.root.accepted);expect(db.prepare("SELECT count(*) AS n FROM requirement_execution WHERE attempt_id=?").get(native.attempt_id)!.n).toBe(0);
 });

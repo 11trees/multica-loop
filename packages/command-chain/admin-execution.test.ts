@@ -110,7 +110,8 @@ it("persists an immutable takeover request scoped to the live Case and retains i
  expect(store.execution.command(claim,command)).toEqual(request);
  expect(()=>store.execution.command(claim,{...command,reason:"replace"})).toThrow(/cannot be replaced/);
  expect(store.execution.pendingTakeovers(authority)).toEqual([request]);
- const inspection={observation_id:observationId,snapshot_hash:"original-snapshot",source_attempt_id:"native:123",project_id:randomUUID(),runtime_id:randomUUID(),registered_repository_path:"/fixture/root",execution_repository_path:"/fixture/worktree",mode:"worktree",receipt_hash:"receipt",code_version:"original-version",kernel_version:"original-kernel",host_version:"original-host"};
+ const inspection={observation_id:observationId,snapshot_hash:"original-snapshot",source_attempt_id:"native:123",project_id:randomUUID(),runtime_id:randomUUID(),registered_repository_path:"/fixture/root",execution_repository_path:"/fixture/worktree",execution_binding_origin:"retained-preparation",execution_source_attempt_id:"previous-native:111",mode:"worktree",receipt_hash:"receipt",code_version:"original-version",kernel_version:"original-kernel",host_version:"original-host"};
+ expect(()=>store.execution.inspectTakeover(claim,{...inspection,execution_source_attempt_id:undefined})).toThrow(/retained execution provenance/);
  expect(()=>store.execution.inspectTakeover(claim,{...inspection,source_attempt_id:"native:456"})).toThrow(/another original source/);
  expect(store.execution.inspectTakeover(claim,inspection)).toMatchObject({phase:"source-inspected",inspection});
  expect(store.execution.inspectTakeover(claim,inspection)).toMatchObject({phase:"source-inspected"});
@@ -130,7 +131,7 @@ it("persists an immutable takeover request scoped to the live Case and retains i
  expect(()=>store.execution.recordTakeoverProgress(claim,{...owned,workspace_version:"Agent claims this is fixed"})).toThrow();
  expect(store.execution.recordTakeoverProgress(claim,owned)).toEqual({recorded:true});
  store.close();store=new AdminStore(filename,()=>now);
- expect(store.execution.command(claim,{action:"status"})).toMatchObject({takeoverProgress:owned});
+ expect(store.execution.command(claim,{action:"status"})).toMatchObject({takeoverProgress:owned,takeover:{inspection}});
 
  store.execution.setIntent({intent:"stopped",request_id:"stop"});
  expect(()=>store.execution.inspectTakeover(claim,inspection)).toThrow(/identity, intent or generation/);

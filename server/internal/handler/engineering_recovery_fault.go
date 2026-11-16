@@ -16,54 +16,70 @@ import (
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
+type engineeringRecoveryPreparation struct {
+	ObservationID   string `json:"observation_id"`
+	ReceiptHash     string `json:"receipt_hash"`
+	SourceAttemptID string `json:"source_attempt_id"`
+	BindingsHash    string `json:"bindings_hash"`
+}
 type engineeringRecoveryCheckpoint struct {
-	Hash                  string  `json:"hash"`
-	CaseID                string  `json:"case_id"`
-	VerificationAttemptID string  `json:"verification_attempt_id"`
-	TargetHash            string  `json:"target_hash"`
-	ApplicationHash       string  `json:"application_hash"`
-	ReadyHash             string  `json:"ready_hash"`
-	EntryTaskID           string  `json:"entry_task_id"`
-	TaskID                string  `json:"task_id"`
-	AttemptID             string  `json:"attempt_id"`
-	ExecutionHintHash     *string `json:"execution_hint_hash"`
-	WorkspaceID           string  `json:"workspace_id"`
-	IssueID               string  `json:"issue_id"`
-	AgentID               string  `json:"agent_id"`
-	UserID                string  `json:"user_id"`
-	RuntimeID             string  `json:"runtime_id"`
-	ProjectID             string  `json:"project_id"`
-	DraftID               *string `json:"draft_id"`
-	Revision              int     `json:"revision"`
-	Sequence              int     `json:"sequence"`
+	Preparation           *engineeringRecoveryPreparation `json:"preparation,omitempty"`
+	Hash                  string                          `json:"hash"`
+	CaseID                string                          `json:"case_id"`
+	VerificationAttemptID string                          `json:"verification_attempt_id"`
+	TargetHash            string                          `json:"target_hash"`
+	ApplicationHash       string                          `json:"application_hash"`
+	ReadyHash             string                          `json:"ready_hash"`
+	EntryTaskID           string                          `json:"entry_task_id"`
+	TaskID                string                          `json:"task_id"`
+	AttemptID             string                          `json:"attempt_id"`
+	ExecutionHintHash     *string                         `json:"execution_hint_hash"`
+	WorkspaceID           string                          `json:"workspace_id"`
+	IssueID               string                          `json:"issue_id"`
+	AgentID               string                          `json:"agent_id"`
+	UserID                string                          `json:"user_id"`
+	RuntimeID             string                          `json:"runtime_id"`
+	ProjectID             string                          `json:"project_id"`
+	DraftID               *string                         `json:"draft_id"`
+	Revision              int                             `json:"revision"`
+	Sequence              int                             `json:"sequence"`
 }
 type engineeringRecoveryFault struct {
-	Hash                  string  `json:"hash"`
-	CaseID                string  `json:"case_id"`
-	VerificationAttemptID string  `json:"verification_attempt_id"`
-	TargetHash            string  `json:"target_hash"`
-	ApplicationHash       string  `json:"application_hash"`
-	ReadyHash             string  `json:"ready_hash"`
-	PublicationHash       string  `json:"publication_hash"`
-	EntryTaskID           string  `json:"entry_task_id"`
-	TaskID                string  `json:"task_id"`
-	AttemptID             string  `json:"attempt_id"`
-	ExecutionHintHash     *string `json:"execution_hint_hash"`
-	WorkspaceID           string  `json:"workspace_id"`
-	IssueID               string  `json:"issue_id"`
-	ProjectID             string  `json:"project_id"`
-	RuntimeID             string  `json:"runtime_id"`
-	AgentID               string  `json:"agent_id"`
-	UserID                string  `json:"user_id"`
-	CheckpointHash        string  `json:"checkpoint_hash"`
-	Status                string  `json:"status"`
-	CompletedAt           string  `json:"completed_at"`
-	FailureReason         *string `json:"failure_reason"`
-	ContextHash           string  `json:"context_hash"`
+	Preparation           *engineeringRecoveryPreparation `json:"preparation,omitempty"`
+	Hash                  string                          `json:"hash"`
+	CaseID                string                          `json:"case_id"`
+	VerificationAttemptID string                          `json:"verification_attempt_id"`
+	TargetHash            string                          `json:"target_hash"`
+	ApplicationHash       string                          `json:"application_hash"`
+	ReadyHash             string                          `json:"ready_hash"`
+	PublicationHash       string                          `json:"publication_hash"`
+	EntryTaskID           string                          `json:"entry_task_id"`
+	TaskID                string                          `json:"task_id"`
+	AttemptID             string                          `json:"attempt_id"`
+	ExecutionHintHash     *string                         `json:"execution_hint_hash"`
+	WorkspaceID           string                          `json:"workspace_id"`
+	IssueID               string                          `json:"issue_id"`
+	ProjectID             string                          `json:"project_id"`
+	RuntimeID             string                          `json:"runtime_id"`
+	AgentID               string                          `json:"agent_id"`
+	UserID                string                          `json:"user_id"`
+	CheckpointHash        string                          `json:"checkpoint_hash"`
+	Status                string                          `json:"status"`
+	CompletedAt           string                          `json:"completed_at"`
+	FailureReason         *string                         `json:"failure_reason"`
+	ContextHash           string                          `json:"context_hash"`
 }
 
 func engineeringRecoveryFaultHash(p engineeringRecoveryFault) string {
-	return engineeringHandoffFieldsHash("multica:repair-recovery-fault:1", p.CaseID, p.VerificationAttemptID, p.TargetHash, p.ApplicationHash, p.ReadyHash, p.PublicationHash, p.EntryTaskID, p.TaskID, p.AttemptID, engineeringOptionalText(p.ExecutionHintHash), p.WorkspaceID, p.IssueID, p.ProjectID, p.RuntimeID, p.AgentID, p.UserID, p.CheckpointHash, p.Status, p.CompletedAt, engineeringOptionalText(p.FailureReason), p.ContextHash)
+	prefix := "multica:repair-recovery-fault:1"
+	if p.Preparation != nil {
+		prefix = "multica:repair-recovery-fault:2"
+	}
+	fields := []string{prefix, p.CaseID, p.VerificationAttemptID, p.TargetHash, p.ApplicationHash, p.ReadyHash, p.PublicationHash, p.EntryTaskID, p.TaskID, p.AttemptID, engineeringOptionalText(p.ExecutionHintHash), p.WorkspaceID, p.IssueID, p.ProjectID, p.RuntimeID, p.AgentID, p.UserID, p.CheckpointHash, p.Status, p.CompletedAt, engineeringOptionalText(p.FailureReason), p.ContextHash}
+	if p.Preparation != nil {
+		fields = append(fields, p.Preparation.ObservationID, p.Preparation.ReceiptHash, p.Preparation.SourceAttemptID, p.Preparation.BindingsHash)
+	}
+	return engineeringHandoffFieldsHash(fields...)
 }
 
 // Failure observation holds business first. Existing outbox delivery reopens the
@@ -132,7 +148,7 @@ func (h *Handler) observeEngineeringRecoveryFailure(ctx context.Context, input e
 	if err != nil {
 		return nil, err
 	}
-	if uuidToString(task.IssueID) != p.IssueID || uuidToString(task.AgentID) != p.AgentID || uuidToString(task.RuntimeID) != p.RuntimeID || uuidToString(task.OriginatorUserID) != p.UserID || !task.DispatchedAt.Valid || c.AttemptID != c.TaskID+":"+strconv.FormatInt(task.DispatchedAt.Time.UnixMicro(), 10) {
+	if uuidToString(task.IssueID) != p.IssueID || uuidToString(task.AgentID) != p.AgentID || uuidToString(task.RuntimeID) != p.RuntimeID || uuidToString(task.OriginatorUserID) != p.UserID || !task.DispatchedAt.Valid || c.Preparation == nil && c.AttemptID != c.TaskID+":"+strconv.FormatInt(task.DispatchedAt.Time.UnixMicro(), 10) || c.Preparation != nil && (c.AttemptID != "" || c.TaskID != p.TaskID || c.ExecutionHintHash != nil) {
 		return nil, fmt.Errorf("failed recovery native claim changed")
 	}
 	if (task.Status != "failed" && task.Status != "completed") || !task.CompletedAt.Valid {
@@ -195,7 +211,7 @@ func (h *Handler) observeEngineeringRecoveryFailure(ctx context.Context, input e
 		reason = &value
 	}
 	digest := sha256.Sum256(task.Context)
-	fault := engineeringRecoveryFault{CaseID: p.CaseID, VerificationAttemptID: p.VerificationAttemptID, TargetHash: p.TargetHash, ApplicationHash: p.ApplicationHash, ReadyHash: p.ReadyHash, PublicationHash: p.Hash, EntryTaskID: p.TaskID, TaskID: c.TaskID, AttemptID: c.AttemptID, ExecutionHintHash: c.ExecutionHintHash, WorkspaceID: p.WorkspaceID, IssueID: p.IssueID, ProjectID: r.ProjectID, RuntimeID: p.RuntimeID, AgentID: p.AgentID, UserID: p.UserID, CheckpointHash: c.Hash, Status: task.Status, CompletedAt: task.CompletedAt.Time.UTC().Format(time.RFC3339Nano), FailureReason: reason, ContextHash: hex.EncodeToString(digest[:])}
+	fault := engineeringRecoveryFault{Preparation: c.Preparation, CaseID: p.CaseID, VerificationAttemptID: p.VerificationAttemptID, TargetHash: p.TargetHash, ApplicationHash: p.ApplicationHash, ReadyHash: p.ReadyHash, PublicationHash: p.Hash, EntryTaskID: p.TaskID, TaskID: c.TaskID, AttemptID: c.TaskID + ":" + strconv.FormatInt(task.DispatchedAt.Time.UnixMicro(), 10), ExecutionHintHash: c.ExecutionHintHash, WorkspaceID: p.WorkspaceID, IssueID: p.IssueID, ProjectID: r.ProjectID, RuntimeID: p.RuntimeID, AgentID: p.AgentID, UserID: p.UserID, CheckpointHash: c.Hash, Status: task.Status, CompletedAt: task.CompletedAt.Time.UTC().Format(time.RFC3339Nano), FailureReason: reason, ContextHash: hex.EncodeToString(digest[:])}
 	fault.Hash = engineeringRecoveryFaultHash(fault)
 	if h.EngineeringHostVersion == "" {
 		return nil, fmt.Errorf("recovery observation requires the current native host version")

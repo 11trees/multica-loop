@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
-import type { InterventionRecord } from "./intervention-store";
+import {InterventionStore,type InterventionRecord} from "./intervention-store";
 import { draftSchema, DraftConflictError } from "./runtime";
 import { EngineeringTeamStore } from "./team-store";
 import { handoffHash, handoffProposalSchema, handoffReservationSchema, handoffApplicationSchema, handoffApplicationBodySchema, handoffPreparationSchema, type HandoffReservation, type HandoffRootChange } from "./repair-handoff";
@@ -8,7 +8,8 @@ import { handoffHash, handoffProposalSchema, handoffReservationSchema, handoffAp
 const sidecarSchema=z.strictObject({batchId:z.string(),before:z.string(),after:z.string()});
 const bindingsSchema=z.strictObject({physical:z.string(),execution:z.string().nullable()});
 const manifestSchema=z.strictObject({application:handoffApplicationSchema,reservation:handoffReservationSchema,source:z.record(z.string(),z.unknown()),sidecars:z.array(sidecarSchema),bindings:bindingsSchema});
-function originalBindings(db:DatabaseSync,original:InterventionRecord,kind:"direct"|"business"|"requirement"|"engineering"){
+export function originalRepairBindings(db:DatabaseSync,original:InterventionRecord,kind:"direct"|"business"|"requirement"|"engineering"){
+ if(original.recovery?.preparation)return retainedRepairPreparation(db,original).manifest.bindings;
  const physical=db.prepare("SELECT payload FROM engineering_process_binding WHERE workspace_id=? AND issue_id=? AND agent_id=? AND attempt_id=?").get(original.workspaceId,original.issueId,original.agentId,original.attemptId);
  if(!physical)throw new DraftConflictError("Original physical repository binding disappeared during recovery");
  let execution:string|null=null;
@@ -35,7 +36,7 @@ export function readRepairApplication(db:DatabaseSync,original:InterventionRecor
  const row=db.prepare("SELECT payload FROM engineering_repair_handoff_application WHERE observation_id=?").get(original.observationId);if(!row)return undefined;
  const delivery=db.prepare("SELECT case_id,snapshot_hash FROM engineering_intervention_delivery WHERE observation_id=?").get(original.observationId);
  const manifest=manifestSchema.parse(JSON.parse(String(row.payload))),a=manifest.application,proposal=reservedRepairProposal(db,manifest.reservation,original),checkpoint=proposal.checkpoint;
- if(delivery?.case_id!==proposal.target.caseId||delivery.snapshot_hash!==original.snapshotHash||a.target_hash!==proposal.targetHash||a.reservation_hash!==manifest.reservation.hash||a.preparation_hash!==manifest.reservation.preparation_hash||a.root_kind!==proposal.rootKind||a.source_payload_hash!==proposal.sourcePayloadHash||a.expected_version!==proposal.target.expectedVersion||JSON.stringify(a.continuation)!==JSON.stringify(proposal.continuation)||a.source_hash!==handoffHash(manifest.source)||a.sidecars_hash!==handoffHash(manifest.sidecars)||a.original_bindings_hash!==handoffHash(manifest.bindings)||JSON.stringify(originalBindings(db,original,proposal.rootKind))!==JSON.stringify(manifest.bindings))throw new DraftConflictError("Staged recovery checkpoint or immutable lineage changed");
+ if(delivery?.case_id!==proposal.target.caseId||delivery.snapshot_hash!==original.snapshotHash||a.target_hash!==proposal.targetHash||a.reservation_hash!==manifest.reservation.hash||a.preparation_hash!==manifest.reservation.preparation_hash||a.root_kind!==proposal.rootKind||a.source_payload_hash!==proposal.sourcePayloadHash||a.expected_version!==proposal.target.expectedVersion||JSON.stringify(a.continuation)!==JSON.stringify(proposal.continuation)||a.source_hash!==handoffHash(manifest.source)||a.sidecars_hash!==handoffHash(manifest.sidecars)||a.original_bindings_hash!==handoffHash(manifest.bindings)||JSON.stringify(originalRepairBindings(db,original,proposal.rootKind))!==JSON.stringify(manifest.bindings))throw new DraftConflictError("Staged recovery checkpoint or immutable lineage changed");
  if(checkpoint.kind==="yaml"){
   const old=db.prepare("SELECT payload FROM chain_drafts WHERE id=?").get(checkpoint.originalDraftId);
   if(a.draft_id!==checkpoint.draft.id||a.draft_hash!==handoffHash(checkpoint.draft)||!old||JSON.stringify(draftSchema.parse(JSON.parse(String(old.payload))))!==JSON.stringify(z.object({draft:draftSchema}).parse(original.snapshot).draft))throw new DraftConflictError("Staged or surrendered draft changed");
@@ -55,7 +56,7 @@ export function stagedPreparation(staged:NonNullable<ReturnType<typeof readStage
 }
 /** Caller holds the business transaction and has validated the exact native reservation. */
 export function persistStagedRepair(db:DatabaseSync,original:InterventionRecord,reservation:HandoffReservation,source:Record<string,unknown>,change:HandoffRootChange){
- const proposal=reservedRepairProposal(db,reservation,original),checkpoint=proposal.checkpoint,sidecars=change.sidecars??[],before=repairRootPayload(db,proposal.rootKind,original.workspaceId,original.issueId),bindings=originalBindings(db,original,proposal.rootKind);
+ const proposal=reservedRepairProposal(db,reservation,original),checkpoint=proposal.checkpoint,sidecars=change.sidecars??[],before=repairRootPayload(db,proposal.rootKind,original.workspaceId,original.issueId),bindings=originalRepairBindings(db,original,proposal.rootKind);
  if(before!==proposal.sourcePayload||handoffHash(before)!==proposal.sourcePayloadHash)throw new DraftConflictError("Recovery root changed before applying the prepared successor");
  if(checkpoint.kind==="yaml")db.prepare("INSERT INTO chain_drafts(id,sequence,payload) VALUES(?,?,?)").run(checkpoint.draft.id,checkpoint.draft.sequence,JSON.stringify(checkpoint.draft));
  const after=z.record(z.string(),z.unknown()).parse(JSON.parse(change.payload)),table=repairRootTable(proposal.rootKind),versioned=proposal.rootKind==="direct"||proposal.rootKind==="business";
@@ -66,4 +67,15 @@ export function persistStagedRepair(db:DatabaseSync,original:InterventionRecord,
  const application=handoffApplicationSchema.parse({...body,hash:handoffHash(body)}),manifest=manifestSchema.parse({application,reservation,source,sidecars,bindings});
  db.prepare("INSERT INTO engineering_repair_handoff_application VALUES(?,?,?)").run(proposal.targetHash,original.observationId,JSON.stringify(manifest));
  readStagedRepair(db,original);return application;
+}
+
+/** Retained lineage is a resource anchor, never a binding for the failed claim. */
+export function retainedRepairPreparation(db:DatabaseSync,original:InterventionRecord):NonNullable<ReturnType<typeof readRepairApplication>>{
+ const native=original.recovery,p=native?.preparation;
+ if(!native||!p)throw new DraftConflictError("Prepared recovery has no retained lineage");
+ const row=db.prepare("SELECT observation_id,source_observation_id,payload FROM engineering_repair_prebind WHERE target_hash=?").get(native.target_hash),source=new InterventionStore(db).original(original.workspaceId,original.issueId,p.observation_id);
+ if(row?.observation_id!==original.observationId||row.source_observation_id!==p.observation_id||row.payload!==JSON.stringify(native)||!source||source.receiptHash!==p.receipt_hash||source.attemptId!==p.source_attempt_id)throw new DraftConflictError("Prepared recovery retained source changed");
+ const prepared=readRepairApplication(db,source);
+ if(!prepared||prepared.proposal.targetHash!==native.target_hash||prepared.manifest.application.hash!==native.application_hash||prepared.proposal.continuation.task_id!==native.entry_task_id||handoffHash(prepared.manifest.bindings)!==p.bindings_hash)throw new DraftConflictError("Prepared recovery retained application changed");
+ return prepared;
 }

@@ -9,9 +9,10 @@ ready business checkpoint; the Case enters observation rather than closure.
 
 ## Verified management context
 
-Management schema 14 retains preparation, reservation, application, publication
-and business-progress ledgers, and adds the separate `admin_recovery_watch`
-observation interval. The host reads `handoff-pending` only
+Management schema 15 retains preparation, reservation, application, publication
+and business-progress ledgers and the separate `admin_recovery_watch` observation
+interval. Schema 15 preserves explicit retained execution provenance in takeover
+inspection, including after management restart. The host reads `handoff-pending` only
 under current running intent and obtains `handoff-context` with management
 authority. Agent commands expose neither action. A display status alone is
 insufficient: context recompiles the entire ordered native receipt, compares its
@@ -283,9 +284,8 @@ requires the exact prepared draft/contract/definition, an editable phase and no
 unanswered input. Business snapshots retain the current generation and frozen
 upstream conclusions/comments. Requirement snapshots retain their complete
 native contract. Direct needs its actual bound unfinished attempt; a host can
-capture a failure before RUN without manufacturing a RUN receipt. Unbound
-preparation, completed/abandoned stages and human-question waits produce no
-editable failure checkpoint. Root, snapshot and execution/physical binding hashes
+capture a failure before RUN without manufacturing a RUN receipt. Completed/abandoned stages and human-question waits produce no editable bound
+failure checkpoint. Unbound prepared entries use the distinct path below. Root, snapshot and execution/physical binding hashes
 make the eventual hold conditional on the same persisted state.
 
 Under the native project admission lock, the API verifies the actual task is
@@ -322,6 +322,50 @@ though both generations have a null draft ID. New run hints and binds select the
 current recovery; old hints remain refused. Another independently verified
 repair can prepare a new successor without deleting either original failure.
 
+## Terminal failure before business binding
+
+A published entry can fail after native claim but before its business bind. The
+host now reads an unchanged `ready` grant, its exact staged root/draft/sidecars,
+original application, frozen owner and retained physical-binding bytes. It
+requires no recorded binding for that entry and captures no Agent view, Direct
+RUN or synthetic attempt. The checkpoint reports a null bound attempt and pins
+its preceding observation/receipt, actual source attempt and bindings hash.
+
+Under the existing native project/task locks, failure observation still requires
+the actual terminal `failed`/`completed` task, completed timestamp, native claim,
+publication scope, fresh management intent and no queued/deferred retry. The
+native version-two fault witness records that real claim and the separate
+preparation provenance. A never-claimed queued task cannot satisfy this path.
+Unknown controller/provider exit remains unknown; the hold creates no fence and
+cancels no work.
+
+The business transaction inserts `engineering_repair_prebind` and a new immutable
+intervention/outbox observation together. The pending view excludes only the
+preceding logical hold superseded by that ledger; its original receipt, drafts,
+bindings and dispatch history remain intact. The failed grant stays `ready` with
+no bound attempt, but its published stage and old hints remain permanently
+revoked. A failed outbox insert rolls back that ledger and preserves prior held
+admission. Existing databases upgrade the pending view through a savepoint.
+Lost replies replay the same business observation and reopen the same Admin Case.
+
+Host source reads revalidate unchanged prepared state and the full retained
+application lineage. They explicitly return `execution_binding_origin` as
+`retained-preparation` and the actual `execution_source_attempt_id` of the retained
+anchor. This is not a physical binding for the failed claim. Native inspection
+and management schema 15 retain that distinction and reject a changed provenance
+before takeover. Repeated unbound failures retain the ultimate actual binding
+source while preserving each intervening failure. Registered content reads and
+subsequent repair verification/handoff still use their normal authorization and
+physical-exit gates; no synthetic execution row is inserted to satisfy them.
+
+Direct retains its unchanged goal/contract and absent active attempt; another
+independently verified handoff can prepare a new version. YAML retains the exact
+prepared draft and typed owner pointers, including business upstream generations
+and requirement/Feedback facts. A new verified successor is required before a
+new native bind; ordinary workflow, result and Done/reading rules still apply.
+Partially activated binds, changed staged state and never-claimed stalled tasks
+need separate recovery work.
+
 ## Remaining recovery work
 
 Observation of a normally applied recovery result and its guarded Case closure
@@ -329,7 +373,8 @@ are connected. Bound terminal executions without a result now create an
 immutable host business hold and reopen their original Case. Readonly runnable-
 dispatch sampling and durable eligible-time evidence are connected through the
 [Admin observer](admin.md#dispatch-readiness-observation). Automatic stall
-takeback, pre-bind/preparation failure holds, source/cohort changes and recovery
+takeback for never-claimed work, partially-bound/preparation failure holds,
+source/cohort changes and recovery
 of completed drafts without owner settlement still require migration. Waiting
 alone does not synthesize a successful result, fault or Case closure. Broader revocation,
 runtime/service identity, external dependency and shared-path recovery retain
@@ -465,3 +510,21 @@ Agent/runtime caps. Authenticated batch zero/idle polls and singular idle polls
 record capacity without preparing a provider task. Unknown cleanup, stale
 capacity, human waits and changed ownership retain waiting/reset boundaries.
 No automatic stall takeback or real-provider acceptance is established.
+
+Prepared terminal-failure recovery passed 478 existing plus 15 new command-chain
+cases (493 distinct tests across 38 files), followed by a 36-case final recovery
+focus after correcting repeated-failure anchor provenance. Kernel type/lint/build,
+the engineering handler race suite, local-control checks and Go vet passed. Real
+SQLite fixtures cover unbound Direct/verification holds, rollback on failed outbox
+insertion, legacy pending-view upgrade, immutable old receipts, rejected old hints,
+retained source/content reads and ordinary results after another verified handoff.
+Two consecutive prepared Direct failures retain the ultimate actual anchor. Four
+business stages and requirement review/Feedback owners retain their frozen facts
+through prepared failure and a second staged handoff. Management checks preserve
+inspection provenance across restart and schema-fourteen upgrade; shared Go/Node
+UTF-8 witnesses bind version-two preparation facts. Native fixtures cover terminal
+claims before bind, refusal of missing/contradictory claims, retained inspection
+provenance and unchanged physical barriers. These checks use synthetic provider
+ports, temporary repositories and actual SQLite/PostgreSQL operations; they do not
+establish never-claimed stall takeback, partially-bound recovery, real-provider
+or packaged acceptance.

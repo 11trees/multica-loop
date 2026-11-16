@@ -1,5 +1,5 @@
 import {readRepairDispatchReadiness} from "./repair-readiness-store";
-import {readRecoveryCheckpoint} from "./repair-recovery-store";
+import {readRecoveryCheckpoint,readPreparedRecoverySource} from "./repair-recovery-store";
 import {repairRecoveryFaultSchema} from "./repair-recovery-fault";
 import {assertRepairExecutionBinding,initializeRepairExecutions,prepareRepairExecutionHint,bindRepairExecutionHint,repairExecutionHintSchema} from "./repair-execution";
 import { initializeRepairHandoffs,prepareRepairHandoff } from "./repair-handoff-store";
@@ -604,7 +604,7 @@ export class EngineeringApplication {
       this.db.exec("BEGIN IMMEDIATE");try{
         const value=readRecoveryCheckpoint(this.db,actor,{target_hash:input.target_hash,application_hash:input.application_hash,ready_hash:input.ready_hash},(prepared,draft,attemptId,executionPath,original)=>{
           const {proposal:p}=prepared;
-          if(p.checkpoint.kind==="direct")return this.direct.repairFailureSnapshot(original,attemptId);
+          if(p.checkpoint.kind==="direct")return attemptId===null?this.direct.repairPreparedSnapshot(original):this.direct.repairFailureSnapshot(original,attemptId);
           if(!draft)throw new DraftConflictError("Recovery source has no YAML draft");
           if(p.rootKind==="business"){this.business.assertRepairSuccessor(actor.workspaceId,actor.issueId,p.checkpoint);return this.business.repairFailureSnapshot(actor.workspaceId,actor.issueId,draft,p.continuation.agent_id);}
           if(p.rootKind==="requirement"){this.requirements.assertRepairSuccessor(actor.workspaceId,actor.issueId,p.checkpoint);return this.requirements.repairFailureSnapshot(actor.workspaceId,actor.issueId,draft,p.continuation.agent_id);}this.assertEngineeringRepairSuccessor(original,p.checkpoint);
@@ -614,7 +614,7 @@ export class EngineeringApplication {
         if(action==="repair-recovery-checkpoint"){this.db.exec("COMMIT");return {checkpoint:value.checkpoint,reason:value.reason,...(value.held?{held:value.held}:{})};}
         if(value.held){if(input.native?.hash!==value.held.recovery?.hash)throw new DraftConflictError("Recovery hold cannot replace its immutable native fault");this.db.exec("COMMIT");return {held:value.held};}
         const native=repairRecoveryFaultSchema.parse(input.native),c=value.checkpoint;
-        if(!c||!value.position||!value.snapshot||native.checkpoint_hash!==c.hash||native.case_id!==c.case_id||native.target_hash!==c.target_hash||native.application_hash!==c.application_hash||native.ready_hash!==c.ready_hash||native.entry_task_id!==c.entry_task_id||native.task_id!==c.task_id||native.attempt_id!==c.attempt_id||native.workspace_id!==c.workspace_id||native.issue_id!==c.issue_id||native.execution_hint_hash!==c.execution_hint_hash||native.agent_id!==c.agent_id||native.user_id!==c.user_id||native.project_id!==c.project_id||native.runtime_id!==c.runtime_id||native.verification_attempt_id!==c.verification_attempt_id)throw new DraftConflictError("Recovery checkpoint changed before its host hold");
+        if(!c||!value.position||!value.snapshot||native.checkpoint_hash!==c.hash||native.case_id!==c.case_id||native.target_hash!==c.target_hash||native.application_hash!==c.application_hash||native.ready_hash!==c.ready_hash||native.entry_task_id!==c.entry_task_id||native.task_id!==c.task_id||(c.attempt_id!==null&&native.attempt_id!==c.attempt_id)||JSON.stringify(native.preparation??null)!==JSON.stringify("preparation" in c?c.preparation:null)||native.workspace_id!==c.workspace_id||native.issue_id!==c.issue_id||native.execution_hint_hash!==c.execution_hint_hash||native.agent_id!==c.agent_id||native.user_id!==c.user_id||native.project_id!==c.project_id||native.runtime_id!==c.runtime_id||native.verification_attempt_id!==c.verification_attempt_id)throw new DraftConflictError("Recovery checkpoint changed before its host hold");
         const held=this.interventions.holdRecovery(actor,value.position,value.snapshot,native,request.host_version);this.db.exec("COMMIT");return {held};
       }catch(error){this.db.exec("ROLLBACK");throw error;}
     }
@@ -658,7 +658,7 @@ export class EngineeringApplication {
         const proposal=reservedRepairProposal(this.db,reservation,original),checkpoint=proposal.checkpoint;
         const source=z.record(z.string(),z.unknown()).parse(await this.invoke({actor,action:"repair-source",payload:pin}));
         let change:HandoffRootChange;
-        if(checkpoint.kind==="direct")change=this.direct.repairSuccessor(reservation);
+        if(checkpoint.kind==="direct")change=this.direct.repairSuccessor(reservation,!!original.recovery?.preparation);
         else if(proposal.rootKind==="business")change=this.business.repairSuccessor(original,checkpoint);
         else if(proposal.rootKind==="requirement")change=this.requirements.repairSuccessor(original,checkpoint);
         else change=this.repairEngineeringSuccessor(original,checkpoint);
@@ -711,6 +711,7 @@ export class EngineeringApplication {
       if (actor.kind !== "host") throw new Error("Only the host can validate an Admin repair source");
       const original = this.interventions.repairSource(actor.workspaceId, actor.issueId, request.payload);
       const staged=readStagedRepair(this.db,original);if(staged)return {...staged.manifest.source,checkpoint_state:"staged",handoff_target_hash:staged.proposal.targetHash,handoff_application_hash:staged.manifest.application.hash};
+      if(original.recovery?.preparation)return readPreparedRecoverySource(this.db,original,z.object({case_id:text}).parse(request.payload).case_id);
       const frozen = original.chain === "direct" ? z.object({ repository_path: text, code_version: z.string() }).parse(original.snapshot) : (() => { const value = z.object({repositoryPath:text,contract:z.object({binding:z.object({codeVersion:text})})}).parse(original.snapshot); return {repository_path:value.repositoryPath,code_version:value.contract.binding.codeVersion}; })();
       let registeredPath = frozen.repository_path;
       let execution: { repositoryPath: string; mode: "in_place" | "worktree" } | undefined;

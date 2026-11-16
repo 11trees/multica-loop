@@ -56,20 +56,22 @@ func (h *Handler) ReconcileEngineeringTakeovers(ctx context.Context, authority e
 			return err
 		}
 		var source struct {
-			WorkspaceID    string  `json:"workspace_id"`
-			IssueID        string  `json:"issue_id"`
-			AgentID        string  `json:"agent_id"`
-			AttemptID      string  `json:"attempt_id"`
-			ObservationID  string  `json:"observation_id"`
-			CaseID         string  `json:"case_id"`
-			SnapshotHash   string  `json:"snapshot_hash"`
-			RegisteredPath string  `json:"registered_repository_path"`
-			ExecutionPath  string  `json:"execution_repository_path"`
-			Mode           string  `json:"mode"`
-			ReceiptHash    string  `json:"receipt_hash"`
-			CodeVersion    string  `json:"code_version"`
-			KernelVersion  *string `json:"kernel_version"`
-			HostVersion    *string `json:"host_version"`
+			WorkspaceID              string  `json:"workspace_id"`
+			IssueID                  string  `json:"issue_id"`
+			AgentID                  string  `json:"agent_id"`
+			AttemptID                string  `json:"attempt_id"`
+			ObservationID            string  `json:"observation_id"`
+			CaseID                   string  `json:"case_id"`
+			SnapshotHash             string  `json:"snapshot_hash"`
+			RegisteredPath           string  `json:"registered_repository_path"`
+			ExecutionPath            string  `json:"execution_repository_path"`
+			ExecutionBindingOrigin   *string `json:"execution_binding_origin,omitempty"`
+			ExecutionSourceAttemptID *string `json:"execution_source_attempt_id,omitempty"`
+			Mode                     string  `json:"mode"`
+			ReceiptHash              string  `json:"receipt_hash"`
+			CodeVersion              string  `json:"code_version"`
+			KernelVersion            *string `json:"kernel_version"`
+			HostVersion              *string `json:"host_version"`
 		}
 		if json.Unmarshal(raw, &source) != nil || source.WorkspaceID != request.WorkspaceID || source.IssueID != request.IssueID || source.CaseID != request.CaseID || source.ObservationID != request.ObservationID || source.SnapshotHash != request.SnapshotHash || source.AttemptID != request.SourceAttemptID {
 			return fmt.Errorf("repair source identity changed")
@@ -111,7 +113,14 @@ func (h *Handler) ReconcileEngineeringTakeovers(ctx context.Context, authority e
 		if !filepath.IsAbs(source.RegisteredPath) || !filepath.IsAbs(source.ExecutionPath) || filepath.Clean(path) != source.RegisteredPath || mappings[0]["mode"] != source.Mode || source.Mode == "in_place" && source.ExecutionPath != source.RegisteredPath {
 			return fmt.Errorf("repair source project directory changed")
 		}
-		_, err = h.EngineeringAdminWorker.Call(ctx, map[string]any{"action": "takeover-inspected", "claim": request.Claim, "payload": map[string]any{"observation_id": source.ObservationID, "snapshot_hash": source.SnapshotHash, "source_attempt_id": source.AttemptID, "project_id": uuidToString(issue.ProjectID), "runtime_id": uuidToString(task.RuntimeID), "registered_repository_path": source.RegisteredPath, "execution_repository_path": source.ExecutionPath, "mode": source.Mode, "receipt_hash": source.ReceiptHash, "code_version": source.CodeVersion, "kernel_version": source.KernelVersion, "host_version": source.HostVersion}})
+		inspection := map[string]any{"observation_id": source.ObservationID, "snapshot_hash": source.SnapshotHash, "source_attempt_id": source.AttemptID, "project_id": uuidToString(issue.ProjectID), "runtime_id": uuidToString(task.RuntimeID), "registered_repository_path": source.RegisteredPath, "execution_repository_path": source.ExecutionPath, "mode": source.Mode, "receipt_hash": source.ReceiptHash, "code_version": source.CodeVersion, "kernel_version": source.KernelVersion, "host_version": source.HostVersion}
+		if source.ExecutionBindingOrigin != nil {
+			inspection["execution_binding_origin"] = *source.ExecutionBindingOrigin
+		}
+		if source.ExecutionSourceAttemptID != nil {
+			inspection["execution_source_attempt_id"] = *source.ExecutionSourceAttemptID
+		}
+		_, err = h.EngineeringAdminWorker.Call(ctx, map[string]any{"action": "takeover-inspected", "claim": request.Claim, "payload": inspection})
 		if err != nil {
 			return err
 		}

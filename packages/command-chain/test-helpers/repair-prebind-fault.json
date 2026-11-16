@@ -1,0 +1,30 @@
+{
+  "case_id": "REPAIR-原始任务",
+  "verification_attempt_id": "independent-核验",
+  "target_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "application_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "ready_hash": "1479320c9cb6fc79f89aab0495d9fcc02cdc264b94afc2d7e2dc3443041dca4d",
+  "entry_task_id": "55555555-5555-4555-a555-555555555555",
+  "task_id": "55555555-5555-4555-a555-555555555555",
+  "attempt_id": "55555555-5555-4555-a555-555555555555:654321",
+  "execution_hint_hash": null,
+  "workspace_id": "11111111-1111-4111-a111-111111111111",
+  "issue_id": "22222222-2222-4222-a222-222222222222",
+  "agent_id": "33333333-3333-4333-a333-333333333333",
+  "publication_hash": "3ccf8261f6fe9855cc5ce8650d2937aafad20765709e68e066e06386584a6916",
+  "project_id": "77777777-7777-4777-a777-777777777777",
+  "runtime_id": "88888888-8888-4888-a888-888888888888",
+  "user_id": "44444444-4444-4444-a444-444444444444",
+  "checkpoint_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "status": "failed",
+  "completed_at": "2026-11-16T10:00:00.123456Z",
+  "failure_reason": "执行结束但没有业务结果",
+  "context_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "hash": "ea8816bcfd7371b03c618b959e07dcbc3dd5347a6ea93e8ad0ca16d5ec5bbd5b",
+  "preparation": {
+    "observation_id": "multica:原始观察",
+    "receipt_hash": "4444444444444444444444444444444444444444444444444444444444444444",
+    "source_attempt_id": "99999999-9999-4999-a999-999999999999:123456",
+    "bindings_hash": "5555555555555555555555555555555555555555555555555555555555555555"
+  }
+}

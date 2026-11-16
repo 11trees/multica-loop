@@ -81,7 +81,7 @@ A native task or an investigation invocation cannot use these management command
 
 ## Investigation and physical ownership
 
-The management database schema is version 14. It freezes one invocation generation,
+The management database schema is version 15. It freezes one invocation generation,
 session identity, runtime revision and recovery method per allocation. A durable
 fair queue rotates Cases, with at most one active investigation, independent
 preparation or native verification invocation globally.
@@ -146,8 +146,11 @@ independent. A bound terminal recovery without an applied result now freezes
 its current editable checkpoint and reopens the same Case through the durable
 business outbox. Queued/deferred retries and human questions remain waiting;
 unknown process exits retain their takeover barriers. Readonly dispatch sampling
-and durable eligible-time evidence are connected; automatic stall takeback,
-pre-bind failure holds and cohort-change recovery remain unconnected.
+and durable eligible-time evidence are connected. An unchanged ready entry with
+a real terminal native claim can now surrender before business binding, retaining
+its original resource-anchor provenance without creating an execution binding.
+Automatic stall takeback, never-claimed/partially-bound failures and cohort-change
+recovery remain unconnected.
 See [the verification protocol](repair-verification.md).
 Diagnosis and external-wait prerequisites remain unconnected. No investigation
 receipt closes the Case or resumes business.
@@ -180,8 +183,9 @@ but elapsed offline time is not counted beyond the allowed sample gap.
 The private due flag is recalculated against current intent and freshness. It is
 observation evidence only: no consumer currently turns it into a business hold,
 native fence, cancellation, retry or Case closure. Automatic takeback still needs
-a fresh, owner-validated prepared/unbound checkpoint surrender and durable outbox
-handoff. This is distinct from the existing bound terminal-failure recovery path.
+a fresh native source model for a never-claimed entry and durable outbox handoff.
+The prepared-checkpoint path now covers terminal entries with an actual native
+claim; it does not invent a claim for queued work.
 
 ## Native visibility
 
@@ -243,8 +247,10 @@ connects controlled task publication, resume, ordinary-result observation and
 guarded Case closure. Bound terminal failures without applied results now
 reopen the same Case while retaining its history and physical barriers.
 Readonly runnable-stall sampling is connected. Automatic takeback from that
-evidence, pre-bind failure holds and cohort-change recovery still require
-implementation. Real-provider, Linux runtime and packaged
+evidence, never-claimed or partially-bound failure holds and cohort-change
+recovery still require implementation. Terminal ready entries with real native
+claims now retain prepared checkpoint/resource provenance through another
+independently verified handoff. Real-provider, Linux runtime and packaged
 acceptance remain unverified. The complete migration stays active.
 
 

@@ -41,6 +41,9 @@ func TestEngineeringTakeoverInspectsExactNativeClaimWithoutAcquiringFence(t *tes
 			if payload["project_id"] != project || payload["runtime_id"] != runtime || payload["execution_repository_path"] != "/fixture/removed-worktree" {
 				t.Fatal("native inspection changed source")
 			}
+			if source["execution_binding_origin"] != nil && (payload["execution_binding_origin"] != source["execution_binding_origin"] || payload["execution_source_attempt_id"] != source["execution_source_attempt_id"]) {
+				t.Fatal("prepared source inspection discarded retained binding provenance")
+			}
 			return json.RawMessage(`{}`), nil
 		}
 		return nil, fmt.Errorf("unexpected action")
@@ -58,6 +61,13 @@ func TestEngineeringTakeoverInspectsExactNativeClaimWithoutAcquiringFence(t *tes
 	if inspections != 1 {
 		t.Fatal("source not inspected")
 	}
+	source["execution_binding_origin"] = "retained-preparation"
+	source["execution_source_attempt_id"] = "retained-original:123"
+	if err = h.ReconcileEngineeringTakeovers(ctx, authority); err != nil {
+		t.Fatal(err)
+	}
+	delete(source, "execution_binding_origin")
+	delete(source, "execution_source_attempt_id")
 	for key, wrong := range map[string]string{"attempt_id": task + ":0", "workspace_id": testUserID, "case_id": "REPAIR-other", "registered_repository_path": "/invented", "mode": "in_place"} {
 		old := source[key]
 		source[key] = wrong
@@ -66,7 +76,7 @@ func TestEngineeringTakeoverInspectsExactNativeClaimWithoutAcquiringFence(t *tes
 		}
 		source[key] = old
 	}
-	if inspections != 1 {
+	if inspections != 2 {
 		t.Fatal("invalid source reached management inspection")
 	}
 	var count int
@@ -176,7 +186,7 @@ func TestEngineeringTakeoverRevocationAfterCommitRetainsFenceWithoutCancelling(t
 func TestEngineeringTakeoverRejectsChangedOriginalBeforeAnyFence(t *testing.T) {
 	ctx := context.Background()
 	f := newTakeoverControlFixture(t)
-	for key, wrong := range map[string]any{"revision": 0, "receipt_hash": "replacement", "host_version": "new-api", "kernel_version": "new-kernel", "code_version": "different-code", "execution_repository_path": "/invented"} {
+	for key, wrong := range map[string]any{"revision": 0, "receipt_hash": "replacement", "host_version": "new-api", "kernel_version": "new-kernel", "code_version": "different-code", "execution_repository_path": "/invented", "execution_binding_origin": "retained-preparation", "execution_source_attempt_id": "changed-source:123"} {
 		old := f.source[key]
 		f.source[key] = wrong
 		if _, err := f.h.DrainEngineeringProject(ctx, f.body); err == nil {
