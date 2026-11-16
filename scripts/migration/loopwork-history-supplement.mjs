@@ -229,10 +229,28 @@ export async function browseHistorySupplement(directory,input){
  }finally{db.close();}
 }
 
+function secondaryProject(primary,entry,task,originalProjects){
+ const summary=primary.databases.find(row=>row.role==='business').summary;
+ const unresolved={project:null,correspondence:{kind:'unresolved'}};
+ const sourceProjects=originalProjects.filter(row=>row.project_id===task.project_id);
+ const direct=summary.projects.find(row=>row.project_id===task.project_id);
+ if(direct&&sourceProjects.length===1&&sourceProjects[0].workspace_root===direct.workspace_root)return {project:direct,correspondence:{kind:'exact_project',source_project_id:task.project_id}};
+ // This recorded import is scoped to an exact original database, not its folder,
+ // a matching task ID, or a second backup with similar contents.
+ const imports=(summary.legacy_imports??[]).filter(row=>row.source_db_path===join(primary.source.data_root,entry.source_path));
+ if(entry.original_disposition!=='already_merged_source_not_reimported'||imports.length!==1)return unresolved;
+ const imported=imports[0],project=summary.projects.find(row=>row.project_id===imported.project_id&&row.workspace_root===imported.workspace_root);
+ if(!project||summary.tasks.find(row=>row.task_id===task.task_id)?.project_id!==project.project_id)return unresolved;
+ if(task.project_id!=null){
+  if(sourceProjects.length!==1||sourceProjects[0].workspace_root!==project.workspace_root)return unresolved;
+ }else if(originalProjects.length&&(originalProjects.length!==1||originalProjects[0].workspace_root!==project.workspace_root))return unresolved;
+ return {project,correspondence:{kind:'recorded_legacy_import',source_db_path:imported.source_db_path,project_id:imported.project_id,workspace_root:imported.workspace_root,imported_at:imported.imported_at,source_project_id:task.project_id??null}};
+}
+
 function archivedReferences(archive,primary,supplement,previous){
  const references=[],projects=primary.databases.find(row=>row.role==='business').summary.projects;
- const scan=(database,taskID,project,table,row,record)=>{
-  for(const [field,value] of Object.entries(record))for(const candidate of referenceCandidates(value))references.push({database,task_id:String(taskID),project_id:project?.project_id??null,workspace_root:project?.workspace_root??null,table,row,field,...candidate});
+ const scan=(database,taskID,project,table,row,record,correspondence)=>{
+  for(const [field,value] of Object.entries(record))for(const candidate of referenceCandidates(value))references.push({database,task_id:String(taskID),project_id:project?.project_id??null,workspace_root:project?.workspace_root??null,table,row,field,...candidate,...(correspondence?{project_correspondence:correspondence}:{})});
  };
  const entry=primary.databases.find(row=>row.role==='business'),db=new DatabaseSync(join(archive,entry.file),{readOnly:true});
  try{
@@ -247,19 +265,15 @@ function archivedReferences(archive,primary,supplement,previous){
   try{
    db.exec('PRAGMA query_only=ON;PRAGMA trusted_schema=OFF');
    const columns=name=>entry.tables.find(row=>row.name===name)?.columns??[];
+   const originalProjects=columns('projects').includes('workspace_root')&&columns('projects').includes('project_id')?db.prepare('SELECT project_id,workspace_root FROM projects ORDER BY project_id').all():[];
    const query=db.prepare('SELECT * FROM tasks ORDER BY task_id');query.setReadBigInts(true);
    for(const task of query.all()){
-    // A secondary database cannot introduce an arbitrary root or inherit ownership by task ID.
-    let project=projects.find(row=>row.project_id===task.project_id);
-    if(project&&columns('projects').includes('workspace_root')&&columns('projects').includes('project_id')){
-     const original=db.prepare('SELECT workspace_root FROM projects WHERE project_id=?').get(task.project_id);
-     if(original?.workspace_root!==project.workspace_root)project=null;
-    }else project=null;
+    const {project,correspondence}=secondaryProject(primary,entry,task,originalProjects);
     const taskFields=Object.fromEntries(['description','evidence','link'].map(key=>[key,task[key]]));
-    scan(entry.source_path,task.task_id,project,'tasks',String(task.task_id),taskFields);
+    scan(entry.source_path,task.task_id,project,'tasks',String(task.task_id),taskFields,correspondence);
     if(columns('documents').includes('task_id')){
      const documents=db.prepare('SELECT document_id,content FROM documents WHERE task_id=? ORDER BY document_id');documents.setReadBigInts(true);
-     for(const document of documents.all(task.task_id))scan(entry.source_path,task.task_id,project,'documents',String(document.document_id),{content:document.content});
+     for(const document of documents.all(task.task_id))scan(entry.source_path,task.task_id,project,'documents',String(document.document_id),{content:document.content},correspondence);
     }
    }
   }finally{db.close();}
@@ -324,7 +338,7 @@ export async function captureReferenceSupplement({archive,expectedHash,supplemen
   }
   for(const {reference,facts} of selected.values())if(!equal(await fingerprint(reference.workspace_root,reference.source_path),facts))throw new Error('Referenced file changed before publication');
   const report={format:'loopwork-reference-inventory-v1',archive_hash:expectedHash,parent_supplement_hash:expectedSupplementHash,captured_at:new Date().toISOString(),historical_only:true,execution_authorized:false,
-   coverage:['Primary task packet included sections; original table, ordered row, field and JSON pointer retained.','Secondary database task description/evidence/link and document content; roots require matching primary project identity and original root.','Markdown destinations/definitions, HTML media/link attributes, JSON path fields, inline paths and literal .tmp or /Users paths.'],
+   coverage:['Primary task packet included sections; original table, ordered row, field and JSON pointer retained.','Secondary database task description/evidence/link and document content; roots require exact project/root correspondence or the pinned exact-database legacy import plus matching primary task/project ownership and no conflicting original project root.','Markdown destinations/definitions, HTML media/link attributes, JSON path fields, inline paths and literal .tmp or /Users paths.'],
    exclusions:['Unrecognized prose, unavailable packet sections, arbitrary directory trees, unregistered files and remote target bytes are not covered.','Captured files are current bytes at capture time, not proof of their historical contents or native verification.','Named credential/runtime configuration locations, database payloads, symlinks and targets outside the matching original project are not copied; source and project metadata files remain historical bytes only.'],references};
   const data=Buffer.from(JSON.stringify(report,null,2)+'\n'),sha256=createHash('sha256').update(data).digest('hex'),file=`blobs/${sha256}`,reportPath=`reference-inventory/${expectedSupplementHash}.json`;
   if(bytes+data.length>256*1024*1024||materials.length>=10000)throw new Error('Historical references exceed bounded capture capacity');

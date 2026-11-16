@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {mkdir,readFile,readdir,symlink,writeFile} from 'node:fs/promises';
+import {mkdir,readFile,readdir,realpath,symlink,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
 import {DatabaseSync} from 'node:sqlite';
@@ -62,4 +62,24 @@ test('keeps secondary references scoped to the original database and requires ex
  assert.equal(matched.filter(row=>row.disposition==='captured_current_bytes').length,2);assert.equal(foreign.length,2);assert.ok(foreign.every(row=>row.disposition==='unresolved_project'&&row.workspace_root===null));
  assert.ok(matched.some(row=>row.table==='documents'&&row.row==='original'&&row.task_id==='pending'));
  await assert.rejects(captureReferenceSupplement({archive,expectedHash:primary.hash,supplement:f.output,expectedSupplementHash:captured.hash,output:join(f.root,'again')}),/original supplement/);
+});
+
+test('uses exact archived import provenance for pre-project databases and refuses backups, owner conflicts and root contradictions',async t=>{
+ const f=await fixture(t);
+ f.business.exec('CREATE TABLE legacy_project_database_imports(source_db_path TEXT PRIMARY KEY,workspace_root TEXT,project_id TEXT,imported_at TEXT)');
+ for(const directory of ['imported','rewritten-project','same-folder-backup','wrong-owner','contradictory-root']){
+  await mkdir(join(f.dataRoot,directory));const path=join(f.dataRoot,directory,'loop-ui.db'),db=new DatabaseSync(path);
+  db.exec('CREATE TABLE tasks(task_id TEXT,description TEXT);CREATE TABLE documents(document_id TEXT,task_id TEXT,content TEXT)');
+  const task=directory==='wrong-owner'?'deleted-pending':'pending';db.prepare('INSERT INTO tasks VALUES(?,?)').run(task,'[proof](.tmp/proof.txt)');db.prepare('INSERT INTO documents VALUES(?,?,?)').run('original',task,'[image](<.tmp/image%20(1).png>)');
+  if(directory==='contradictory-root'){db.exec('CREATE TABLE projects(project_id TEXT,workspace_root TEXT)');db.prepare('INSERT INTO projects VALUES(?,?)').run('foreign',f.root);}
+  if(directory==='rewritten-project'){db.exec("ALTER TABLE tasks ADD COLUMN project_id TEXT;UPDATE tasks SET project_id='old-project';CREATE TABLE projects(project_id TEXT,workspace_root TEXT)");db.prepare('INSERT INTO projects VALUES(?,?)').run('old-project',f.workspaceRoot);}
+  db.close();
+  if(directory!=='same-folder-backup')f.business.prepare('INSERT INTO legacy_project_database_imports VALUES(?,?,?,?)').run(await realpath(path),f.workspaceRoot,'project','2026-01-01');
+ }
+ const archive=join(f.root,'import-primary'),primary=await createArchive({sourceRoot:f.sourceRoot,dataRoot:f.dataRoot,output:archive}),supplement=join(f.root,'import-supplement'),base=await captureHistorySupplement({archive,expectedHash:primary.hash,output:supplement});
+ const captured=await captureReferenceSupplement({archive,expectedHash:primary.hash,supplement,expectedSupplementHash:base.hash,output:f.output}),manifest=await verifyHistorySupplement(f.output,primary.hash,captured.hash),entry=manifest.materials.find(row=>row.category==='reference_inventory'),report=JSON.parse(await readFile(join(f.output,entry.file),'utf8'));
+ const importedPath=await realpath(join(f.dataRoot,'imported/loop-ui.db')),imported=report.references.filter(row=>row.database==='imported/loop-ui.db');assert.equal(imported.length,2);assert.ok(imported.every(row=>row.disposition==='captured_current_bytes'&&row.project_correspondence.kind==='recorded_legacy_import'&&row.project_correspondence.source_db_path===importedPath&&row.project_correspondence.project_id==='project'));
+ const rewritten=report.references.filter(row=>row.database==='rewritten-project/loop-ui.db');assert.equal(rewritten.length,2);assert.ok(rewritten.every(row=>row.disposition==='captured_current_bytes'&&row.project_correspondence.source_project_id==='old-project'&&row.project_id==='project'));
+ for(const name of ['same-folder-backup','wrong-owner','contradictory-root']){const refs=report.references.filter(row=>row.database===`${name}/loop-ui.db`);assert.equal(refs.length,2);assert.ok(refs.every(row=>row.disposition==='unresolved_project'&&row.workspace_root===null));}
+ assert.equal((await verifyHistorySupplement(supplement,primary.hash,base.hash)).hash,base.hash);assert.equal((await verifyArchive(archive)).hash,primary.hash);assert.equal(captured.captured_files,2);assert.equal(captured.execution_authorized,false);
 });

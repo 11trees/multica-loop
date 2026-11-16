@@ -740,8 +740,14 @@ not separate files. Original line/column/range locations and URL fragments stay
 in that provenance while file lookup strips the location.
 
 Only regular files within that task's archived project root are copied. A
-secondary database must contain the exact primary project ID and workspace root;
-matching task IDs alone cannot choose a root. Missing files/projects, remote
+secondary database must contain the exact primary project ID and workspace root,
+or have an exact-database import record in the pinned primary archive together
+with matching primary task/project ownership and no conflicting original root.
+The inventory retains that import witness, including its original database path
+and import time. This supports old databases that predate project fields and
+recorded project-ID rewrites; it cannot prove record equality, grant native
+ownership or apply to a sibling backup. Matching task IDs or folder names alone
+cannot choose a root. Missing files/projects, remote
 targets, unresolved projects, directories, unsupported paths, outside targets,
 symlinks and excluded credential/runtime configuration and database files retain
 explicit dispositions. Project metadata such as package manifests remain inert
@@ -752,11 +758,16 @@ coverage. File bytes are rechecked before publication, but capture establishes
 their current content only; it cannot recover missing historical screenshots or
 inherit an old verification verdict.
 
-The local reference capture records 1,023 candidate mentions, including 97
+The local reference capture records 1,023 candidate mentions, including 181
 captured mentions of 26 distinct current files. The selected supplement now
 contains 225 materials: the previous 198 files, 26 referenced files and the
-inventory. Other dispositions are 83 missing, 60 directories, 385 remote targets,
-346 unresolved-project references, 36 outside targets and 16 unsupported paths.
+inventory. Other dispositions are 141 missing, 67 directories, 385 remote targets,
+157 unresolved-project references, 66 outside targets and 26 unsupported paths.
+The two exact imported databases contribute 263 mentions with recorded import
+provenance. Their reconciliation resolves 189 previously unowned local candidates;
+this adds provenance to already retained files rather than adding another native
+task cohort. The remaining 157 unowned mentions belong to two other databases,
+including a separately named backup that has no exact import record.
 These counts include repeated source/backups and bounded syntax candidates,
 not distinct attachments or a completeness verdict. Actual source bytes and
 both input archives were checked unchanged; actual API/browser acceptance is
