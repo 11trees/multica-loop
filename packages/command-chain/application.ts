@@ -638,9 +638,10 @@ export class EngineeringApplication {
       }
     }
     const pending = this.interventions.pending(actor.workspaceId, actor.issueId);
+    const surrendered = actor.kind === "task" || actor.kind === "daemon" ? this.interventions.surrendered(actor.workspaceId, actor.issueId, actor.attemptId) : undefined;
     if(action==="process"){
       if(actor.kind!=="daemon")throw new Error("Only the native runtime can record physical process facts");
-      return this.processes.invoke({workspaceId:actor.workspaceId,issueId:actor.issueId,agentId:actor.agentId,attemptId:actor.attemptId},request.payload,!!pending,actor.projectId);
+      return this.processes.invoke({workspaceId:actor.workspaceId,issueId:actor.issueId,agentId:actor.agentId,attemptId:actor.attemptId},request.payload,!!pending || !!surrendered,actor.projectId);
     }
     if(action==="execution-permission"){
       if(actor.kind!=="host")throw new Error("Only the native host can inspect execution admission");
@@ -652,18 +653,19 @@ export class EngineeringApplication {
     }
     if(["completion","direct-completed","verified-binding"].includes(action))this.processes.assertExited(actor.workspaceId,actor.issueId);
     if (action === "intervention-request") {
-      if (pending) return this.interventions.request(actor, request.payload, null,request.host_version);
+      if (surrendered || pending) return this.interventions.request(actor, request.payload, null,request.host_version);
       if (actor.kind !== "task") throw new Error("Only the current native task can request intervention");
       const snapshot = this.direct.current(actor.workspaceId, actor.issueId) ? this.direct.invoke({ actor, action: "read" }) : this.interventions.snapshot(actor);
       return this.interventions.request(actor, request.payload, snapshot,request.host_version);
     }
-    if (pending && !["read", "overview", "parent-scope", "business-comment-protected"].includes(action)) {
+    if ((surrendered && !["read", "overview"].includes(action)) || (pending && !["read", "overview", "parent-scope", "business-comment-protected"].includes(action))) {
       throw new DraftConflictError("Execution surrendered to Admin; preserve the checkpoint and end execution");
     }
-    if (action === "read" && pending) {
-      if (actor.kind === "task" && actor.agentId !== pending.agentId) throw new DraftConflictError("Only the surrendered role can read its execution receipt");
-      const frozen = pending.snapshot as Awaited<ReturnType<EngineeringApplication["invokeWorkflow"]>>;
-      return { ...frozen, intervention: this.interventions.view(pending), agent_action: "end_execution" };
+    if ((action === "read" || (action === "overview" && surrendered)) && (surrendered || pending)) {
+      const original = surrendered ?? pending!;
+      if (actor.kind === "task" && actor.agentId !== original.agentId) throw new DraftConflictError("Only the surrendered role can read its execution receipt");
+      const frozen = original.snapshot as Awaited<ReturnType<EngineeringApplication["invokeWorkflow"]>>;
+      return { ...frozen, intervention: this.interventions.view(original), agent_action: "end_execution" };
     }
     const result = await this.invokeWorkflow(request);
     if(action==="bind"&&actor.kind==="daemon"){

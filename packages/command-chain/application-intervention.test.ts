@@ -5,14 +5,14 @@ import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { afterEach, beforeEach, expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { repairHandoffTargetSchema,handoffProposalSchema } from "./repair-handoff";
 import { readRepairWorkspaceVersion } from "./repair-workspace-version";
 import { EngineeringTeamStore } from "./team-store";
 import { EngineeringApplication, type ApplicationRequest } from "./application";
 import { SqliteDraftStore } from "./sqlite-store";
-import { interventionRequestSchema } from "./intervention-store";
+import { InterventionStore, interventionRequestSchema } from "./intervention-store";
 
 const human = { kind: "human" as const, workspaceId: randomUUID(), issueId: randomUUID(), userId: randomUUID() };
 const agentId = randomUUID(), projectId = randomUUID();
@@ -63,7 +63,25 @@ it("requires this attempt's viewed editable YAML draft and preserves it against 
   await invoke(owner, "intervention-request", body);
   await expect(invoke(owner, "command", { expected_sequence: before.sequence, command: { type: "phase.complete" } })).rejects.toThrow(/surrendered/);
   await expect(store.save({ ...before, sequence: before.sequence + 1 }, before.sequence)).rejects.toThrow(/Draft changed/);
+  await expect(store.save({ ...before, sequence: before.sequence + 1, binding: { ...before.binding, workspaceId: randomUUID(), issueId: randomUUID() } }, before.sequence)).rejects.toThrow(/Draft changed/);
   expect(await store.read(before.id)).toEqual(before); store.close();
+});
+it("keeps surrendered attempt authority revoked independently of the issue's active hold", async () => {
+  await direct(); await invoke(owner, "direct-run");
+  const receipt = await invoke(owner, "intervention-request", body);
+  const activeHold = vi.spyOn(InterventionStore.prototype, "pending").mockReturnValue(undefined);
+  try {
+    // Only the active-hold lookup is absent; immutable surrender history remains.
+    expect(await invoke(host, "execution-permission")).toEqual({ allowed: true });
+    expect(await invoke(owner, "read")).toMatchObject({ agent_action: "end_execution", direct: { result: null } });
+    expect(await invoke(owner, "overview")).toMatchObject({ agent_action: "end_execution" });
+    expect(await invoke(owner, "intervention-request", body)).toEqual(receipt);
+    await expect(invoke(owner, "intervention-request", { ...body, reason: "Replace the original" })).rejects.toThrow(/immutable/);
+    for (const action of ["direct-run", "direct-submit", "prepare-run", "command", "parent-scope"] as const) await expect(invoke(owner, action, {})).rejects.toThrow(/surrendered/);
+    const daemon = { ...owner, kind: "daemon" as const };
+    await expect(invoke(daemon, "bind", { work_dir: repository, mode: "in_place", overlays: [] })).rejects.toThrow(/surrendered/);
+    await expect(invoke(daemon, "process", { operation: "reserve", allocation_id: randomUUID(), runtime_id: randomUUID(), host_id: "test-host", provider: "codex" })).rejects.toThrow(/Surrendered/);
+  } finally { activeHold.mockRestore(); }
 });
 it("rejects human, foreign agent and unviewed attempts without creating observations", async () => {
   await direct(); await invoke(owner, "direct-run");

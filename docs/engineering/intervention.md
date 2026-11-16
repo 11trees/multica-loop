@@ -108,7 +108,10 @@ The complete Admin repair path remains in the migration coverage audit.
 [Verified handoff preparation](repair-handoff.md) now persists a host-owned intent
 and proposed successor binding the physically settled independent receipt,
 native candidate, every original observation and unchanged checkpoint. It keeps
-business held; activation, queue handoff and closure remain incomplete. Recheck actual content,
+business held. Successor stages restart with fresh derived conclusions while
+retaining original obligations, scenarios and authenticated human choices. Old
+attempts and surrendered draft IDs remain revoked independently of active-hold
+lookup. Activation, queue handoff and closure remain incomplete. Recheck actual content,
 native project/cohort, the task's frozen Team policy and saved human authority
 before acting. Later Team profile edits do not reconfigure the interrupted task.
 Management intent, the business checkpoint and the PostgreSQL fence/queue live in

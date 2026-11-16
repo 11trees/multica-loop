@@ -33,6 +33,10 @@ export class InterventionStore {
     const row = this.db.prepare("SELECT payload FROM engineering_intervention WHERE workspace_id=? AND issue_id=?").get(workspaceId, issueId);
     return row ? this.parse(row.payload) : undefined;
   }
+  surrendered(workspaceId: string, issueId: string, attemptId: string) {
+    const row = this.db.prepare("SELECT payload FROM engineering_intervention WHERE workspace_id=? AND issue_id=? AND attempt_id=?").get(workspaceId, issueId, attemptId);
+    return row ? this.parse(row.payload) : undefined;
+  }
   private parse(payload: unknown) {
     const record = recordSchema.parse(JSON.parse(String(payload)));
     const { receiptHash, ...original } = record;
@@ -83,7 +87,7 @@ export class InterventionStore {
   }
   request(actor: ApplicationRequest["actor"], input: unknown, snapshot: unknown, hostVersion?:string) {
     if (actor.kind !== "task") throw new Error("Only the current native task can surrender its execution");
-    const body = interventionRequestSchema.parse(input), existing = this.pending(actor.workspaceId, actor.issueId);
+    const body = interventionRequestSchema.parse(input), existing = this.surrendered(actor.workspaceId, actor.issueId, actor.attemptId) ?? this.pending(actor.workspaceId, actor.issueId);
     if (existing) {
       if (existing.attemptId !== actor.attemptId || existing.agentId !== actor.agentId || existing.requestHash !== hash(body)) {
         throw new DraftConflictError("Intervention already submitted; its immutable request cannot be replaced");

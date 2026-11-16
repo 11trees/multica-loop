@@ -36,10 +36,18 @@ of those changes.
 
 `engineering_repair_handoff` is the first durable handoff intent. It retains the
 exact old root payload/hash, target, frozen task Team snapshot, original human,
-and a deterministic new native task ID. YAML preparation stores a copied draft
-with a new ID, explicit repair-derived binding and incremented sequence. It
-retains the current phase, artifacts, decisions, human answers and events as a
-proposal; it does not create a row in `chain_drafts`. Direct preparation records
+and a deterministic new native task ID. YAML preparation stores a reconciled
+successor draft with a new ID, repair-derived binding and incremented sequence.
+All thirteen native definitions restart their current stage at its first phase,
+without inheriting completed phases, sealed blocks or derived conclusions.
+Verification retains source/scenario definitions, but removes results and evidence
+review. Development removes implementation claims, captured-check selections and
+code-review fingerprints. Other stage artifacts and reproduction observations are
+rebuilt from the frozen contract. The surrendered draft retains the old facts
+and events. The successor preserves metadata, acceptance definitions,
+authenticated human decisions and their exact answered question snapshots;
+non-human resolutions reopen for assessment and historical questions become
+inactive. It does not create a row in `chain_drafts`. Direct preparation records
 its next version without editing its attempts or result. Each native workflow
 owner still validates its exact original editable checkpoint.
 
@@ -52,12 +60,28 @@ recorded proposal. The Case stays `verified`, its original intervention remains
 pending and the fence remains held. A recorded preparation is historical evidence,
 not a live execution permission.
 
+## Successor evidence and retired authority
+
+Preparation parses original and derived contracts through each native owner's
+schema and requires the original draft/contract binding to agree. Review and
+Feedback Verify refuse a changed accepted-work commit: a repair receipt cannot
+relabel old independent evidence as verification of new delivered work. Normal
+independent verification and evidence reconciliation remain required in that
+case. The unchanged-commit path still rebuilds the stage's observations.
+
+Surrender history independently revokes the exact old task and daemon attempt,
+even if an active issue hold is later removed. Old credentials can read their
+frozen end-execution receipt and replay the same immutable intervention; they
+cannot bind a repository, reserve/bind another process or advance the current
+workflow. Physical exit recording remains available. Draft saves also reject the
+surrendered draft ID independently of the supplied workspace/issue binding.
+These guards do not implement business activation or release any current hold.
+
 ## Activation still required
 
-Before activation, reconcile code-bound inputs, Dev checks and Test observations
-in the proposed copy. A repaired commit must not inherit passing observations
-from the old binding. Keep those old facts in the surrendered draft and history,
-and preserve human decisions, original obligations and bounded budgets.
+Apply the reconciled proposal through its workflow owner, preserving original
+contracts, source history, human decisions and bounded budgets. Revalidate
+code-bound upstream references before using the proposal as an active checkpoint.
 
 Activation needs a durable native reservation for the exact intent before the
 business hold is removed. Apply the new root/draft with source payload/sequence
@@ -88,3 +112,11 @@ interrupted acknowledgement replays without releasing the fence or creating work
 Separate SDK tests use a test-created provider, actual source repair and native
 shell checks before obtaining verified handoff eligibility. These are distinct
 test layers, not one real-provider or packaged recovery acceptance run.
+
+Successor tests parse all thirteen native contract shapes, retain exact human
+answers, reopen non-human decisions and refuse changed accepted-work bindings.
+The normal verification engine resumes a proposed successor and refuses to
+finish execution without new observations. Development gates require new claims,
+review and captured commands. A separate test simulates absence of the active
+hold lookup while keeping surrender history, to verify permanent attempt
+revocation; this is not a business-release or native-queue acceptance run.

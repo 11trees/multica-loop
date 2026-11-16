@@ -4,6 +4,7 @@ import type { InterventionRecord } from "./intervention-store";
 import { draftSchema,DraftConflictError } from "./runtime";
 import { repairHandoffTargetSchema,handoffProposalSchema,handoffHash,handoffUUID,handoffPreparationSchema,type RepairHandoffTarget } from "./repair-handoff";
 import type { EngineeringTeamBinding } from "./team-store";
+import { prepareRepairSuccessor } from "./repair-successor";
 
 export function initializeRepairHandoffs(db:DatabaseSync){db.exec("CREATE TABLE IF NOT EXISTS engineering_repair_handoff(target_hash TEXT PRIMARY KEY,payload TEXT NOT NULL)");}
 /** Prepare a successor without editing the surrendered root or releasing a hold. */
@@ -22,8 +23,8 @@ export function prepareRepairHandoff(db:DatabaseSync,original:InterventionRecord
     const frozen=z.object({draft:draftSchema,contract:z.record(z.string(),z.unknown())}).parse(original.snapshot);
     if(frozen.draft.status!=="editing"||frozen.draft.runtimeInputs.some(input=>input.active&&input.answer===null))throw new DraftConflictError("Handoff cannot bypass unresolved input or a terminal checkpoint");
     const binding={...frozen.draft.binding,codeVersion:target.expectedVersion.split(":")[1]!,contractVersion:handoffHash({original:frozen.draft.binding.contractVersion,repair:targetHash})};
-    const draft=draftSchema.parse({...frozen.draft,id:draftId,binding,sequence:frozen.draft.sequence+1,attemptId:`repair-handoff:${targetHash}`,events:[...frozen.draft.events,{sequence:frozen.draft.sequence+1,attemptId:`repair-handoff:${targetHash}`,command:"host.repair.prepare",phase:frozen.draft.phase,reason:`Verified repair ${target.verificationAttemptId}`} ]});
-    return {kind:"yaml" as const,originalDraftId:frozen.draft.id,draft,contract:{...frozen.contract,binding}};
+    const successor=prepareRepairSuccessor(frozen.draft,frozen.contract,binding,draftId,`repair-handoff:${targetHash}`);
+    return {kind:"yaml" as const,originalDraftId:frozen.draft.id,...successor};
   })();
   const proposal=handoffProposalSchema.parse({target,targetHash,rootKind:root.kind,sourcePayload:root.payload,sourcePayloadHash:handoffHash(root.payload),teamBinding:team,checkpoint,continuation:{workspace_id:original.workspaceId,issue_id:original.issueId,agent_id:original.agentId,user_id:root.userId,task_id:taskId,...(root.parentIssueId?{parent_issue_id:root.parentIssueId}:{}),expected_revision:original.revision,expected_sequence:checkpoint.kind==="direct"?checkpoint.nextVersion:checkpoint.draft.sequence,reason:"repair_ready"}});
   const encoded=JSON.stringify(proposal),prior=db.prepare("SELECT payload FROM engineering_repair_handoff WHERE target_hash=?").get(targetHash);
