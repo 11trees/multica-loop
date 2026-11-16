@@ -466,8 +466,8 @@
         "description": "打开智能体列表。"
       },
       "goSquads": {
-        "label": "前往小队",
-        "description": "打开小队列表。"
+        "label": "前往 Team",
+        "description": "打开 Team 列表。"
       },
       "goUsage": {
         "label": "前往用量",

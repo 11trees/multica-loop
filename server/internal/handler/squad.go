@@ -194,6 +194,18 @@ func (h *Handler) ListSquads(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if h.cfg.LocalAuthEnabled && h.EngineeringWorker != nil && workspaceID == localWorkspaceID && !isMachineCredentialActor(r) {
+		member, ok := h.requireWorkspaceMember(w, r, workspaceID, "workspace not found")
+		if !ok {
+			return
+		}
+		if uuidToString(member.UserID) == localUserID && member.Role == "owner" {
+			if err := h.ensureLocalEngineeringTeams(r.Context()); err != nil {
+				writeError(w, http.StatusServiceUnavailable, "could not prepare built-in Teams")
+				return
+			}
+		}
+	}
 	squads, err := h.Queries.ListSquads(r.Context(), wsUUID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list squads")

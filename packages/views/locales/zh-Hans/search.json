@@ -9,7 +9,7 @@
     "commands": "命令",
     "members": "成员",
     "agents": "智能体",
-    "squads": "小队",
+    "squads": "Team",
     "projects": "项目",
     "issues": "任务",
     "autopilots": "自动化",
@@ -146,7 +146,7 @@
     "project": "项目",
     "agent": "智能体",
     "autopilot": "自动化",
-    "squad": "小队",
+    "squad": "Team",
     "member": "成员"
   },
   "footer": {

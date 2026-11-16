@@ -10,7 +10,7 @@ test("Team Feedback settings persist native roles and task feedback selects comm
   const leader=await api.seedEngineeringRun(),runs=[leader];await api.finishEngineeringRun(leader.taskId);const team=await api.createWorkflowTeamFixture(leader.agentId);
   for(let index=1;index<8;index++){const run=await api.seedEngineeringRun(leader.issueId);runs.push(run);await api.finishEngineeringRun(run.taskId);await api.addWorkflowTeamAgentFixture(team.id,run.agentId)}
   const page=await context.newPage();await page.goto(`${baseURL}/`);await expect(page).toHaveURL(new RegExp(`/${workspace.slug}/issues`));await page.goto(`${baseURL}/${workspace.slug}/squads/${team.id}`);
-  const section=page.locator("section").filter({has:page.getByRole("heading",{name:"Working method",exact:true})});await section.getByRole("button",{name:"Set workflow",exact:true}).click();
+  const section=page.locator("section").filter({has:page.getByRole("heading",{name:"Team settings",exact:true})});await section.getByRole("button",{name:"Set workflow",exact:true}).click();
   await section.getByRole("combobox",{name:"Workflow",exact:true}).click();await page.getByRole("option",{name:"Development delivery",exact:true}).click();
   const choose=async(label:string,index:number)=>{await section.getByRole("combobox",{name:label,exact:true}).click();await page.getByRole("option",{name:`Engineering fixture ${runs[index]!.agentId}`,exact:true}).click()};
   for(const [index,label] of ["Context agent","Planning agent","Analysis agent","Development agent","Independent verification agent","Review agent"].entries())await choose(label,index);

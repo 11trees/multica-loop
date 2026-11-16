@@ -15,10 +15,10 @@ function renderIntro(locale: "en" | "zh-Hans" = "en") {
   return renderWithI18n(
     <FeatureIntro
       icon={Users}
-      label="Squads"
+      label="Teams"
       title="Work as a team"
       description="Explains the feature."
-      action={<button type="button">New squad</button>}
+      action={<button type="button">New team</button>}
       docs="squads"
       columns={["Name", "Leader"]}
     >
@@ -38,7 +38,7 @@ describe("FeatureIntro", () => {
 
     expect(screen.getByRole("region", { name: "Work as a team" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 2, name: "Work as a team" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "New squad" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "New team" })).toBeInTheDocument();
     const docs = screen.getByRole("link", { name: "Read the docs" });
     expect(docs).toHaveAttribute("href", "https://multica.ai/docs/squads");
     expect(docs).toHaveAttribute("target", "_blank");

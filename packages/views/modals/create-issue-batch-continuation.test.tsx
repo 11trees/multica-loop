@@ -417,6 +417,7 @@ function I18nWrapper({ children }: { children: ReactNode }) {
 
 function renderUi(element: React.ReactElement) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  qc.setQueryData(["engineering-capabilities"], { engineering_teams_enabled: false });
   return render(
     <I18nWrapper>
       <QueryClientProvider client={qc}>{element}</QueryClientProvider>

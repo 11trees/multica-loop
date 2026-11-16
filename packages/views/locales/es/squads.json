@@ -158,7 +158,7 @@
     }
   },
   "engineering": {
-    "title": "Forma de trabajo",
+    "title": "Configuración del Team",
     "edit": "Editar",
     "setup": "Definir flujo",
     "workflow": "Flujo de trabajo",
@@ -177,6 +177,12 @@
       "bug_fix": "Corrección de errores"
     },
     "feedback": "Comentarios",
-    "feedback_independence": "La verificación de comentarios es independiente de la entrega, la revisión del informe y el trabajo posterior."
+    "feedback_independence": "La verificación de comentarios es independiente de la entrega, la revisión del informe y el trabajo posterior.",
+    "runtime_required": "Configura el runtime del Team antes de empezar.",
+    "apply_runtime": "Aplicar al Team",
+    "runtime_scope": "Configura el runtime de todos los roles de este Team.",
+    "runtime_partial": "Se actualizaron {{count}} de {{total}} roles. Reintenta para terminar.",
+    "runtime_saved": "Runtime del Team guardado.",
+    "connect_runtime": "Conectar un runtime"
   }
 }

@@ -12,7 +12,7 @@ test("Team owns its predefined workflow and member roles",async({baseURL},testIn
  try{
   const fixture=await api.seedEngineeringRun(),team=await api.createWorkflowTeamFixture(fixture.agentId),page=await context.newPage();
   await page.goto(`${baseURL}/`);await expect(page).toHaveURL(new RegExp(`/${workspace.slug}/issues`));await page.goto(`${baseURL}/${workspace.slug}/squads/${team.id}`);
-  const section=page.locator("section").filter({has:page.getByRole("heading",{name:"Working method",exact:true})});await section.getByRole("button",{name:"Set workflow",exact:true}).click();
+  const section=page.locator("section").filter({has:page.getByRole("heading",{name:"Team settings",exact:true})});await section.getByRole("button",{name:"Set workflow",exact:true}).click();
   await expect(section.getByRole("combobox",{name:"Workflow",exact:true})).toBeVisible();await expect(section.getByRole("combobox",{name:"Executing agent",exact:true})).toBeVisible();
   await section.getByRole("button",{name:"Save",exact:true}).click();
   await expect.poll(async()=>((await api.readWorkflowTeamFixture(team.id)).profile?.revision)).toBe(1);

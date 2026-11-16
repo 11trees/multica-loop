@@ -46,7 +46,7 @@ export function TeamCreatePanel({onClose,onPendingChange,data}:{onClose:()=>void
  const anchor=typeof data?.anchor_comment_id==="string" ? data.anchor_comment_id : null,source=data?.source_context_preview as SourceContextPreview|undefined;
  const valid=!!title.trim() && !!selected && !!project && !loading && !failed && (!anchor || !!source && !data?.source_context_loading && !data?.source_context_failed);
  const submit=async(start:boolean)=>{
-  if(submitting.current || uploads.gate.isBlocked() || !created && (!valid || start && !startStatus || !start && !draftAllowed))return;
+  if(start && selected?.runtimeReady===false || submitting.current || uploads.gate.isBlocked() || !created && (!valid || start && !startStatus || !start && !draftAllowed))return;
   submitting.current=true;setPending(true);onPendingChange?.(true);setError("");
   try{
    let issue=created;
@@ -72,6 +72,7 @@ export function TeamCreatePanel({onClose,onPendingChange,data}:{onClose:()=>void
      <div className="min-w-0 space-y-1.5"><Label htmlFor={`${id}-team`}>{t($=>$.engineering.team)}</Label><Select items={available.map(team=>({value:team.id,label:team.name}))} value={teamId} disabled={pending || loading} onValueChange={value=>{setTeamId(value??"");setManual({assigneeType:"squad",assigneeId:value??undefined})}}><SelectTrigger className="w-full min-w-0" id={`${id}-team`}><SelectValue className="min-w-0 truncate" placeholder={t($=>$.engineering.select_team)} /></SelectTrigger><SelectContent>{available.map(team=><SelectItem key={team.id} value={team.id}>{team.name}</SelectItem>)}</SelectContent></Select></div>
     </div>
     {selected && <p className="text-caption text-muted-foreground">{s($=>$.engineering.workflows[selected.profile.definition.workflow])} · {t($=>$.engineering.team_version,{revision:selected.profile.revision})}</p>}
+    {selected?.runtimeReady===false && <p className="text-caption"><AppLink className="underline" href={paths.squadDetail(selected.id)}>{s($=>$.engineering.runtime_required)}</AppLink></p>}
     {!loading && !failed && !available.length && <p className="text-caption"><AppLink className="underline" href={paths.squads()}>{t($=>$.engineering.team_setup_required)}</AppLink></p>}
     <div className="min-w-0 space-y-1.5"><Label>{t($=>$.engineering.task_materials)}</Label><div className="min-h-40 rounded-md border p-3"><ContentEditor ref={editor} ariaLabel={t($=>$.engineering.task_materials)} defaultValue={typeof data?.description==="string"?data.description:draft.manual.description} onUpdate={description=>setManual({description})} onUploadFile={uploads.handleUpload} onUploadingChange={editorGate.onUploadingChange} attachments={uploads.attachments} /></div><FileUploadButton multiple disabled={pending} onSelect={file=>editor.current?.uploadFile(file)} /></div>
     {anchor && <SourceContextPreviewCard preview={source} loading={!!data?.source_context_loading} failed={!!data?.source_context_failed} error={data?.source_context_error} onRetry={data?.source_context_refetch as (()=>void)|undefined} />}
@@ -80,6 +81,6 @@ export function TeamCreatePanel({onClose,onPendingChange,data}:{onClose:()=>void
    {failed && <p role="alert" className="text-caption text-destructive">{t($=>$.engineering.load_error)}</p>}
    {error && <p role="alert" className="text-caption text-destructive break-words">{error}</p>}
   </div>
-  <div className="flex flex-wrap justify-end gap-2 border-t p-4"><Button type="button" variant="ghost" disabled={pending} onClick={onClose}>{t($=>$.engineering.cancel)}</Button>{!created && <Button type="button" variant="outline" disabled={!valid || pending || uploads.gate.uploading || !draftAllowed} onClick={()=>{void submit(false)}}>{t($=>$.engineering.save_task_draft)}</Button>}<Button type="submit" disabled={pending || uploads.gate.uploading || !created && (!valid || !startStatus)} aria-busy={pending}>{pending && <Spinner />}{created?t($=>$.engineering.team_start):t($=>$.engineering.create_start)}</Button></div>
+  <div className="flex flex-wrap justify-end gap-2 border-t p-4"><Button type="button" variant="ghost" disabled={pending} onClick={onClose}>{t($=>$.engineering.cancel)}</Button>{!created && <Button type="button" variant="outline" disabled={!valid || pending || uploads.gate.uploading || !draftAllowed} onClick={()=>{void submit(false)}}>{t($=>$.engineering.save_task_draft)}</Button>}<Button type="submit" disabled={pending || uploads.gate.uploading || !created && (!valid || !startStatus || selected?.runtimeReady===false)} aria-busy={pending}>{pending && <Spinner />}{created?t($=>$.engineering.team_start):t($=>$.engineering.create_start)}</Button></div>
  </form>;
 }

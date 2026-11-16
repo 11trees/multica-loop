@@ -9,7 +9,7 @@
     "commands": "Commands",
     "members": "Members",
     "agents": "Agents",
-    "squads": "Squads",
+    "squads": "Teams",
     "projects": "Projects",
     "issues": "Issues",
     "autopilots": "Autopilots",
@@ -149,7 +149,7 @@
     "project": "Project",
     "agent": "Agent",
     "autopilot": "Autopilot",
-    "squad": "Squad",
+    "squad": "Team",
     "member": "Member"
   },
   "footer": {

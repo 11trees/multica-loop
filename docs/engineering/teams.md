@@ -5,6 +5,47 @@ A task supplies its goal and project; the Team supplies its working method.
 Users do not select a workflow or individual stage Agents on each task.
 Projects retain repository/runtime resources.
 
+## Current delivery goal
+
+Ship five actual built-in Teams in the confirmed local single-user deployment:
+Direct execution, Business analysis, End to End delivery, Development delivery
+and Bug fix. They appear without creating a Squad, choosing a template or
+setting a workflow. Each owns a predefined workflow, independent role Agents
+and balanced policy with two reworks. A missing runtime is configured once on
+the Team; tasks select only their Team, goal, project and materials.
+
+Keep native Squad IDs and permissions as the underlying Team identity, with no
+extra user-facing entity. Preserve existing Team edits and frozen task versions.
+Prioritize the visible Team-to-task path and controlled browser acceptance before
+continuing the remaining migration checklist. Do not treat protocol initialization
+tests as evidence of an already delivered built-in Team list.
+
+## Built-in Teams in local mode
+
+With local authentication and engineering enabled, local login initializes five
+real native Teams and their independent native role Agents. Existing local
+sessions receive the same initialization when their owner opens the Team list.
+The IDs are stable per workspace and workflow; retries and simultaneous browser
+entries do not duplicate Teams. Bootstrap creates only missing identities and
+initial definitions, preserving names, archived state and saved configuration.
+It does not create runs, discover provider CLIs or choose a runtime implicitly.
+Other workspaces and deployments with engineering disabled are unchanged.
+
+Each built-in Team already has a versioned definition and appears in the task
+selector before a runtime is bound. Its workflow stays fixed; Team managers can
+edit roles and policy in Team settings. The same settings provide one runtime
+choice for all its role Agents, including optional Feedback roles, through the
+ordinary authorized Agent update API. A failed update shows completed role count
+and preserves the selection for retry; updates are sequential, not an atomic
+multi-Agent transaction. Missing or archived role Agents cannot be made ready by
+this control. Each later task start still performs normal native authorization
+and project/resource validation.
+
+The task form allows saving a draft with an unbound Team, displays a link to that
+Team's settings, and disables initial start while any configured role lacks a
+runtime. A bound runtime is not proof of online capacity, a project repository
+mapping or successful execution; the existing start checks remain authoritative.
+
 ## Definitions and task snapshots
 
 Multica's native Squad is the Team identity. Its leader, Agent membership and
@@ -16,8 +57,7 @@ members (including the leader). Machine credentials cannot manage definitions.
 Definitions select Direct, Business Analysis, End to End, Develop or Bug Fix,
 with their required independent role Agents, decision policy and bounded rework
 budget. They contain no task goal, project ID or repository directory. Team
-settings are shared by Web and Desktop through the Squad detail working-method
-section. Invalid or missing response data never becomes a configured Team.
+settings are shared by Web and Desktop through the Team settings section. Invalid or missing response data never becomes a configured Team.
 
 The private worker stores immutable versions in `engineering_team_profile`.
 Optimistic revision checks reject stale edits. Its `team-bind` operation freezes
@@ -104,6 +144,14 @@ second authorization form is needed for a Team's predefined feedback workflow.
 
 ## Verification and remaining boundary
 
+The built-in Team browser scenario reads the real native list and all five
+stored definitions, checks their visibility at wide/narrow sizes, checks that
+the predefined workflow is already set and locked, and creates a native Backlog
+task by selecting an existing built-in Team. Missing runtime keeps initial start
+disabled and links to Team settings. Empty runtime settings link to runtime
+connection. This scenario does not bind a real provider or start the built-in
+Teams; fixture-owned Teams separately exercise runtime-backed task start.
+
 Controlled browser acceptance covered Team settings save/reload, task creation
 with only project/Team selection, saving a draft without a queue entry, starting
 the draft, direct create/start, frozen task progress, and wide/narrow layouts.
@@ -139,3 +187,9 @@ shared-repository ownership retain their own migration requirements.
 ![Team Feedback roles](assets/team-feedback-settings-390.png)
 
 ![Task Feedback comment selection](assets/team-feedback-capture-390.png)
+
+![Five built-in Teams](assets/builtin-teams-1280.png)
+
+![Built-in Team settings](assets/builtin-team-settings-390.png)
+
+![Task choosing a built-in Team](assets/builtin-team-task-390.png)

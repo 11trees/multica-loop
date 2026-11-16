@@ -466,7 +466,7 @@
         "description": "開啟 AI 代理列表。"
       },
       "goSquads": {
-        "label": "前往小隊",
+        "label": "前往 Team",
         "description": "開啟小佇列表。"
       },
       "goUsage": {

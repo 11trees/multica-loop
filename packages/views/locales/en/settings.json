@@ -472,8 +472,8 @@
         "description": "Open the agent list."
       },
       "goSquads": {
-        "label": "Go to Squads",
-        "description": "Open the squad list."
+        "label": "Go to Teams",
+        "description": "Open the team list."
       },
       "goUsage": {
         "label": "Go to Usage",
@@ -843,7 +843,7 @@
       },
       "mentions": {
         "label": "Mentions",
-        "description": "When someone @mentions you, including @all and @squad"
+        "description": "When someone @mentions you, including @all and @team"
       },
       "updates": {
         "label": "Priority & Due date",

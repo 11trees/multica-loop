@@ -108,11 +108,11 @@ describe("SquadsPage header", () => {
     const user = userEvent.setup();
     renderPage();
 
-    expect(screen.getByRole("heading", { level: 1, name: "All squads" })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "All squads" }));
-    const mine = await screen.findByRole("menuitemradio", { name: /^My squads/ });
+    expect(screen.getByRole("heading", { level: 1, name: "All teams" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "All teams" }));
+    const mine = await screen.findByRole("menuitemradio", { name: /^My teams/ });
     expect(mine).toHaveTextContent("1");
-    expect(screen.getByRole("menuitemradio", { name: /^All squads/ })).toHaveTextContent("2");
+    expect(screen.getByRole("menuitemradio", { name: /^All teams/ })).toHaveTextContent("2");
     await user.click(mine);
     expect(mocks.viewState.setScope).toHaveBeenCalledWith("mine");
   });
@@ -121,7 +121,7 @@ describe("SquadsPage header", () => {
     mocks.viewState.scope = "mine";
     renderPage();
 
-    expect(screen.getByRole("heading", { level: 1, name: "My squads" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "My teams" })).toBeInTheDocument();
     expect(screen.getByText("Strike Team")).toBeInTheDocument();
     expect(screen.queryByText("Design Crew")).not.toBeInTheDocument();
   });
@@ -148,7 +148,7 @@ describe("SquadsPage header", () => {
     renderPage();
 
     expect(screen.getByRole("button", { name: "Display settings" })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "New squad" }));
+    await user.click(screen.getByRole("button", { name: "New team" }));
     expect(mocks.openModal).toHaveBeenCalledWith("create-squad");
   });
 
@@ -158,13 +158,13 @@ describe("SquadsPage header", () => {
     renderPage();
 
     const intro = screen.getByRole("region", {
-      name: "Put agents in a squad and they work like a team",
+      name: "Give work to a Team",
     });
     expect(screen.getByRole("link", { name: "Read the docs" })).toHaveAttribute(
       "href",
       "https://multica.ai/docs/squads",
     );
-    await user.click(within(intro).getByRole("button", { name: "New squad" }));
+    await user.click(within(intro).getByRole("button", { name: "New team" }));
     expect(mocks.openModal).toHaveBeenCalledWith("create-squad");
   });
 });

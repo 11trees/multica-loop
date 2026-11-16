@@ -156,7 +156,7 @@
     }
   },
   "engineering": {
-    "title": "作業方法",
+    "title": "Team 設定",
     "edit": "編集",
     "setup": "ワークフローを設定",
     "workflow": "ワークフロー",
@@ -175,6 +175,12 @@
       "bug_fix": "不具合修正"
     },
     "feedback": "フィードバック",
-    "feedback_independence": "フィードバック検証は、実装、レポートレビュー、計画と再現から独立した担当者が行います。"
+    "feedback_independence": "フィードバック検証は、実装、レポートレビュー、計画と再現から独立した担当者が行います。",
+    "runtime_required": "開始前に Team のランタイムを設定してください。",
+    "apply_runtime": "Team に適用",
+    "runtime_scope": "この Team の全ロールのランタイムを設定します。",
+    "runtime_partial": "{{total}} 件中 {{count}} 件を更新しました。再試行してください。",
+    "runtime_saved": "Team のランタイムを保存しました。",
+    "connect_runtime": "ランタイムを接続"
   }
 }

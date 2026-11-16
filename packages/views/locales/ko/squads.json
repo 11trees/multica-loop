@@ -156,7 +156,7 @@
     }
   },
   "engineering": {
-    "title": "작업 방식",
+    "title": "Team 설정",
     "edit": "편집",
     "setup": "워크플로 설정",
     "workflow": "워크플로",
@@ -175,6 +175,12 @@
       "bug_fix": "버그 수정"
     },
     "feedback": "피드백",
-    "feedback_independence": "피드백 검증은 구현, 보고서 검토, 계획 및 재현과 독립된 담당자가 수행합니다."
+    "feedback_independence": "피드백 검증은 구현, 보고서 검토, 계획 및 재현과 독립된 담당자가 수행합니다.",
+    "runtime_required": "시작 전에 Team 런타임을 설정하세요.",
+    "apply_runtime": "Team에 적용",
+    "runtime_scope": "이 Team의 모든 역할에 런타임을 설정합니다.",
+    "runtime_partial": "{{total}}개 중 {{count}}개를 업데이트했습니다. 다시 시도하세요.",
+    "runtime_saved": "Team 런타임을 저장했습니다.",
+    "connect_runtime": "런타임 연결"
   }
 }

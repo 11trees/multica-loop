@@ -285,7 +285,7 @@
   },
   "creation_studio": {
     "title": "建立 AI 代理",
-    "squad_title": "為小隊建立 AI 代理",
+    "squad_title": "為 Team 建立 AI 代理",
     "duplicate_title": "複製 {{name}}",
     "step_ai": "透過對話建立",
     "modes": {
@@ -343,7 +343,7 @@
     "duplicate_env_notice": "指令、skill 和命令列引數會被複制。環境變數、MCP 伺服器和本機執行時配置不會複製。",
     "duplicate_runtime_reset_notice": "原執行時當前不可用，副本已改用其他執行時。模型、思考等級和速度只在所選執行時上有效，因此已被清空。",
     "create_agent": "建立 AI 代理",
-    "create_and_add": "建立並加入小隊",
+    "create_and_add": "建立並加入 Team",
     "creating": "正在建立…",
     "create_failed": "無法建立 AI 代理。",
     "name_conflict": "工作區中已存在同名 AI 代理。",
@@ -376,11 +376,11 @@
       "loading": "正在完成…",
       "title": "{{name}} 已就緒",
       "runs_on": "執行在 {{runtime}}",
-      "joined_squad": "已加入小隊：{{squad}}",
+      "joined_squad": "已加入 Team：{{squad}}",
       "next": "接下來",
       "assign_title": "指派第一個任務",
       "mention_title": "在任務裡 @ 它",
-      "squad_title": "加入小隊",
+      "squad_title": "加入 Team",
       "open_squad_title": "開啟 {{squad}}",
       "open_agent": "開啟 AI 代理",
       "back_to_list": "返回 AI 代理列表"
@@ -451,7 +451,7 @@
     "runtime_group_online": "{{online}}/{{total}} 線上",
     "duplicate_copy_suffix": "（副本）",
     "skill_attach_failed_toast": "AI 代理已建立，但 skill 關聯失敗：{{error}}",
-    "squad_join_failed_toast": "AI 代理\"{{name}}\"已建立，但加入小隊失敗：{{error}}。你可以在 Members 標籤裡手動新增。",
+    "squad_join_failed_toast": "AI 代理\"{{name}}\"已建立，但加入 Team 失敗：{{error}}。你可以在 Members 標籤裡手動新增。",
     "instructions": {
       "label": "指令",
       "editor_placeholder": "寫下這個 AI 代理該做什麼、關注什麼、要避開什麼…"

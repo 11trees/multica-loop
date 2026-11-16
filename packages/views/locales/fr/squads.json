@@ -158,7 +158,7 @@
     }
   },
   "engineering": {
-    "title": "Mode de travail",
+    "title": "Paramètres de la Team",
     "edit": "Modifier",
     "setup": "Définir le workflow",
     "workflow": "Workflow",
@@ -177,6 +177,12 @@
       "bug_fix": "Correction de bugs"
     },
     "feedback": "Retours",
-    "feedback_independence": "La vérification des retours reste indépendante de la livraison, de la revue du rapport et des travaux suivants."
+    "feedback_independence": "La vérification des retours reste indépendante de la livraison, de la revue du rapport et des travaux suivants.",
+    "runtime_required": "Configurez le runtime de la Team avant de commencer.",
+    "apply_runtime": "Appliquer à la Team",
+    "runtime_scope": "Configure le runtime de tous les rôles de cette Team.",
+    "runtime_partial": "{{count}} rôles sur {{total}} mis à jour. Réessayez pour terminer.",
+    "runtime_saved": "Runtime de la Team enregistré.",
+    "connect_runtime": "Connecter un runtime"
   }
 }

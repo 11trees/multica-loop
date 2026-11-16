@@ -29,3 +29,8 @@ it("captures Team feedback with comment identities and checkpoints only",async()
  expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body))).toEqual({request_id:profile.teamId,expected_revision:1,expected_sequence:20,expected_batch_number:0,comment_ids:[profile.configuredBy]});
  respond({authorized:true});await client.authorizeEngineeringFeedbackWork("issue",{batchId,expectedVersion:2});expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body))).toEqual({batch_id:batchId,expected_version:2});
 });
+
+it("preserves built-in workflow identity and rejects malformed built-in metadata",async()=>{
+ const client=new ApiClient("https://api.example.test");respond({profile,builtin_workflow:"direct"});expect((await client.getEngineeringTeam(profile.teamId)).builtin_workflow).toBe("direct");
+ respond({profile,builtin_workflow:42});await expect(client.getEngineeringTeam(profile.teamId)).rejects.toThrow(/Malformed/);
+});

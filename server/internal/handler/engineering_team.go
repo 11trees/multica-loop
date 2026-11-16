@@ -76,6 +76,10 @@ func (h *Handler) EngineeringTeamProfile(w http.ResponseWriter, r *http.Request)
 			writeError(w, http.StatusBadRequest, "choose the Agents required by this workflow")
 			return
 		}
+		if workflow := builtinEngineeringWorkflow(workspace, uuidToString(squad.ID)); workflow != "" && input.Definition.Workflow != workflow {
+			writeError(w, http.StatusBadRequest, "a built-in Team retains its predefined workflow")
+			return
+		}
 		switch input.Definition.DecisionMode {
 		case "conservative", "balanced", "autonomous", "fully_autonomous":
 		default:
@@ -139,6 +143,16 @@ func (h *Handler) EngineeringTeamProfile(w http.ResponseWriter, r *http.Request)
 	result, err := h.EngineeringWorker.Call(r.Context(), request)
 	if err != nil {
 		engineeringControlError(w, err)
+		return
+	}
+	if workflow := builtinEngineeringWorkflow(workspace, uuidToString(squad.ID)); workflow != "" {
+		var response map[string]any
+		if err := json.Unmarshal(result, &response); err != nil || response == nil {
+			writeError(w, http.StatusServiceUnavailable, "Team definition unavailable")
+			return
+		}
+		response["builtin_workflow"] = workflow
+		writeJSON(w, http.StatusOK, response)
 		return
 	}
 	writeJSON(w, http.StatusOK, result)

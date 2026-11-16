@@ -296,7 +296,7 @@
   },
   "creation_studio": {
     "title": "Create an agent",
-    "squad_title": "Create an agent for this squad",
+    "squad_title": "Create an agent for this team",
     "duplicate_title": "Duplicate {{name}}",
     "step_ai": "Build through conversation",
     "modes": {
@@ -354,7 +354,7 @@
     "duplicate_env_notice": "Instructions, skills and command arguments are copied. Environment variables, MCP servers and machine-local runtime config are not.",
     "duplicate_runtime_reset_notice": "The original runtime is unavailable, so this copy runs on another one. Model, thinking level and speed were cleared because they only apply to the runtime they were chosen on.",
     "create_agent": "Create agent",
-    "create_and_add": "Create & add to squad",
+    "create_and_add": "Create & add to team",
     "creating": "Creating agent…",
     "create_failed": "Could not create the agent.",
     "name_conflict": "An agent with this name already exists.",
@@ -387,12 +387,12 @@
       "loading": "Finishing up…",
       "title": "{{name}} is ready",
       "runs_on": "Runs on {{runtime}}",
-      "joined_squad": "Added to squad {{squad}}",
+      "joined_squad": "Added to team {{team}}",
       "next": "What next",
       "assign_title": "Assign its first task",
       "mention_title": "Mention it in an issue",
-      "squad_title": "Add it to a squad",
-      "open_squad_title": "Open {{squad}}",
+      "squad_title": "Add it to a team",
+      "open_squad_title": "Open {{team}}",
       "open_agent": "Open agent",
       "back_to_list": "Back to agents"
     },
@@ -465,7 +465,7 @@
     "runtime_group_online": "{{online}}/{{total}} online",
     "duplicate_copy_suffix": " (Copy)",
     "skill_attach_failed_toast": "Agent created, but failed to attach skills: {{error}}",
-    "squad_join_failed_toast": "Agent \"{{name}}\" was created but couldn't join the squad: {{error}}. You can add it manually from Members.",
+    "squad_join_failed_toast": "Agent \"{{name}}\" was created but couldn't join the team: {{error}}. You can add it manually from Members.",
     "instructions": {
       "label": "Instructions",
       "editor_placeholder": "Write what this agent should do, what to focus on, what to avoid…"

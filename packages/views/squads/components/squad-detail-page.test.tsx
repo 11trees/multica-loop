@@ -214,7 +214,7 @@ describe("SquadDetailPage", () => {
   it("puts the squads list in the breadcrumb and the squad in the leaf", () => {
     renderPage();
     const header = screen.getByRole("banner");
-    expect(within(header).getByRole("link", { name: "Squads" })).toHaveAttribute("href", "/acme/squads");
+    expect(within(header).getByRole("link", { name: "Teams" })).toHaveAttribute("href", "/acme/squads");
     expect(within(header).getByText("Strike Team")).toBeInTheDocument();
     expect(within(header).queryByRole("tab")).toBeNull();
   });
@@ -274,7 +274,7 @@ describe("SquadDetailPage", () => {
     const { push } = renderPage();
 
     await user.click(screen.getByRole("button", { name: "Actions for Kappa" }));
-    await user.click(await screen.findByRole("menuitem", { name: "Make squad leader" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Make team leader" }));
     expect(mocks.api.updateSquad).toHaveBeenCalledWith("sq-1", { leader_id: "agent-2" });
 
     await user.click(screen.getByRole("button", { name: "Actions for Kappa" }));
@@ -282,7 +282,7 @@ describe("SquadDetailPage", () => {
     expect(push).toHaveBeenCalledWith("/acme/agents/agent-2");
 
     await user.click(screen.getByRole("button", { name: "Actions for Jiayuan" }));
-    await user.click(await screen.findByRole("menuitem", { name: "Remove from squad" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Remove from team" }));
     expect(mocks.api.removeSquadMember).toHaveBeenCalledWith("sq-1", {
       member_type: "member",
       member_id: "creator",
@@ -305,29 +305,29 @@ describe("SquadDetailPage", () => {
     const user = userEvent.setup();
     renderPage();
 
-    const name = screen.getByRole("textbox", { name: "Squad name" });
+    const name = screen.getByRole("textbox", { name: "Team name" });
     await user.clear(name);
     await user.type(name, "  Night Shift ");
     await user.tab();
     expect(mocks.api.updateSquad).toHaveBeenCalledWith("sq-1", { name: "Night Shift" });
 
     mocks.api.updateSquad.mockClear();
-    await user.clear(screen.getByRole("textbox", { name: "Squad name" }));
+    await user.clear(screen.getByRole("textbox", { name: "Team name" }));
     await user.tab();
     expect(mocks.api.updateSquad).not.toHaveBeenCalled();
-    expect(screen.getByRole("textbox", { name: "Squad name" })).toHaveValue("Strike Team");
+    expect(screen.getByRole("textbox", { name: "Team name" })).toHaveValue("Strike Team");
   });
 
   it("discards a name edit on Escape", async () => {
     const user = userEvent.setup();
     renderPage();
 
-    const name = screen.getByRole("textbox", { name: "Squad name" });
+    const name = screen.getByRole("textbox", { name: "Team name" });
     await user.type(name, " typo");
     await user.keyboard("{Escape}");
     await user.tab();
     expect(mocks.api.updateSquad).not.toHaveBeenCalled();
-    expect(screen.getByRole("textbox", { name: "Squad name" })).toHaveValue("Strike Team");
+    expect(screen.getByRole("textbox", { name: "Team name" })).toHaveValue("Strike Team");
   });
 
   it("edits the description in place: blur saves, Escape discards", async () => {
@@ -335,7 +335,7 @@ describe("SquadDetailPage", () => {
     renderPage();
 
     await user.click(screen.getByRole("button", { name: "Ships the risky stuff" }));
-    const field = screen.getByRole("textbox", { name: "What is this squad responsible for?" });
+    const field = screen.getByRole("textbox", { name: "What is this team responsible for?" });
     expect(field).toHaveFocus();
     await user.type(field, " carefully");
     await user.tab();
@@ -345,10 +345,10 @@ describe("SquadDetailPage", () => {
 
     mocks.api.updateSquad.mockClear();
     await user.click(screen.getByRole("button", { name: /Ships the risky stuff/ }));
-    await user.type(screen.getByRole("textbox", { name: "What is this squad responsible for?" }), " never");
+    await user.type(screen.getByRole("textbox", { name: "What is this team responsible for?" }), " never");
     await user.keyboard("{Escape}");
     expect(mocks.api.updateSquad).not.toHaveBeenCalled();
-    expect(screen.queryByRole("textbox", { name: "What is this squad responsible for?" })).toBeNull();
+    expect(screen.queryByRole("textbox", { name: "What is this team responsible for?" })).toBeNull();
   });
 
   it("keeps a description draft whose save failed so it can be retried", async () => {
@@ -357,13 +357,13 @@ describe("SquadDetailPage", () => {
     renderPage();
 
     await user.click(screen.getByRole("button", { name: "Ships the risky stuff" }));
-    await user.type(screen.getByRole("textbox", { name: "What is this squad responsible for?" }), " carefully");
+    await user.type(screen.getByRole("textbox", { name: "What is this team responsible for?" }), " carefully");
     await user.tab();
     expect(mocks.api.updateSquad).toHaveBeenCalledTimes(1);
     expect(await screen.findByRole("button", { name: "Ships the risky stuff" })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Ships the risky stuff" }));
-    expect(screen.getByRole("textbox", { name: "What is this squad responsible for?" })).toHaveValue(
+    expect(screen.getByRole("textbox", { name: "What is this team responsible for?" })).toHaveValue(
       "Ships the risky stuff carefully",
     );
     await user.tab();
@@ -391,7 +391,7 @@ describe("SquadDetailPage", () => {
 
     expect(screen.getByRole("button", { name: "Assign work" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 1, name: "Strike Team" })).toBeInTheDocument();
-    expect(screen.queryByRole("textbox", { name: "Squad name" })).toBeNull();
+    expect(screen.queryByRole("textbox", { name: "Team name" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Ships the risky stuff" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Add member" })).toBeNull();
     expect(within(section("Instructions")).queryByRole("button", { name: "Edit" })).toBeNull();
@@ -420,8 +420,8 @@ describe("SquadDetailPage", () => {
   it("shows not found in the body when the squad fails to load", () => {
     seed(undefined, { "squads/sq-1": { data: undefined, isError: true } });
     renderPage();
-    expect(screen.getByRole("link", { name: "Squads" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Squad not found" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "All squads" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Teams" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Team not found" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "All teams" })).toBeInTheDocument();
   });
 });

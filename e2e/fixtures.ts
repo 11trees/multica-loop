@@ -663,6 +663,24 @@ export class TestApiClient {
     if(!response.ok)throw new Error(`Team fixture creation failed: ${response.status}`);
     const team=await response.json() as {id:string;name:string};this.createdTeamIds.push(team.id);return team;
   }
+  async builtinEngineeringTeams(){
+    const response=await this.authedFetch("/api/squads");
+    if(!response.ok)throw new Error("Team list unavailable");
+    const teams=await response.json() as {id:string;name:string}[];
+    const profiles=await Promise.all(teams.map(async team=>{
+      const response=await this.authedFetch(`/api/squads/${team.id}/engineering`);
+      if(!response.ok)throw new Error("Team definition unavailable");
+      return {...team,...await response.json()} as {id:string;name:string;builtin_workflow?:string;profile:{revision:number;definition:{roles:Record<string,string>}}};
+    }));
+    return profiles.filter(team=>team.builtin_workflow);
+  }
+  async trackBuiltinTeamDraft(issueId:string){
+    const response=await this.authedFetch(`/api/issues/${issueId}`);
+    if(!response.ok)throw new Error("Draft fixture unavailable");
+    const issue=await response.json();
+    if(!this.createdProjectIds.includes(issue.project_id) || !issue.title.startsWith("Built-in Team draft ") || issue.status!=="backlog")throw new Error("Not an owned draft fixture");
+    this.createdIssueIds.push(issueId);
+  }
   async readWorkflowTeamFixture(teamId:string){
     if(!this.createdTeamIds.includes(teamId))throw new Error("Not an owned Team fixture");
     const response=await this.authedFetch(`/api/squads/${teamId}/engineering`);if(!response.ok)throw new Error("Team workflow unavailable");return response.json();

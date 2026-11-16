@@ -62,6 +62,9 @@ func (h *Handler) LocalLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user, err := h.ensureLocalIdentity(r.Context())
+	if err == nil {
+		err = h.ensureLocalEngineeringTeams(r.Context())
+	}
 	if err != nil {
 		slog.Error("local identity bootstrap failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to prepare local workspace")

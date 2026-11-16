@@ -285,7 +285,7 @@
   },
   "creation_studio": {
     "title": "创建智能体",
-    "squad_title": "为小队创建智能体",
+    "squad_title": "为 Team 创建智能体",
     "duplicate_title": "复制 {{name}}",
     "step_ai": "通过对话创建",
     "modes": {
@@ -343,7 +343,7 @@
     "duplicate_env_notice": "指令、skill 和命令行参数会被复制。环境变量、MCP 服务器和本机运行时配置不会复制。",
     "duplicate_runtime_reset_notice": "原运行时当前不可用，副本已改用其他运行时。模型、思考等级和速度只在所选运行时上有效，因此已被清空。",
     "create_agent": "创建智能体",
-    "create_and_add": "创建并加入小队",
+    "create_and_add": "创建并加入 Team",
     "creating": "正在创建…",
     "create_failed": "无法创建智能体。",
     "name_conflict": "工作区中已存在同名智能体。",
@@ -376,11 +376,11 @@
       "loading": "正在完成…",
       "title": "{{name}} 已就绪",
       "runs_on": "运行在 {{runtime}}",
-      "joined_squad": "已加入小队：{{squad}}",
+      "joined_squad": "已加入 Team：{{squad}}",
       "next": "接下来",
       "assign_title": "指派第一个任务",
       "mention_title": "在任务里 @ 它",
-      "squad_title": "加入小队",
+      "squad_title": "加入 Team",
       "open_squad_title": "打开 {{squad}}",
       "open_agent": "打开智能体",
       "back_to_list": "返回智能体列表"
@@ -451,7 +451,7 @@
     "runtime_group_online": "{{online}}/{{total}} 在线",
     "duplicate_copy_suffix": "（副本）",
     "skill_attach_failed_toast": "智能体已创建，但 skill 关联失败：{{error}}",
-    "squad_join_failed_toast": "智能体\"{{name}}\"已创建，但加入小队失败：{{error}}。你可以在 Members 标签里手动添加。",
+    "squad_join_failed_toast": "智能体\"{{name}}\"已创建，但加入 Team 失败：{{error}}。你可以在 Members 标签里手动添加。",
     "instructions": {
       "label": "指令",
       "editor_placeholder": "写下这个智能体该做什么、关注什么、要避开什么…"

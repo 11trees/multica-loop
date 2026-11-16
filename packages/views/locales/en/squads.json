@@ -1,17 +1,17 @@
 {
   "page": {
-    "title": "Squads",
-    "new_button": "New squad",
-    "empty_no_match": "No squads match your filters.",
+    "title": "Teams",
+    "new_button": "New team",
+    "empty_no_match": "No teams match your filters.",
     "table": {
-      "name": "Squad",
+      "name": "Team",
       "leader": "Leader",
       "members": "Members",
       "creator": "Created by",
       "created": "Created"
     },
-    "no_matches": "No squads match",
-    "row_menu": "Squad actions",
+    "no_matches": "No teams match",
+    "row_menu": "Team actions",
     "archive_action": "Archive"
   },
   "member_type": {
@@ -19,15 +19,15 @@
     "member": "Member"
   },
   "archive_dialog": {
-    "title": "Archive this squad?",
-    "description": "\"{{name}}\" will be archived. Issues currently assigned to this squad will be transferred to its leader. This can't be undone — create a new squad if you need the routing back.",
+    "title": "Archive this team?",
+    "description": "\"{{name}}\" will be archived. Issues currently assigned to this team will be transferred to its leader. This can't be undone — create a new team if you need the routing back.",
     "cancel": "Cancel",
     "confirm": "Archive",
     "archiving": "Archiving…",
-    "success": "Squad archived"
+    "success": "Team archived"
   },
   "name_editor": {
-    "placeholder": "Squad name"
+    "placeholder": "Team name"
   },
   "add_member_dialog": {
     "title": "Add Member",
@@ -49,18 +49,18 @@
   },
   "description_editor": {
     "empty": "Add a description",
-    "placeholder": "What is this squad responsible for?"
+    "placeholder": "What is this team responsible for?"
   },
   "members_tab": {
     "section_title": "Members",
     "add_member_button": "Add member",
     "empty_title": "No members yet",
-    "empty_description": "Add agents or members, and issues assigned to this squad go to them.",
+    "empty_description": "Add agents or members, and issues assigned to this team go to them.",
     "create_agent_button": "Create Agent",
     "leader_chip": "Leader",
     "view_agent_tooltip": "Open agent detail",
-    "make_leader_tooltip": "Make squad leader",
-    "remove_member_tooltip": "Remove from squad",
+    "make_leader_tooltip": "Make team leader",
+    "remove_member_tooltip": "Remove from team",
     "status_working": "Working",
     "status_idle": "Idle",
     "status_offline": "Offline",
@@ -73,14 +73,14 @@
     "assign_work": "Assign work",
     "copy_link": "Copy link",
     "link_copied": "Link copied",
-    "not_found": "Squad not found",
+    "not_found": "Team not found",
     "not_found_description": "It may have been deleted or you may not have access.",
-    "back_to_list": "All squads",
+    "back_to_list": "All teams",
     "instructions": "Instructions",
     "edit": "Edit",
     "cancel": "Cancel",
     "recent_work": "Recent work",
-    "recent_work_empty": "No issues have been assigned to this squad yet.",
+    "recent_work_empty": "No issues have been assigned to this team yet.",
     "member_menu": "Actions for {{name}}",
     "working_on": "Working on"
   },
@@ -102,12 +102,12 @@
     "role_update_failed": "Failed to update role",
     "leader_updated": "Leader updated",
     "leader_update_failed": "Failed to update leader",
-    "archive_failed": "Failed to archive squad",
+    "archive_failed": "Failed to archive team",
     "instructions_saved": "Instructions saved",
     "update_failed": "Failed to save"
   },
   "profile_card": {
-    "unavailable": "Squad unavailable",
+    "unavailable": "Team unavailable",
     "detail_link": "Detail →",
     "archived": "Archived",
     "member_count_one": "{{count}} member",
@@ -117,19 +117,19 @@
     "more_members_other": "+{{count}} more"
   },
   "instructions_tab": {
-    "description": "The leader reads these instructions whenever it works on an issue assigned to this squad.",
+    "description": "The leader reads these instructions whenever it works on an issue assigned to this team.",
     "unsaved_changes": "Unsaved changes",
     "save_button": "Save",
     "placeholder": "e.g. Always start by writing a failing test. Prefer small, atomic commits."
   },
   "scope": {
-    "mine": "My squads",
-    "all": "All squads"
+    "mine": "My teams",
+    "all": "All teams"
   },
   "toolbar": {},
   "intro": {
-    "title": "Put agents in a squad and they work like a team",
-    "description": "Assign an issue to the squad. Its leader agent reads it, hands each step to the member whose role fits, and follows up until the goal is met. You only deal with one assignee.",
+    "title": "Give work to a Team",
+    "description": "Assign an issue to the team. Its leader agent reads it, hands each step to the member whose role fits, and follows up until the goal is met. You only deal with one assignee.",
     "slides": {
       "route": {
         "title": "One assignee, routed for you",
@@ -141,12 +141,12 @@
       },
       "progress": {
         "title": "Follow progress in one place",
-        "description": "The squad page shows its recent work and what each member is working on."
+        "description": "The team page shows its recent work and what each member is working on."
       }
     },
     "art": {
       "assignee": "Assignee",
-      "squad_name": "Frontend squad",
+      "squad_name": "Frontend team",
       "issue_dark_mode": "Add a dark mode toggle to settings",
       "issue_board_columns": "Make board columns resizable",
       "issue_inbox_gestures": "Swipe gestures in the mobile inbox",
@@ -158,7 +158,7 @@
     }
   },
   "engineering": {
-    "title": "Working method",
+    "title": "Team settings",
     "edit": "Edit",
     "setup": "Set workflow",
     "workflow": "Workflow",
@@ -177,6 +177,12 @@
       "bug_fix": "Bug fix"
     },
     "feedback": "Feedback",
-    "feedback_independence": "Feedback verification stays independent of delivery, report review and forward work."
+    "feedback_independence": "Feedback verification stays independent of delivery, report review and forward work.",
+    "runtime_required": "Configure the Team runtime before starting.",
+    "apply_runtime": "Apply to Team",
+    "runtime_scope": "Applies to every role Agent in this Team.",
+    "runtime_partial": "Updated {{count}} of {{total}} roles. Retry to finish.",
+    "runtime_saved": "Team runtime saved.",
+    "connect_runtime": "Connect a runtime"
   }
 }
