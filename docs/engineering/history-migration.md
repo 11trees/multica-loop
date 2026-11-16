@@ -713,6 +713,55 @@ refusal. Browser coverage checks source switching, deep-link reload, exact
 download bytes, no remote image requests and both viewport sizes. This does not
 establish real-provider or packaged Desktop acceptance.
 
+## Referenced local files
+
+An operator can append a bounded reference capture to a new supplement without
+changing the primary archive, original supplement or frozen task packets:
+
+```sh
+make env-exec ARGS="-- node scripts/migration/loopwork-supplement.mjs references --supplement /absolute/original-supplement --expected-hash original_supplement_sha256 --output /absolute/new-supplement"
+```
+
+The input must be an original supplement without an earlier reference capture.
+The output keeps its database snapshots and named files. It adds content-addressed
+project files and a `reference-inventory/` JSON file, accessible through the same
+history **Supplementary history → Files** reader and original-byte download.
+To select the result, set the supplement path and hash together in the managed
+environment; the primary archive pin remains unchanged. Keep the previous
+supplement available when changing this read-only view.
+
+Coverage includes the primary task packet's available material sections and
+secondary task description/evidence/link and document content. Candidates come
+from Markdown destinations/definitions, HTML media/link attributes, JSON path
+fields, inline paths and literal `.tmp/` or `/Users/` paths. Source database,
+task/project, table, ordered row or original record ID, field and JSON pointer
+remain in the inventory. Repeated mentions remain separate references; they are
+not separate files. Original line/column/range locations and URL fragments stay
+in that provenance while file lookup strips the location.
+
+Only regular files within that task's archived project root are copied. A
+secondary database must contain the exact primary project ID and workspace root;
+matching task IDs alone cannot choose a root. Missing files/projects, remote
+targets, unresolved projects, directories, unsupported paths, outside targets,
+symlinks and excluded credential/runtime configuration and database files retain
+explicit dispositions. Project metadata such as package manifests remain inert
+historical bytes.
+No commands are executed and no remote targets are fetched. Unrecognized prose,
+unavailable packet sections and repository directory trees remain outside this
+coverage. File bytes are rechecked before publication, but capture establishes
+their current content only; it cannot recover missing historical screenshots or
+inherit an old verification verdict.
+
+The local reference capture records 1,023 candidate mentions, including 97
+captured mentions of 26 distinct current files. The selected supplement now
+contains 225 materials: the previous 198 files, 26 referenced files and the
+inventory. Other dispositions are 83 missing, 60 directories, 385 remote targets,
+346 unresolved-project references, 36 outside targets and 16 unsupported paths.
+These counts include repeated source/backups and bounded syntax candidates,
+not distinct attachments or a completeness verdict. Actual source bytes and
+both input archives were checked unchanged; actual API/browser acceptance is
+recorded separately from controlled parser/capture tests.
+
 ## Remaining cutover work
 
 1. Activate the actual staged native Team tasks against their saved
@@ -729,11 +778,13 @@ establish real-provider or packaged Desktop acceptance.
    now prevents concurrent physical runs within one project. The separate
    pre-activation protocol above can freeze the known source databases and hold
    native execution, but neither mechanism authorizes task adoption.
-3. Materialize remaining task/document references, repository evidence trees
-   and attachments with their source references. The named run/profile files
-   and sixteen secondary database dispositions are now retained in the
-   supplement above; that bounded capture does not establish external-file
-   completeness.
+3. Reconcile remaining task/document references, repository evidence trees
+   and attachments with their source references. Bounded local reference
+   capture now retains available regular files and explicit missing/remote/
+   unowned dispositions alongside the named run/profile files and sixteen
+   secondary database dispositions. Directory trees, missing historical files,
+   unrecognized references and unresolved ownership still require separate work;
+   this capture does not establish external-file completeness.
 4. Extend task/document browsing to other history surfaces and establish
    source-project/task correspondence with native records. Verify the selected
    correspondence before adopting tasks; a historical record is not a native

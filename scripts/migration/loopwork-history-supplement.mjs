@@ -1,10 +1,12 @@
 import {createHash,randomUUID} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {constants,createReadStream} from 'node:fs';
-import {chmod,copyFile,lstat,mkdir,open,readdir,readFile,realpath,rename,rm,writeFile} from 'node:fs/promises';
+import {chmod,copyFile,cp,lstat,mkdir,open,readdir,readFile,realpath,rename,rm,writeFile} from 'node:fs/promises';
 import {basename,dirname,isAbsolute,join,relative,resolve,sep} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {copyDatabase,sourceFiles,verifyArchive} from './loopwork-history-lib.mjs';
+import {taskPacket} from './loopwork-task-packet.mjs';
+import {referenceCandidates} from './loopwork-reference-candidates.mjs';
 
 const format='loopwork-history-supplement-v1';
 const hash=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -225,4 +227,113 @@ export async function browseHistorySupplement(directory,input){
   }
   throw new Error('Unsupported historical supplement read');
  }finally{db.close();}
+}
+
+function archivedReferences(archive,primary,supplement,previous){
+ const references=[],projects=primary.databases.find(row=>row.role==='business').summary.projects;
+ const scan=(database,taskID,project,table,row,record)=>{
+  for(const [field,value] of Object.entries(record))for(const candidate of referenceCandidates(value))references.push({database,task_id:String(taskID),project_id:project?.project_id??null,workspace_root:project?.workspace_root??null,table,row,field,...candidate});
+ };
+ const entry=primary.databases.find(row=>row.role==='business'),db=new DatabaseSync(join(archive,entry.file),{readOnly:true});
+ try{
+  db.exec('PRAGMA query_only=ON;PRAGMA trusted_schema=OFF');
+  for(const task of entry.summary.tasks){
+   const packet=taskPacket(db,entry.summary.tables,task.task_id),project=projects.find(row=>row.project_id===task.project_id);
+   for(const section of packet.sections)for(const [index,row] of section.rows.entries())scan('primary',task.task_id,project,section.table,index,row);
+  }
+ }finally{db.close();}
+ for(const entry of previous.databases.filter(row=>row.file&&row.kind==='historical_business_database')){
+  const db=new DatabaseSync(join(supplement,entry.file),{readOnly:true});
+  try{
+   db.exec('PRAGMA query_only=ON;PRAGMA trusted_schema=OFF');
+   const columns=name=>entry.tables.find(row=>row.name===name)?.columns??[];
+   const query=db.prepare('SELECT * FROM tasks ORDER BY task_id');query.setReadBigInts(true);
+   for(const task of query.all()){
+    // A secondary database cannot introduce an arbitrary root or inherit ownership by task ID.
+    let project=projects.find(row=>row.project_id===task.project_id);
+    if(project&&columns('projects').includes('workspace_root')&&columns('projects').includes('project_id')){
+     const original=db.prepare('SELECT workspace_root FROM projects WHERE project_id=?').get(task.project_id);
+     if(original?.workspace_root!==project.workspace_root)project=null;
+    }else project=null;
+    const taskFields=Object.fromEntries(['description','evidence','link'].map(key=>[key,task[key]]));
+    scan(entry.source_path,task.task_id,project,'tasks',String(task.task_id),taskFields);
+    if(columns('documents').includes('task_id')){
+     const documents=db.prepare('SELECT document_id,content FROM documents WHERE task_id=? ORDER BY document_id');documents.setReadBigInts(true);
+     for(const document of documents.all(task.task_id))scan(entry.source_path,task.task_id,project,'documents',String(document.document_id),{content:document.content});
+    }
+   }
+  }finally{db.close();}
+ }
+ return references;
+}
+
+async function resolveReference(reference){
+ let target=reference.target;
+ if(/^(?:https?:)?\/\//i.test(target))return {disposition:'remote_not_fetched'};
+ if(target.startsWith('#'))return {disposition:'document_anchor'};
+ if(/^[a-z][a-z0-9+.-]*:/i.test(target)&&!target.startsWith('file:'))return {disposition:'unsupported_scheme'};
+ try{if(target.startsWith('file:')){const url=new URL(target);if(url.hostname&&url.hostname!=='localhost')return {disposition:'outside_project'};target=decodeURIComponent(url.pathname);}else target=decodeURIComponent(target.split(/[?#]/)[0]);}catch{return {disposition:'invalid_reference'};}
+ if(!reference.workspace_root)return {disposition:'unresolved_project'};
+ // A source line location identifies the same file, without changing its bytes.
+ target=target.replace(/:\d+(?::\d+)?(?:-\d+(?::\d+)?)?$/,'');
+ if(/[\x00-\x1f\\*{}|]/.test(target)||!target)return {disposition:'unsupported_path'};
+ const root=reference.workspace_root,path=resolve(root,target);
+ if(!within(root,path))return {disposition:'outside_project'};
+ const part=relative(root,path);
+ if(part.split(sep).some(name=>['.git','node_modules','.codex','.claude','.ssh','.npmrc','.netrc','.pypirc','.yarnrc.yml'].includes(name)||name==='.env'||/^\.env\.(?!example$|sample$)/.test(name)||/^(?:credentials?|auth|secrets?)\.(?:json|ya?ml|toml)$/i.test(name))||/\.(?:db|sqlite|sqlite3)(?:-wal|-shm)?$/i.test(part))return {disposition:'configuration_or_database_excluded'};
+ if(!await existing(root))return {disposition:'missing_project'};
+ if(await realpath(root)!==root)return {disposition:'symbolic_path_excluded'};
+ let current=root;
+ for(const segment of part.split(sep).filter(Boolean)){
+  current=join(current,segment);const stat=await existing(current);
+  if(!stat)return {disposition:'missing',source_path:part};
+  if(stat.isSymbolicLink())return {disposition:'symbolic_path_excluded',source_path:part};
+  if(current!==path&&!stat.isDirectory())return {disposition:'not_a_file',source_path:part};
+ }
+ const stat=await lstat(path);
+ if(!stat.isFile())return {disposition:stat.isDirectory()?'directory_not_captured':'not_a_file',source_path:part};
+ return {disposition:'captured_current_bytes',source_path:part,...await fingerprint(root,part)};
+}
+
+export async function captureReferenceSupplement({archive,expectedHash,supplement,expectedSupplementHash,output}){
+ archive=await realpath(archive);supplement=await realpath(supplement);
+ const primary=await verifyArchive(archive),previous=await verifyHistorySupplement(supplement,expectedHash,expectedSupplementHash);
+ if(primary.hash!==expectedHash)throw new Error('References require the pinned primary archive');
+ if(previous.reference_capture)throw new Error('Use an original supplement without an appended reference capture');
+ assertSourceCheckout(primary.source);
+ output=await destination(output);
+ const roots=[archive,supplement,primary.source.repository,primary.source.data_root,...primary.databases.find(row=>row.role==='business').summary.projects.map(row=>row.workspace_root)];
+ for(const root of roots)if(within(await realpath(root).catch(error=>{if(error.code==='ENOENT')return resolve(root);throw error;}),output))throw new Error('Reference supplement must stay outside original roots and archives');
+ if(await existing(output))throw new Error('Never overwrite an existing supplement');
+ await mkdir(dirname(output),{recursive:true,mode:0o700});
+ const stage=join(dirname(output),`.history-supplement-${randomUUID()}`);
+ try{
+  await cp(supplement,stage,{recursive:true,errorOnExist:true,force:false});await chmod(stage,0o700);
+  const references=archivedReferences(archive,primary,supplement,previous),materials=[...previous.materials],selected=new Map();let bytes=materials.reduce((sum,row)=>sum+row.bytes,0);
+  if(references.length>100000)throw new Error('Reference inventory exceeds bounded capture capacity');
+  for(const reference of references){
+   Object.assign(reference,await resolveReference(reference));
+   if(reference.disposition!=='captured_current_bytes')continue;
+   const key=`references/${hash(reference.workspace_root)}/${reference.source_path}`;
+   reference.material_path=key;
+   const facts={bytes:reference.bytes,sha256:reference.sha256},known=selected.get(key);
+   if(known){if(!equal(known.facts,facts))throw new Error('Referenced file changed within capture');continue;}
+   bytes+=facts.bytes;if(materials.length>=10000||bytes>256*1024*1024)throw new Error('Historical references exceed bounded capture capacity');
+   const file=await storeBlob(stage,reference.workspace_root,reference.source_path,facts);
+   materials.push({path:key,category:'referenced_project_file',origin:{workspace_root:reference.workspace_root,source_path:reference.source_path,project_id:reference.project_id},...facts,file});selected.set(key,{reference,facts});
+  }
+  for(const {reference,facts} of selected.values())if(!equal(await fingerprint(reference.workspace_root,reference.source_path),facts))throw new Error('Referenced file changed before publication');
+  const report={format:'loopwork-reference-inventory-v1',archive_hash:expectedHash,parent_supplement_hash:expectedSupplementHash,captured_at:new Date().toISOString(),historical_only:true,execution_authorized:false,
+   coverage:['Primary task packet included sections; original table, ordered row, field and JSON pointer retained.','Secondary database task description/evidence/link and document content; roots require matching primary project identity and original root.','Markdown destinations/definitions, HTML media/link attributes, JSON path fields, inline paths and literal .tmp or /Users paths.'],
+   exclusions:['Unrecognized prose, unavailable packet sections, arbitrary directory trees, unregistered files and remote target bytes are not covered.','Captured files are current bytes at capture time, not proof of their historical contents or native verification.','Named credential/runtime configuration locations, database payloads, symlinks and targets outside the matching original project are not copied; source and project metadata files remain historical bytes only.'],references};
+  const data=Buffer.from(JSON.stringify(report,null,2)+'\n'),sha256=createHash('sha256').update(data).digest('hex'),file=`blobs/${sha256}`,reportPath=`reference-inventory/${expectedSupplementHash}.json`;
+  if(bytes+data.length>256*1024*1024||materials.length>=10000)throw new Error('Historical references exceed bounded capture capacity');
+  await writeFile(join(stage,file),data,{mode:0o600,flag:'wx'});materials.push({path:reportPath,category:'reference_inventory',origin:{archive_hash:expectedHash,parent_supplement_hash:expectedSupplementHash},bytes:data.length,sha256,file});
+  const {hash:_old,...body}=previous;
+  Object.assign(body,{captured_at:report.captured_at,materials,reference_capture:{parent_supplement_hash:expectedSupplementHash,inventory_path:reportPath,inventory_sha256:sha256,reference_count:references.length},exclusions:[...previous.exclusions,'The appended reference inventory records bounded reference coverage and current bytes; original task packets and native verification authority remain unchanged.']});
+  const manifest={...body,hash:hash(body)};await writeFile(join(stage,'manifest.json'),JSON.stringify(manifest,null,2)+'\n',{mode:0o600});
+  if((await verifyArchive(archive)).hash!==expectedHash||(await verifyHistorySupplement(supplement,expectedHash,expectedSupplementHash)).hash!==expectedSupplementHash)throw new Error('Pinned input changed');
+  assertSourceCheckout(primary.source);await verifyHistorySupplement(stage,expectedHash,manifest.hash);await rename(stage,output);
+  return {supplement:output,hash:manifest.hash,archive_hash:expectedHash,parent_supplement_hash:expectedSupplementHash,references:references.length,dispositions:Object.fromEntries([...new Set(references.map(row=>row.disposition))].map(key=>[key,references.filter(row=>row.disposition===key).length])),captured_files:selected.size,materials:materials.length,historical_only:true,execution_authorized:false};
+ }catch(error){await rm(stage,{recursive:true,force:true});throw error;}
 }
