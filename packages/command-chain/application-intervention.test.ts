@@ -10,7 +10,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { repairHandoffTargetSchema,handoffProposalSchema,handoffReadySchema,handoffApplicationSchema,handoffHash } from "./repair-handoff";
 import {repairExecutionHintSchema,repairExecutionHintHash} from "./repair-execution";
-import {repairBusinessProgressSchema} from "./repair-progress";
+import {repairBusinessProgressSchema,repairBusinessSettlementSchema,repairBusinessSettlementHash} from "./repair-progress";
 import {draftSchema} from "./runtime";
 import { readRepairWorkspaceVersion } from "./repair-workspace-version";
 import { hostRecoveryFaultFixture as recoveryFault,hostHandoffReservationFixture } from "./test-helpers/repair-handoff-fixture";
@@ -300,9 +300,9 @@ async function recoveredProgress(kind:"direct"|"verification",bind=true){
  expect(await invoke(host,"repair-business-progress",pin)).toEqual({progress:null});
  return {successor,daemon,pin,application,ready};
 }
-async function finishRecoveredVerification(successor:ApplicationRequest["actor"]){
+async function finishRecoveredVerification(successor:ApplicationRequest["actor"],verdict:"passed"|"failed"="passed"){
  let state=z.object({draft:draftSchema}).parse(await invoke(successor,"start"));const command=async(command:unknown)=>{state=z.object({draft:draftSchema}).parse(await invoke(successor,"command",{expected_sequence:state.draft.sequence,command}));};
- await command({type:"phase.complete"});await command({type:"artifact.put",ref:"verification.scenarios",key:"original",content:"channel: frontend\ntitle: Reader visible\nsetup: Open reader\nsteps: Reload reader\nexpected: Title remains visible\ncoverageRefs: [original]"});await command({type:"phase.complete"});await command({type:"artifact.put",ref:"verification.results",key:"original",content:"status: passed\nevidence: Controlled reader observation"});await command({type:"phase.complete"});await command({type:"artifact.put",ref:"verification.evidence-review",content:"summary: Compared new observations against the frozen Expected"});await command({type:"phase.complete"});await command({type:"phase.complete"});return state.draft;
+ await command({type:"phase.complete"});await command({type:"artifact.put",ref:"verification.scenarios",key:"original",content:"channel: frontend\ntitle: Reader visible\nsetup: Open reader\nsteps: Reload reader\nexpected: Title remains visible\ncoverageRefs: [original]"});await command({type:"phase.complete"});await command({type:"artifact.put",ref:"verification.results",key:"original",content:`status: ${verdict}\nevidence: Controlled reader observation${verdict==="failed"?"\nfailureKind: implementation\nactualBehavior: Frozen Expected not observed":""}`});await command({type:"phase.complete"});await command({type:"artifact.put",ref:"verification.evidence-review",content:"summary: Compared new observations against the frozen Expected"});await command({type:"phase.complete"});await command({type:"phase.complete"});return state.draft;
 }
 for(const kind of ["direct","verification"] as const)it(`observes only the new normally applied ${kind} result and retains its immutable proof across restart`,async()=>{
  const h=await recoveredProgress(kind);await expect(invoke(h.successor,"repair-business-progress",h.pin)).rejects.toThrow(/native host/);
@@ -319,9 +319,26 @@ it("retains observation while this recovery's provider exit is unknown and allow
  db.prepare("INSERT INTO engineering_process VALUES(?,?,?,?,?,?)").run(id,human.workspaceId,human.issueId,h.successor.attemptId,"launching","{}");expect(await invoke(host,"repair-business-progress",h.pin)).toEqual({progress:null});db.prepare("UPDATE engineering_process SET status='exited' WHERE allocation_id=?").run(id);
  db.prepare("INSERT INTO engineering_process VALUES(?,?,?,?,?,?)").run(randomUUID(),human.workspaceId,human.issueId,`${randomUUID()}:777777`,"running","{}");expect(await invoke(host,"repair-business-progress",h.pin)).toMatchObject({progress:{applied:true,attempt_id:h.successor.attemptId}});db.close();
 });
-it("refuses a completed draft before its normal owner applies the result",async()=>{
- const h=await recoveredProgress("verification");await finishRecoveredVerification(h.successor);const db=new DatabaseSync(database),root=String(db.prepare("SELECT payload FROM engineering_contract").get()!.payload),value=JSON.parse(root);delete value.verificationExecution;db.prepare("UPDATE engineering_contract SET payload=?").run(JSON.stringify(value));
- expect(await invoke(host,"repair-business-progress",h.pin)).toEqual({progress:null});expect(db.prepare("SELECT count(*) AS n FROM engineering_repair_business_progress").get()!.n).toBe(0);db.prepare("UPDATE engineering_contract SET payload=?").run(root);expect(await invoke(host,"repair-business-progress",h.pin)).toMatchObject({progress:{applied:true}});db.close();
+it("offers a readonly completed-draft witness and replays only its normal owner settlement",async()=>{
+ const h=await recoveredProgress("verification"),completed=await finishRecoveredVerification(h.successor),db=new DatabaseSync(database),root=String(db.prepare("SELECT payload FROM engineering_contract").get()!.payload),value=JSON.parse(root);delete value.verificationExecution;db.prepare("UPDATE engineering_contract SET payload=?").run(JSON.stringify(value));
+ const saved=String(db.prepare("SELECT payload FROM chain_drafts WHERE id=?").get(completed.id)!.payload),view=String(db.prepare("SELECT payload FROM engineering_intervention_view WHERE attempt_id=?").get(h.successor.attemptId)!.payload);
+ app.close();app=new EngineeringApplication(database,definition);
+ const observed=z.object({progress:z.null(),settlement:repairBusinessSettlementSchema}).parse(await invoke(host,"repair-business-progress",h.pin));
+ expect(observed.settlement).toMatchObject({attempt_id:h.successor.attemptId,draft_id:completed.id,sequence:completed.sequence,chain:"verification"});
+ expect(db.prepare("SELECT payload FROM engineering_contract").get()!.payload).toBe(JSON.stringify(value));expect(db.prepare("SELECT count(*) AS n FROM engineering_repair_business_progress").get()!.n).toBe(0);
+ await expect(invoke(h.successor,"repair-business-settle",observed)).rejects.toThrow(/native host/);
+ const process=randomUUID();db.prepare("INSERT INTO engineering_process VALUES(?,?,?,?,?,?)").run(process,human.workspaceId,human.issueId,h.successor.attemptId,"running","{}");
+ expect(await invoke(host,"repair-business-progress",h.pin)).toEqual({progress:null});await expect(invoke(host,"repair-business-settle",{settlement:observed.settlement})).rejects.toThrow(/changed before/);
+ db.prepare("UPDATE engineering_process SET status='exited' WHERE allocation_id=?").run(process);
+ const wrong={...observed.settlement,owner_hash:"f".repeat(64)};await expect(invoke(host,"repair-business-settle",{settlement:{...wrong,hash:repairBusinessSettlementHash(wrong)}})).rejects.toThrow(/changed before/);
+ const binding=String(db.prepare("SELECT payload FROM engineering_execution WHERE attempt_id=?").get(h.successor.attemptId)!.payload);db.prepare("UPDATE engineering_execution SET payload=json_set(payload,'$.branchRef','changed-after-observation') WHERE attempt_id=?").run(h.successor.attemptId);
+ await expect(invoke(host,"repair-business-settle",{settlement:observed.settlement})).rejects.toThrow(/changed before/);db.prepare("UPDATE engineering_execution SET payload=? WHERE attempt_id=?").run(binding,h.successor.attemptId);
+ expect(await invoke(host,"repair-business-settle",{settlement:observed.settlement})).toEqual({settled:true});
+ expect(await invoke(host,"repair-business-progress",h.pin)).toMatchObject({progress:{applied:true,attempt_id:h.successor.attemptId}});
+ expect(db.prepare("SELECT payload FROM chain_drafts WHERE id=?").get(completed.id)!.payload).toBe(saved);expect(db.prepare("SELECT payload FROM engineering_intervention_view WHERE attempt_id=?").get(h.successor.attemptId)!.payload).toBe(view);
+ app.close();app=new EngineeringApplication(database,definition);expect(await invoke(host,"repair-business-settle",{settlement:observed.settlement})).toEqual({settled:true});
+ await expect(invoke(host,"repair-business-settle",{settlement:{...wrong,hash:repairBusinessSettlementHash(wrong)}})).rejects.toThrow(/cannot be replaced/);
+ expect(db.prepare("SELECT count(*) AS n FROM engineering_repair_business_settlement").get()!.n).toBe(1);db.close();
 });
 it("observes the actual replacement claim after a pre-result native reclaim of the same recovery task",async()=>{
  const h=await recoveredProgress("direct"),replacement={...h.successor,attemptId:`${h.ready.continuation.task_id}:1000000`},db=new DatabaseSync(database),id=randomUUID();
@@ -508,4 +525,71 @@ it("round-trips a bound continuation hold through the private worker without a q
   const db=new DatabaseSync(database);expect(db.prepare("SELECT count(*) AS n FROM engineering_process_binding WHERE attempt_id LIKE ?").get(native.task_id+":%")!.n).toBe(0);expect(db.prepare("SELECT count(*) AS n FROM engineering_intervention_view WHERE attempt_id=?").get(h.successor.attemptId)!.n).toBe(0);db.close();
  }finally{app=new EngineeringApplication(database,definition);}
  expect(await invoke(host,"execution-permission")).toEqual({allowed:false});
+},15000);
+
+for(const stage of ["analysis","development"] as const)it(`settles an interrupted ${stage} handoff from the original completed draft`,async()=>{
+ const development=await readFile(new URL("./definitions/development.yaml",import.meta.url),"utf8"),analysis=await readFile(new URL("./definitions/analysis.yaml",import.meta.url),"utf8");app.close();app=new EngineeringApplication(database,definition,development,analysis);
+ const source={key:"original",kind:"acceptance",description:"Original reader behavior",oracle:"Observe original reader entry",sourceRef:"README.md"},unit={key:"reader",title:"Reader",actor:"Reader",trigger:"Open entry",observableOutcome:"Original content",acceptance:"Original content",sourceRefs:[{key:source.key,kind:source.kind,content:source.description,sourceRef:source.sourceRef}],dependsOn:[]};
+ await invoke(human,"configure",{expected_revision:0,agent_id:randomUUID(),developer_agent_id:stage==="development"?agentId:randomUUID(),...(stage==="analysis"?{analyst_agent_id:agentId,unit}:{implementation_guidance:"Preserve original reader outcome"}),repository_path:repository,sources:[source]});
+ await invoke({...owner,kind:"daemon"},"bind",{work_dir:repository,mode:"in_place",overlays:[]});await invoke(owner,"start");await invoke(owner,"intervention-request",body);
+ const target=await handoffTarget(),reservation=hostHandoffReservationFixture(target,await invoke(host,"repair-handoff-prepare",target)),application=handoffApplicationSchema.parse(await invoke(host,"repair-handoff-stage",reservation)),ready=handoffReadySchema.parse(await invoke(host,"repair-handoff-ready",application)),successor={...owner,attemptId:`${ready.continuation.task_id}:999999`};
+ await invoke({...successor,kind:"daemon"},"bind",{work_dir:repository,mode:"in_place",overlays:[]});let state=z.object({draft:draftSchema}).parse(await invoke(successor,"start"));const command=async(command:unknown)=>{state=z.object({draft:draftSchema}).parse(await invoke(successor,"command",{expected_sequence:state.draft.sequence,command}));};
+ await command({type:"phase.complete"});
+ if(stage==="analysis"){
+  await command({type:"artifact.put",ref:"delivery-analysis.impacts",key:"reader",content:"area: Reader\nfinding: Preserve original entry\ndisposition: preserve\nevidence: README.md:1"});await command({type:"phase.complete"});await command({type:"phase.complete"});await command({type:"phase.complete"});
+  await command({type:"artifact.put",ref:"delivery-analysis.answer-review",content:"No unresolved choices; original acceptance retained"});await command({type:"phase.complete"});
+  await command({type:"artifact.put",ref:"delivery-analysis.summary",content:"Preserve reader entry"});await command({type:"artifact.put",ref:"delivery-analysis.contract",content:"Reader observes the original README content"});await command({type:"phase.complete"});
+ }else{
+  await command({type:"acceptance.assess",key:"original",evidence:"README.md:1"});await command({type:"phase.complete"});
+  await command({type:"artifact.put",ref:"development.code-review",content:"summary: Original behavior retained\nevidence: README.md:1"});await command({type:"phase.complete"});
+  const receipt=z.object({captured:z.string()}).parse(await invoke({...successor,kind:"daemon"},"receipt",{id:"settlement-check",sequence:1,command:"fixture-check",cwd:repository,status:"completed",exit_code:0}));
+  await command({type:"check.record",key:"fixture",receipt_id:receipt.captured,summary:"Controlled fixture check"});await command({type:"phase.complete"});await command({type:"phase.complete",confirmation:"No code changes required"});
+ }
+ const db=new DatabaseSync(database),root=String(db.prepare("SELECT payload FROM engineering_contract").get()!.payload);
+ db.exec("CREATE TRIGGER interrupted_owner_settlement BEFORE UPDATE ON engineering_contract BEGIN SELECT RAISE(ABORT,'owner write interrupted'); END");
+ await expect(command({type:"phase.complete",confirmation:"Original evidence checked"})).rejects.toThrow(/owner write interrupted/);db.exec("DROP TRIGGER interrupted_owner_settlement");
+ const saved=String(db.prepare("SELECT payload FROM chain_drafts WHERE id=?").get(state.draft.id)!.payload);expect(draftSchema.parse(JSON.parse(saved)).status).toBe("completed");expect(db.prepare("SELECT payload FROM engineering_contract").get()!.payload).toBe(root);
+ app.close();app=new EngineeringApplication(database,definition,development,analysis);
+ const pin={target_hash:ready.target_hash,application_hash:ready.application_hash,ready_hash:ready.hash},observed=z.object({settlement:repairBusinessSettlementSchema}).parse(await invoke(host,"repair-business-progress",pin));
+ expect(observed.settlement.chain).toBe(stage==="analysis"?"delivery-analysis":"development");
+ if(stage==="development"){
+  await writeFile(join(repository,"late-change.txt"),"Changed after the completed review");await expect(invoke(host,"repair-business-settle",observed)).rejects.toThrow(/changed|uncommitted|fingerprint/i);await rm(join(repository,"late-change.txt"));
+  expect(db.prepare("SELECT payload FROM engineering_contract").get()!.payload).toBe(root);expect(db.prepare("SELECT count(*) AS n FROM engineering_repair_business_settlement").get()!.n).toBe(0);
+ }
+ expect(await invoke(host,"repair-business-settle",observed)).toEqual({settled:true});expect(await invoke(host,"repair-business-progress",pin)).toMatchObject({progress:{applied:true,attempt_id:successor.attemptId}});
+ expect(db.prepare("SELECT payload FROM chain_drafts WHERE id=?").get(state.draft.id)!.payload).toBe(saved);expect(JSON.parse(String(db.prepare("SELECT payload FROM engineering_contract").get()!.payload))[stage].handoff).toBe(true);db.close();
+},15000);
+
+it("settles an interrupted failed Test without converting its verdict into success",async()=>{
+ const h=await recoveredProgress("verification"),db=new DatabaseSync(database);
+ db.exec("CREATE TRIGGER interrupted_failed_settlement BEFORE UPDATE ON engineering_contract WHEN json_extract(NEW.payload,'$.failure') IS NOT NULL BEGIN SELECT RAISE(ABORT,'failure application interrupted'); END");
+ await expect(finishRecoveredVerification(h.successor,"failed")).rejects.toThrow(/failure application interrupted/);db.exec("DROP TRIGGER interrupted_failed_settlement");
+ const root=JSON.parse(String(db.prepare("SELECT payload FROM engineering_contract").get()!.payload));expect(root.verificationExecution).toBeDefined();expect(root.failure).toBeUndefined();
+ const source=z.object({settlement:repairBusinessSettlementSchema}).parse(await invoke(host,"repair-business-progress",h.pin));
+ expect(await invoke(host,"repair-business-settle",source)).toEqual({settled:true});expect(await invoke(host,"repair-business-progress",h.pin)).toMatchObject({progress:{applied:true}});
+ const applied=JSON.parse(String(db.prepare("SELECT payload FROM engineering_contract").get()!.payload));expect(applied.failure.decision).toBe("manual");expect(applied.verificationExecution).toEqual(root.verificationExecution);
+ expect(await invoke(human,"overview")).toMatchObject({result:{verdict:"failed"},rework:{stop_reason:"manual"}});db.close();
+});
+
+for(const reclaimed of [false,true])it(`settles a retained execution worktree and refuses a reclaimed one: reclaimed=${reclaimed}`,async()=>{
+ const h=await recoveredProgress("verification",false),worktree=join(directory,"completed-tree");execFileSync("git",["-C",repository,"worktree","add","-qb","completed-settlement",worktree]);
+ await invoke(h.daemon,"bind",{work_dir:worktree,mode:"worktree",overlays:[]});const completed=await finishRecoveredVerification(h.successor),db=new DatabaseSync(database),root=JSON.parse(String(db.prepare("SELECT payload FROM engineering_contract").get()!.payload));delete root.verificationExecution;db.prepare("UPDATE engineering_contract SET payload=?").run(JSON.stringify(root));
+ const observed=z.object({settlement:repairBusinessSettlementSchema}).parse(await invoke(host,"repair-business-progress",h.pin)),saved=String(db.prepare("SELECT payload FROM chain_drafts WHERE id=?").get(completed.id)!.payload);
+ if(reclaimed){
+  execFileSync("git",["-C",repository,"worktree","remove",worktree]);await expect(invoke(host,"repair-business-settle",observed)).rejects.toThrow();
+  expect(db.prepare("SELECT payload FROM engineering_contract").get()!.payload).toBe(JSON.stringify(root));expect(db.prepare("SELECT count(*) AS n FROM engineering_repair_business_settlement").get()!.n).toBe(0);
+ }else{
+  expect(await invoke(host,"repair-business-settle",observed)).toEqual({settled:true});expect(await invoke(host,"repair-business-progress",h.pin)).toMatchObject({progress:{applied:true}});
+ }
+ expect(db.prepare("SELECT payload FROM chain_drafts WHERE id=?").get(completed.id)!.payload).toBe(saved);db.close();
+});
+
+it("round-trips completed settlement through the private worker and retains its acknowledgement",async()=>{
+ const h=await recoveredProgress("verification"),completed=await finishRecoveredVerification(h.successor),db=new DatabaseSync(database),root=JSON.parse(String(db.prepare("SELECT payload FROM engineering_contract").get()!.payload));delete root.verificationExecution;db.prepare("UPDATE engineering_contract SET payload=?").run(JSON.stringify(root));
+ const saved=String(db.prepare("SELECT payload FROM chain_drafts WHERE id=?").get(completed.id)!.payload);db.close();app.close();
+ try{
+  const worker=new URL("./dist/worker.mjs",import.meta.url).pathname,call=(action:ApplicationRequest["action"],payload:unknown)=>{const response=JSON.parse(execFileSync(process.execPath,[worker,database],{input:JSON.stringify({actor:host,action,payload}),encoding:"utf8",stdio:["pipe","pipe","ignore"]}));if(response.error)throw new Error(response.error);return response.result;};
+  const observed=z.object({settlement:repairBusinessSettlementSchema}).parse(call("repair-business-progress",h.pin));expect(call("repair-business-settle",observed)).toEqual({settled:true});expect(call("repair-business-settle",observed)).toEqual({settled:true});expect(call("repair-business-progress",h.pin)).toMatchObject({progress:{applied:true}});
+ }finally{app=new EngineeringApplication(database,definition);}
+ const reopened=new DatabaseSync(database);expect(reopened.prepare("SELECT payload FROM chain_drafts WHERE id=?").get(completed.id)!.payload).toBe(saved);reopened.close();
 },15000);

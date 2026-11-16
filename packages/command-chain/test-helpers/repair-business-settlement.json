@@ -1,0 +1,23 @@
+{
+  "case_id": "REPAIR-原始任务",
+  "verification_attempt_id": "independent-核验",
+  "target_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "application_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "ready_hash": "1479320c9cb6fc79f89aab0495d9fcc02cdc264b94afc2d7e2dc3443041dca4d",
+  "workspace_id": "11111111-1111-4111-a111-111111111111",
+  "issue_id": "22222222-2222-4222-a222-222222222222",
+  "task_id": "66666666-6666-4666-a666-666666666666",
+  "agent_id": "33333333-3333-4333-a333-333333333333",
+  "attempt_id": "66666666-6666-4666-a666-666666666666:654321",
+  "chain": "verification",
+  "draft_id": "99999999-9999-4999-a999-999999999999",
+  "draft_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+  "completion_event_hash": "3333333333333333333333333333333333333333333333333333333333333333",
+  "revision": 1,
+  "sequence": 15,
+  "entry_task_id": "55555555-5555-4555-a555-555555555555",
+  "execution_hint_hash": "67d40bdf481eeb26e90e182339f48c8467cd018c42045da0408d8fdd825b5e9b",
+  "owner_hash": "7777777777777777777777777777777777777777777777777777777777777777",
+  "binding_hash": "8888888888888888888888888888888888888888888888888888888888888888",
+  "hash": "b6ef7d97b1926e63b08c807eef552980e23768d8f8be2a72efd0dbaa25fd91ec"
+}

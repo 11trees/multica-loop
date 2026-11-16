@@ -40,6 +40,29 @@ type engineeringBusinessProgress struct {
 	Revision              int     `json:"revision"`
 	Sequence              int     `json:"sequence"`
 }
+type engineeringBusinessSettlement struct {
+	Hash                  string  `json:"hash"`
+	CaseID                string  `json:"case_id"`
+	VerificationAttemptID string  `json:"verification_attempt_id"`
+	TargetHash            string  `json:"target_hash"`
+	ApplicationHash       string  `json:"application_hash"`
+	ReadyHash             string  `json:"ready_hash"`
+	WorkspaceID           string  `json:"workspace_id"`
+	IssueID               string  `json:"issue_id"`
+	TaskID                string  `json:"task_id"`
+	EntryTaskID           string  `json:"entry_task_id,omitempty"`
+	ExecutionHintHash     string  `json:"execution_hint_hash,omitempty"`
+	AgentID               string  `json:"agent_id"`
+	AttemptID             string  `json:"attempt_id"`
+	Chain                 string  `json:"chain"`
+	DraftID               *string `json:"draft_id"`
+	DraftHash             *string `json:"draft_hash"`
+	CompletionEventHash   string  `json:"completion_event_hash"`
+	Revision              int     `json:"revision"`
+	Sequence              int     `json:"sequence"`
+	OwnerHash             string  `json:"owner_hash"`
+	BindingHash           string  `json:"binding_hash"`
+}
 type engineeringNativeProgress struct {
 	Hash            string `json:"hash"`
 	PublicationHash string `json:"publication_hash"`
@@ -73,6 +96,9 @@ func engineeringBusinessProgressHash(p engineeringBusinessProgress) string {
 	}
 	return engineeringHandoffFieldsHash(append(prefix, []string{p.CaseID, p.VerificationAttemptID, p.TargetHash, p.ApplicationHash, p.ReadyHash, p.WorkspaceID, p.IssueID, p.TaskID, p.AgentID, p.AttemptID, p.Chain, engineeringOptionalText(p.DraftID), engineeringOptionalText(p.DraftHash), p.ResultID, p.ResultHash, p.CompletionEventHash, strconv.Itoa(p.Revision), strconv.Itoa(p.Sequence)}...)...)
 }
+func engineeringBusinessSettlementHash(p engineeringBusinessSettlement) string {
+	return engineeringHandoffFieldsHash("multica:repair-business-settlement:1", p.CaseID, p.VerificationAttemptID, p.TargetHash, p.ApplicationHash, p.ReadyHash, p.WorkspaceID, p.IssueID, p.TaskID, p.EntryTaskID, p.ExecutionHintHash, p.AgentID, p.AttemptID, p.Chain, engineeringOptionalText(p.DraftID), engineeringOptionalText(p.DraftHash), p.CompletionEventHash, strconv.Itoa(p.Revision), strconv.Itoa(p.Sequence), p.OwnerHash, p.BindingHash)
+}
 func engineeringNativeProgressHash(p engineeringNativeProgress) string {
 	return engineeringHandoffFieldsHash("multica:repair-native-progress:1", p.PublicationHash, p.ProgressHash, p.TaskID, p.AttemptID, p.WorkspaceID, p.IssueID, p.AgentID, p.UserID, p.RuntimeID, p.ProjectID, p.Status, p.ControllersHash)
 }
@@ -100,8 +126,8 @@ func (h *Handler) ReconcileEngineeringRecoveryProgress(ctx context.Context, auth
 	return errors.Join(failures...)
 }
 
-// A terminal process is insufficient: both reads must find the same new,
-// owner-applied ordinary result, exact claim and confirmed physical cleanup.
+// A terminal process is insufficient. Interrupted settlement may replay the
+// owner, but Case closure still needs two matching applied-result reads and cleanup.
 func (h *Handler) observeEngineeringRepairHandoff(ctx context.Context, raw json.RawMessage) (any, error) {
 	var input engineeringPublicationRequest
 	if err := json.Unmarshal(raw, &input); err != nil {
@@ -143,16 +169,33 @@ func (h *Handler) readEngineeringRecoveryProgress(ctx context.Context, input eng
 		return nil, err
 	}
 	var result struct {
-		Progress *engineeringBusinessProgress `json:"progress"`
+		Progress   *engineeringBusinessProgress   `json:"progress"`
+		Settlement *engineeringBusinessSettlement `json:"settlement"`
 	}
 	if err = json.Unmarshal(response, &result); err != nil {
 		return nil, err
 	}
-	if result.Progress == nil {
-		return nil, nil
+	if result.Progress != nil && result.Settlement != nil {
+		return nil, fmt.Errorf("recovery cannot be applied and unsettled together")
+	}
+	settling := result.Progress == nil
+	if settling {
+		if result.Settlement == nil {
+			return nil, nil
+		}
+		candidate := result.Settlement
+		if engineeringBusinessSettlementHash(*candidate) != candidate.Hash || len(candidate.OwnerHash) != 64 || len(candidate.BindingHash) != 64 || (candidate.Chain != "delivery-analysis" && candidate.Chain != "development" && candidate.Chain != "verification") {
+			return nil, fmt.Errorf("completed recovery settlement witness changed")
+		}
+		// Only the shared checkpoint identity participates in native validation.
+		encoded, _ := json.Marshal(candidate)
+		result.Progress = &engineeringBusinessProgress{}
+		if err = json.Unmarshal(encoded, result.Progress); err != nil {
+			return nil, err
+		}
 	}
 	b := result.Progress
-	if (b.EntryTaskID == "") != (b.ExecutionHintHash == "") || b.EntryTaskID != "" && b.EntryTaskID == b.TaskID || !b.Applied || engineeringBusinessProgressHash(*b) != b.Hash || b.CaseID != p.CaseID || b.VerificationAttemptID != p.VerificationAttemptID || b.TargetHash != p.TargetHash || b.ApplicationHash != p.ApplicationHash || b.ReadyHash != p.ReadyHash || (b.EntryTaskID == "" && b.TaskID != p.TaskID || b.EntryTaskID != "" && (b.EntryTaskID != p.TaskID || len(b.ExecutionHintHash) != 64)) || b.WorkspaceID != p.WorkspaceID || b.IssueID != p.IssueID || b.AgentID != p.AgentID || b.Revision != r.Continuation.ExpectedRevision || engineeringOptionalText(b.DraftID) != engineeringOptionalText(application.DraftID) || b.ResultID == "" || len(b.ResultHash) != 64 || len(b.CompletionEventHash) != 64 {
+	if (b.EntryTaskID == "") != (b.ExecutionHintHash == "") || b.EntryTaskID != "" && b.EntryTaskID == b.TaskID || (!settling && (!b.Applied || engineeringBusinessProgressHash(*b) != b.Hash)) || b.CaseID != p.CaseID || b.VerificationAttemptID != p.VerificationAttemptID || b.TargetHash != p.TargetHash || b.ApplicationHash != p.ApplicationHash || b.ReadyHash != p.ReadyHash || (b.EntryTaskID == "" && b.TaskID != p.TaskID || b.EntryTaskID != "" && (b.EntryTaskID != p.TaskID || len(b.ExecutionHintHash) != 64)) || b.WorkspaceID != p.WorkspaceID || b.IssueID != p.IssueID || b.AgentID != p.AgentID || b.Revision != r.Continuation.ExpectedRevision || engineeringOptionalText(b.DraftID) != engineeringOptionalText(application.DraftID) || (!settling && (b.ResultID == "" || len(b.ResultHash) != 64)) || len(b.CompletionEventHash) != 64 {
 		return nil, fmt.Errorf("business result is not this published native execution")
 	}
 	taskID, err := util.ParseUUID(b.TaskID)
@@ -278,6 +321,23 @@ func (h *Handler) readEngineeringRecoveryProgress(ctx context.Context, input eng
 	}
 	if check.CurrentIntentRevision != initial.CurrentIntentRevision || check.TargetHash != current.TargetHash || !engineeringSameJSON(check.Publication, current.Publication) {
 		return nil, fmt.Errorf("recovery intent or current proof changed after business read")
+	}
+	if settling {
+		reply, e := h.EngineeringWorker.Call(ctx, map[string]any{"action": "repair-business-settle", "actor": map[string]string{"kind": "host", "workspaceId": p.WorkspaceID, "issueId": p.IssueID}, "payload": map[string]any{"settlement": result.Settlement}})
+		if e != nil {
+			return nil, e
+		}
+		var acknowledgement struct {
+			Settled bool `json:"settled"`
+		}
+		if json.Unmarshal(reply, &acknowledgement) != nil || !acknowledgement.Settled {
+			return nil, fmt.Errorf("ordinary recovery owner did not acknowledge settlement")
+		}
+		if err = tx.Commit(ctx); err != nil {
+			return nil, err
+		}
+		// Settlement is not Case closure. A later read must observe the owner-applied result.
+		return nil, nil
 	}
 	blob, _ := json.Marshal(facts)
 	digest := sha256.Sum256(blob)

@@ -228,6 +228,40 @@ captured command receipts are recompiled or compared against their owner facts;
 ordinary work may already have moved the current role or removed its worktree.
 This observes an accepted historical result, not current repository delivery.
 
+### Interrupted delivery-stage settlement
+
+For a recovery-owned delivery analysis, development or independent Test draft,
+completion can be persisted before the owner's final handoff write succeeds.
+`repair-business-progress` stays readonly with respect to that owner. When no
+ordinary applied result exists, it can return a distinct settlement witness. The
+witness pins the exact draft/event, actual native claim and linked continuation,
+root bytes, and both physical and workflow execution bindings. It is not an
+applied-result receipt and cannot close a Case.
+
+The native observer validates that witness against the immutable publication,
+terminal task, exact claim and confirmed controller cleanup under project/task
+locks. A fresh management/publication check must still succeed, and a new fence
+or reservation blocks settlement. Only then does private host action
+`repair-business-settle` compare the witness again in a business transaction and
+replay the original owner's normal `read` settlement. Normal dependency,
+repository, conclusion, command-evidence and rework checks still apply. No task,
+claim, binding, draft event or Agent view is fabricated. The completed draft is
+unchanged. The owner write, applied-result proof and immutable settlement
+acknowledgement commit together; lost acknowledgements replay the same witness.
+
+Failed independent Test needs its ordinary failure decision as well as the saved
+execution mapping. Replay retains the failed verdict and the existing rework
+budget; it cannot make native or business failure into success. A later normal
+progress observation and fresh native check are still required for Case closure.
+Native Done, independent verification and exact human report reading retain
+their normal gates.
+
+This path currently covers engineering-owned analysis/development/Test stages
+whose original execution directory still passes normal owner checks. Reclaimed
+worktrees, broader owner-specific completed-stage recovery and changed
+source/cohort recovery remain outstanding. Missing execution directories are
+never recreated.
+
 A validated human `prepare-run` can continue the same prepared stage after
 answers or an explicit restart. The business worker persists a hash-bound
 `recovery_execution` hint with the original entry task, application/readiness
@@ -468,8 +502,11 @@ immutable host business hold and reopen their original Case. Readonly runnable-
 dispatch sampling and durable eligible-time evidence are connected through the
 [Admin observer](admin.md#dispatch-readiness-observation). Automatic stall
 takeback for an actively executing bound stage, partially-bound
-preparation failure holds, source/cohort changes and recovery
-of completed drafts without owner settlement still require migration. Waiting
+preparation failure holds, source/cohort changes, completed-stage settlement
+after execution-directory reclamation and broader owner-specific settlement
+recovery still require migration. Engineering-owned completed analysis,
+development and Test stages now have explicit guarded settlement replay when
+the original execution directory remains valid. Waiting
 alone does not synthesize a successful result, fault or Case closure. Broader revocation,
 runtime/service identity, external dependency and shared-path recovery retain
 their separate migration requirements. Real-provider and packaged recovery
@@ -641,3 +678,18 @@ changed context and an unpublished ledger while preserving later cancellation
 of the never-started row. Logical reservations create no repair fence. These
 controlled layers do not establish real-provider, packaged, partially-bound or
 source/cohort-change recovery acceptance.
+
+### Controlled interrupted-settlement evidence
+
+Kernel tests inject owner-write interruption after the real completed draft is
+saved, reopen SQLite, and replay original analysis/development/Test settlement.
+They retain exact draft bytes and failed Test decisions, reject changed source
+bindings, active process facts and changed development content, and preserve
+rollback when the execution worktree is gone. The bundled worker covers the
+private action and acknowledgement replay. Go tests use real native PostgreSQL
+tasks, claims, controller cleanup, publications and private control; waiting or
+stale native facts cannot reach the owner write. Lost settlement acknowledgement
+can later observe the normally applied result, while settlement itself records
+no management progress or Case closure. UTF-8 settlement hashes are shared by
+Go and Node. Provider execution and completion observations in these tests are
+fixtures; this is not real-provider or packaged acceptance.

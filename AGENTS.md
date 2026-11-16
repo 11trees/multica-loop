@@ -57,6 +57,8 @@ Use `Makefile`, workspace `package.json` files, and `pnpm-workspace.yaml` for cu
 - Regenerate sqlc with `make sqlc` after SQL changes.
 - Run the narrowest useful checks while iterating, then broaden when risk warrants it. Report what actually ran and any skipped checks.
 
+- Completed recovery delivery-stage settlement requires a distinct host witness of the terminal draft/event, exact native claim, owner root and physical/workflow execution bindings. Keep candidate observation readonly; check native terminal/cleanup, publication, current management authority and project fences/reservations before replaying the original owner settlement transaction. Preserve completed draft bytes and ordinary failure/rework decisions. Lost acknowledgements replay immutable settlement identity; settlement alone cannot close a Case or native Done, and missing execution directories must not be recreated.
+
 Run these from the repository root:
 
 | Scope | Checks |

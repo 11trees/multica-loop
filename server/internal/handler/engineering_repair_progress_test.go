@@ -20,8 +20,17 @@ import (
 // Native task/claim/cleanup rows and private control are real. Independent
 // management and owner-applied business receipts have their own Node tests.
 func TestEngineeringRecoveryProgress(t *testing.T) {
-	for _, mode := range []string{"success", "direct-continuation", "continuation", "entry-retry", "entry-unlinked", "continuation-missing-context", "continuation-wrong-hint", "continuation-wrong-draft", "failed-applied", "failed-no-result", "empty-result", "queued", "running", "cancelled", "missing-controller", "unfinished-controller", "wrong-claim", "wrong-task", "missing-event", "unapplied-result", "changed-result", "stopped-after-record", "new-fence", "new-reservation", "progress-ack-retry", "close-ack-lost", "later-work"} {
-		t.Run(mode, func(t *testing.T) {
+	for _, scenario := range []string{"success", "direct-continuation", "continuation", "entry-retry", "entry-unlinked", "continuation-missing-context", "continuation-wrong-hint", "continuation-wrong-draft", "failed-applied", "failed-no-result", "empty-result", "queued", "running", "cancelled", "missing-controller", "unfinished-controller", "wrong-claim", "wrong-task", "missing-event", "unapplied-result", "changed-result", "stopped-after-record", "new-fence", "new-reservation", "progress-ack-retry", "close-ack-lost", "later-work", "settlement", "settlement-ack-lost", "settlement-continuation", "settlement-failed-applied", "settlement-running", "settlement-queued", "settlement-cancelled", "settlement-missing-controller", "settlement-unfinished-controller", "settlement-wrong-claim", "settlement-wrong-task", "settlement-missing-event", "settlement-continuation-wrong-hint", "settlement-bad-hash", "settlement-stopped-before-settle", "settlement-fenced", "settlement-reserved"} {
+		t.Run(scenario, func(t *testing.T) {
+			settlementFixture := strings.HasPrefix(scenario, "settlement")
+			mode := scenario
+			if settlementFixture {
+				mode = strings.TrimPrefix(scenario, "settlement-")
+				if scenario == "settlement" || mode == "ack-lost" {
+					mode = "success"
+				}
+			}
+
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			f := newTakeoverControlFixture(t)
@@ -157,12 +166,16 @@ func TestEngineeringRecoveryProgress(t *testing.T) {
 				business.DraftHash = nil
 			}
 			business.Hash = engineeringBusinessProgressHash(business)
-			reads, records, closes := 0, 0, 0
+			reads, records, closes, settlements := 0, 0, 0, 0
+			settled := false
 			closed, stopped := false, false
 			var saved json.RawMessage
 			f.h.EngineeringAdminWorker = engineeringAdminTestWorker{call: func(input map[string]any) (json.RawMessage, error) {
 				switch input["action"] {
 				case "handoff-context":
+					if mode == "stopped-before-settle" && reads > 0 {
+						return nil, fmt.Errorf("management stopped before settlement")
+					}
 					if stopped {
 						return nil, fmt.Errorf("management stopped")
 					}
@@ -213,6 +226,30 @@ func TestEngineeringRecoveryProgress(t *testing.T) {
 				return nil, fmt.Errorf("unexpected recovery management action %v", input["action"])
 			}}
 			f.h.EngineeringWorker = engineeringAdminTestWorker{call: func(input map[string]any) (json.RawMessage, error) {
+				if input["action"] == "repair-business-settle" {
+					if !settlementFixture {
+						return nil, fmt.Errorf("unexpected settlement")
+					}
+					raw, e := json.Marshal(input["payload"])
+					if e != nil {
+						return nil, e
+					}
+					var request struct {
+						Settlement engineeringBusinessSettlement `json:"settlement"`
+					}
+					if e = json.Unmarshal(raw, &request); e != nil {
+						return nil, e
+					}
+					if engineeringBusinessSettlementHash(request.Settlement) != request.Settlement.Hash || request.Settlement.AttemptID != business.AttemptID || request.Settlement.DraftID == nil || *request.Settlement.DraftID != draftID {
+						return nil, fmt.Errorf("native settlement changed the inspected source")
+					}
+					settlements++
+					settled = true
+					if scenario == "settlement-ack-lost" {
+						return nil, fmt.Errorf("settlement acknowledgement lost")
+					}
+					return json.RawMessage(`{"settled":true}`), nil
+				}
 				if input["action"] == "repair-recovery-checkpoint" {
 					return json.RawMessage(`{"checkpoint":null,"reason":"waiting"}`), nil
 				}
@@ -240,6 +277,20 @@ func TestEngineeringRecoveryProgress(t *testing.T) {
 					p.ResultHash = strings.Repeat("3", 64)
 				}
 				p.Hash = engineeringBusinessProgressHash(p)
+				if settlementFixture && !settled {
+					raw, _ := json.Marshal(p)
+					var witness engineeringBusinessSettlement
+					if err := json.Unmarshal(raw, &witness); err != nil {
+						return nil, err
+					}
+					witness.OwnerHash = strings.Repeat("7", 64)
+					witness.BindingHash = strings.Repeat("8", 64)
+					witness.Hash = engineeringBusinessSettlementHash(witness)
+					if mode == "bad-hash" {
+						witness.Hash = strings.Repeat("0", 64)
+					}
+					return json.Marshal(map[string]any{"progress": nil, "settlement": witness})
+				}
 				return json.Marshal(map[string]any{"progress": p})
 			}}
 			if mode == "later-work" {
@@ -250,6 +301,14 @@ func TestEngineeringRecoveryProgress(t *testing.T) {
 				}
 				if _, e = store.RecordController(ctx, laterTask, parseUUID(testWorkspaceID), ownership.ControllerRequest{Operation: "begin", ControllerID: parseUUID(uuid.NewString()), Provider: "codex", HostID: "later-fixture", PID: 43, Marker: "later-controller"}); e != nil {
 					t.Fatal(e)
+				}
+			}
+			if mode == "fenced" {
+				dbfx.Exec(t, `INSERT INTO engineering_repair_fence(workspace_id,project_id,case_id,attempt_id,generation,owner_id,supervision_token,intent_revision,observation_id,issue_id,source_attempt_id,source_revision,snapshot_hash,workspace_path) VALUES($1,$2,'other-case','other-attempt',1,'other-owner',1,1,'other-original',$3,'other-source',1,'other-snapshot','/fixture')`, testWorkspaceID, f.project, f.issue)
+			}
+			if mode == "reserved" {
+				if _, err = f.h.Queries.CreateEngineeringRepairHandoffReservation(ctx, db.CreateEngineeringRepairHandoffReservationParams{TargetHash: strings.Repeat("9", 64), WorkspaceID: parseUUID(testWorkspaceID), ProjectID: parseUUID(f.project), TaskID: parseUUID(uuid.NewString()), Payload: "{}"}); err != nil {
+					t.Fatal(err)
 				}
 			}
 			root, err := os.MkdirTemp("", "recovery-progress-")
@@ -264,6 +323,24 @@ func TestEngineeringRecoveryProgress(t *testing.T) {
 			f.h.EngineeringTakeoverControl = &engineering.LocalControlClient{Socket: f.h.cfg.EngineeringDatabasePath + ".control.sock"}
 			authority := engineeringAdminAuthority{OwnerID: "current-host", Token: 2}
 			err = f.h.ReconcileEngineeringRecoveryProgress(ctx, authority)
+			if settlementFixture {
+				eligible := mode == "success" || mode == "continuation" || mode == "failed-applied"
+				if eligible {
+					if closed || records != 0 || closes != 0 || settlements != 1 {
+						t.Fatal("settlement bypassed ordinary progress observation", closed, records, closes, settlements)
+					}
+					if scenario == "settlement-ack-lost" {
+						if err == nil {
+							t.Fatal("lost settlement acknowledgement succeeded")
+						}
+					} else if err != nil {
+						t.Fatal(err)
+					}
+					err = f.h.ReconcileEngineeringRecoveryProgress(ctx, authority)
+				} else if settlements != 0 {
+					t.Fatal("invalid native checkpoint reached owner settlement", settlements)
+				}
+			}
 			if mode == "progress-ack-retry" || mode == "close-ack-lost" {
 				if err == nil {
 					t.Fatal("lost acknowledgement succeeded")
@@ -271,7 +348,7 @@ func TestEngineeringRecoveryProgress(t *testing.T) {
 				err = f.h.ReconcileEngineeringRecoveryProgress(ctx, authority)
 			}
 			success := mode == "direct-continuation" || mode == "continuation" || mode == "entry-retry" || mode == "failed-applied" || mode == "success" || mode == "progress-ack-retry" || mode == "close-ack-lost" || mode == "later-work"
-			waiting := mode == "failed-no-result" || mode == "queued" || mode == "empty-result" || mode == "running" || mode == "cancelled" || mode == "missing-controller" || mode == "unfinished-controller"
+			waiting := mode == "fenced" || mode == "reserved" || mode == "failed-no-result" || mode == "queued" || mode == "empty-result" || mode == "running" || mode == "cancelled" || mode == "missing-controller" || mode == "unfinished-controller"
 			if (success || waiting) && err != nil {
 				t.Fatal(err)
 			}
@@ -344,5 +421,23 @@ func TestEngineeringRecoveryContinuationHashMatchesKernel(t *testing.T) {
 	value.Business.EntryTaskID = value.Business.TaskID
 	if engineeringBusinessProgressHash(value.Business) == value.Business.Hash {
 		t.Fatal("continuation lost its fixed entry identity")
+	}
+}
+
+func TestEngineeringRecoveryProgressSettlementUTF8(t *testing.T) {
+	raw, err := os.ReadFile("../../../packages/command-chain/test-helpers/repair-business-settlement.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var witness engineeringBusinessSettlement
+	if err = json.Unmarshal(raw, &witness); err != nil {
+		t.Fatal(err)
+	}
+	if witness.EntryTaskID == witness.TaskID || engineeringBusinessSettlementHash(witness) != witness.Hash {
+		t.Fatal("native settlement witness differs from kernel")
+	}
+	witness.OwnerHash = strings.Repeat("0", 64)
+	if engineeringBusinessSettlementHash(witness) == witness.Hash {
+		t.Fatal("settlement omitted current owner identity")
 	}
 }

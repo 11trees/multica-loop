@@ -17,3 +17,11 @@ it("matches native continuation hashes while retaining its entry, current task a
  const value=JSON.parse(await readFile(new URL("./test-helpers/repair-continuation-progress.json",import.meta.url),"utf8")),parsed=repairRecoveryProgressSchema.parse(value);expect(parsed.business.entry_task_id).not.toBe(parsed.business.task_id);expect(parsed.native.status).toBe("failed");
  for(const field of ["entry_task_id","execution_hint_hash"] as const){const changed={...parsed.business};delete changed[field];expect(()=>repairBusinessProgressSchema.parse({...changed,hash:repairBusinessProgressHash(changed)})).toThrow(/both entry/);}
 });
+
+it("pins a distinct UTF-8 settlement witness without claiming an applied result",async()=>{
+ const {repairBusinessSettlementSchema,repairBusinessSettlementHash}=await import("./repair-progress"),value=JSON.parse(await readFile(new URL("./test-helpers/repair-business-settlement.json",import.meta.url),"utf8"));
+ expect(repairBusinessSettlementSchema.parse(value)).toEqual(value);expect(repairBusinessSettlementHash(value)).toBe(value.hash);
+ for(const field of ["owner_hash","binding_hash","draft_hash","completion_event_hash","attempt_id"]){expect(()=>repairBusinessSettlementSchema.parse({...value,[field]:"0".repeat(64)})).toThrow(/witness changed/);}
+ for(const chain of ["direct","review","requirement-context"]){const wrong={...value,chain};expect(()=>repairBusinessSettlementSchema.parse({...wrong,hash:repairBusinessSettlementHash(wrong)})).toThrow();}
+ expect(()=>repairBusinessProgressSchema.parse(value)).toThrow();
+});

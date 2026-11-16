@@ -261,6 +261,10 @@ guarded Case closure. Bound terminal failures without applied results now
 reopen the same Case while retaining its history and physical barriers.
 Readonly runnable-stall sampling and automatic takeback of never-claimed
 published ready entries and bound same-stage queued continuations are connected.
+Guarded interrupted delivery analysis/development/Test settlement now replays the
+normal owner after exact native terminal/cleanup checks, retaining completed
+drafts and failed verdicts. Reclaimed execution directories and broader
+completed-stage settlement recovery remain outstanding.
 Actively executing bound-stage stalls,
 partially-bound failures and cohort-change recovery still require implementation. Terminal ready entries with real native
 claims now retain prepared checkpoint/resource provenance through another
