@@ -258,7 +258,7 @@
   },
   "history": {
     "title": "LoopWork history",
-    "ownership": "Read-only history. These tasks remain owned by LoopWork.",
+    "ownership": "Read-only history. Check each task’s migration record for current ownership.",
     "loading": "Loading history…",
     "error": "Could not load historical records.",
     "retry": "Retry",

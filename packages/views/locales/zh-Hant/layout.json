@@ -248,7 +248,7 @@
   },
   "history": {
     "title": "LoopWork 歷史",
-    "ownership": "唯讀歷史。這些任務仍歸 LoopWork，尚未移交至 Multica。",
+    "ownership": "唯讀歷史。目前歸屬以各任務的遷移紀錄為準。",
     "loading": "正在載入歷史記錄…",
     "error": "無法載入歷史記錄。",
     "retry": "重試",

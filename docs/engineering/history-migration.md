@@ -584,7 +584,8 @@ resource-persistence failure, concurrent/lost acknowledgement, no Agent queue,
 retained Backlog tasks, immutable receipts, migration-down refusal and prepared-Team enforcement at
 later Start. A real sanitized source-worker check also matches the saved
 `library` baseline; this is not real-provider acceptance. Shared Web/Desktop
-history links distinguish activated correspondence without adding execution
+history links distinguish activated correspondence and refer to each task’s
+migration record for current ownership, without adding execution
 controls to historical material. Screenshots contain fixture data only:
 
 ![Activated task correspondence](assets/history-activated-task.png)

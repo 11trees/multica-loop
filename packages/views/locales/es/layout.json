@@ -258,7 +258,7 @@
   },
   "history": {
     "title": "Historial de LoopWork",
-    "ownership": "Historial de solo lectura. Estas tareas siguen gestionadas por LoopWork.",
+    "ownership": "Historial de solo lectura. Consulta el registro de migración de cada tarea para conocer su titularidad actual.",
     "loading": "Cargando historial…",
     "error": "No se pudo cargar el historial.",
     "retry": "Reintentar",

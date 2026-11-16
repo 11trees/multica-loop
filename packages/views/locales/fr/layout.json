@@ -258,7 +258,7 @@
   },
   "history": {
     "title": "Historique LoopWork",
-    "ownership": "Historique en lecture seule. Ces tâches restent gérées par LoopWork.",
+    "ownership": "Historique en lecture seule. Consultez la migration de chaque tâche pour connaître sa responsabilité actuelle.",
     "loading": "Chargement de l’historique…",
     "error": "Impossible de charger l’historique.",
     "retry": "Réessayer",
