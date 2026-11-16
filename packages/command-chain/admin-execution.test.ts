@@ -88,7 +88,7 @@ it("pins history chunks and refuses unsupported verification or external-wait sh
     expect(store.execution.command(allocated.claim, { action: "history", collection: "observations", index: 0, start: 0, length: 100, hash: row.hash })).toMatchObject({ hash: row.hash });
     expect(() => store.execution.command(allocated.claim, { action: "history", collection: "observations", index: 0, start: 0, length: 100, hash: "wrong" })).toThrow(/row changed/);
     const verification = { reproductionCommand: "fixture repro", versionCheckCommand: "fixture version", acceptanceChecks: [{ targetRef: "original", command: "fixture verify", expected: "Original oracle" }] };
-    expect(() => store.execution.command(allocated.claim, { action: "submit", result: { outcome: "verification-requested", summary: "Do not bypass", repairVersion: "unverified", originalObservationIds: ["original"], repairEvidenceKeys: ["claim"], verification } })).toThrow(/workspace takeover/);
+    expect(() => store.execution.command(allocated.claim, { action: "submit", result: { outcome: "verification-requested", summary: "Do not bypass", repairVersion: `workspace-content-v1:${"a".repeat(40)}:${"b".repeat(64)}`, originalObservationIds: ["original"], repairEvidenceKeys: ["claim"], verification } })).toThrow(/workspace takeover/);
     expect(() => store.execution.command(allocated.claim, { action: "submit", result: { outcome: "external-wait-requested", summary: "Do not escalate Agent failure", dependency: "missing", diagnosisAttemptId: "invented", baselineVersion: "original", originalObservationIds: ["original"], evidenceKey: "claim", retryAfterMs: 30000 } })).toThrow(/independent diagnosis/);
 });
 

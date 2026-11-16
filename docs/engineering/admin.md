@@ -81,7 +81,7 @@ A native task or an investigation invocation cannot use these management command
 
 ## Investigation and physical ownership
 
-The management database schema is version 4. It freezes one invocation generation,
+The management database schema is version 5. It freezes one invocation generation,
 session identity, runtime revision and recovery method per allocation. A durable
 fair queue rotates Cases, with at most one live investigation process globally.
 There is no fallback executable discovery or unconfigured alternate runtime.
@@ -109,11 +109,13 @@ and terminal submissions are immutable. JSON files must be UTF-8 inside the
 invocation's private `TMPDIR`; ordinary final text or a successful process exit
 cannot substitute for a structured submission.
 
-This increment accepts `deferred` investigation results and retains the failed
-attempt and original observations while requeueing the Case. Verification and
-diagnosis requests require scoped workspace takeover, and external waits require
-independent diagnosis; these are explicitly rejected while their prerequisites
-remain unconnected. No investigation receipt closes the Case or resumes business.
+Deferred investigation retains the failed attempt and original observations while
+requeueing the Case. A `verification-requested` submission now requires owned
+scoped takeover, exact host-read content and all original references. The private
+host freezes independent input before replying; confirmed repair exit moves the
+Case to waiting verification. See [the verification input gate](repair-verification.md).
+Diagnosis and external-wait prerequisites remain unconnected. No investigation
+receipt closes the Case or resumes business.
 
 ## Native visibility
 
@@ -192,9 +194,9 @@ Case generation; stopped or replaced attempts cannot write a result.
 Inspection does not acquire the project fence, cancel a native task, confirm
 physical cleanup, validate the currently installed API/kernel version, or grant
 write authority. These facts must be freshly checked by the acquiring
-coordinator. Physical draining, repair
-and independent verification remain incomplete; investigation may still submit
-only deferred results.
+coordinator. Recorded local Codex draining is connected. Controlled repair writes
+and independent Test execution remain incomplete; investigation may defer or
+request host preparation through the [verification input gate](repair-verification.md).
 
 
 ### Private native cancellation bridge

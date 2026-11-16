@@ -449,6 +449,67 @@ func TestEngineeringTakeoverBundledWorkersAndPrivateControl(t *testing.T) {
 	if err = json.Unmarshal(call(management, map[string]any{"action": "command", "claim": allocated.Claim, "payload": map[string]string{"action": "status"}}), &state); err != nil || state.Progress.WorkspaceVersion == nil || *state.Progress.WorkspaceVersion == originalVersion || state.Progress.TargetsHash != targetsHash {
 		t.Fatal("current content version did not follow actual source changes within the same owned cohort", err)
 	}
+	call(management, map[string]any{"action": "command", "claim": allocated.Claim, "payload": map[string]any{"action": "evidence", "key": "candidate-change", "kind": "change", "payload": map[string]string{"fact": "Fixture candidate content inspected"}}})
+	submission := map[string]any{"outcome": "verification-requested", "summary": "Request independent original checks", "repairVersion": *state.Progress.WorkspaceVersion, "originalObservationIds": status.Originals, "repairEvidenceKeys": []string{"candidate-change"}, "verification": map[string]any{"reproductionCommand": "REPAIRER_COMMAND_MUST_NOT_RUN", "versionCheckCommand": "REPAIRER_VERSION_MUST_NOT_RUN", "acceptanceChecks": []any{map[string]string{"targetRef": "replacement", "command": "REPAIRER_ACCEPTANCE_MUST_NOT_RUN", "expected": "Do not inherit this"}}}}
+	call(management, map[string]any{"action": "command", "claim": allocated.Claim, "payload": map[string]any{"action": "submit", "result": submission}})
+	if err = os.WriteFile(filepath.Join(repository, "uncommitted-repair.txt"), []byte("Changed after submitted version"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err = f.h.PrepareEngineeringRepairVerification(ctx, allocated.Claim); err == nil {
+		t.Fatal("host trusted cached progress instead of the actual submitted content version")
+	}
+	if err = os.WriteFile(filepath.Join(repository, "uncommitted-repair.txt"), []byte("Actual candidate source"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err = f.h.PrepareEngineeringRepairVerification(ctx, allocated.Claim); err != nil {
+		t.Fatal(err)
+	}
+	var prepared struct {
+		VerificationInput struct {
+			Hash  string `json:"hash"`
+			Input struct {
+				ExpectedVersion string            `json:"expectedVersion"`
+				Targets         []json.RawMessage `json:"targets"`
+				Originals       []json.RawMessage `json:"originalObservations"`
+			} `json:"input"`
+		} `json:"verificationInput"`
+	}
+	var repairIdentity struct {
+		AttemptID string `json:"attemptId"`
+	}
+	if err = json.Unmarshal(allocated.Claim, &repairIdentity); err != nil {
+		t.Fatal(err)
+	}
+	preparedRaw := call(management, map[string]any{"action": "verification-input", "authority": acquired.Authority, "attempt_id": repairIdentity.AttemptID})
+	if err = json.Unmarshal(preparedRaw, &prepared.VerificationInput); err != nil || len(prepared.VerificationInput.Hash) != 64 || prepared.VerificationInput.Input.ExpectedVersion != *state.Progress.WorkspaceVersion || len(prepared.VerificationInput.Input.Targets) != 3 || len(prepared.VerificationInput.Input.Originals) != 1 {
+		t.Fatal("host did not freeze the exact original Direct input and submitted candidate", err)
+	}
+	inputRaw, _ := json.Marshal(prepared.VerificationInput)
+	if strings.Contains(string(inputRaw), "REPAIRER_") || !strings.Contains(string(inputRaw), "Original local work") {
+		t.Fatal("repairer proposal replaced the independent original input")
+	}
+	call(management, map[string]any{"action": "finish", "claim": allocated.Claim, "payload": map[string]any{"exit_confirmed": false, "reason": "Fixture cleanup is not yet confirmed"}})
+	var repairCase struct {
+		Status string `json:"status"`
+	}
+	caseStatus := func() string {
+		t.Helper()
+		if err = json.Unmarshal(call(management, map[string]string{"action": "issue", "workspace_id": testWorkspaceID, "issue_id": f.issue}), &repairCase); err != nil {
+			t.Fatal(err)
+		}
+		return repairCase.Status
+	}
+	if caseStatus() != "running" {
+		t.Fatal("unconfirmed repair exit advanced independent verification")
+	}
+	call(management, map[string]any{"action": "finish", "claim": allocated.Claim, "payload": map[string]any{"exit_confirmed": true, "reason": "Fixture invocation spawned no provider"}})
+	if caseStatus() != "verifying" {
+		t.Fatal("prepared request did not wait for independent verification")
+	}
+	permission := call(business, map[string]any{"action": "execution-permission", "actor": map[string]string{"kind": "host", "workspaceId": testWorkspaceID, "issueId": f.issue}})
+	if string(permission) != `{"allowed":false}` {
+		t.Fatal("verification request resumed original business", string(permission))
+	}
 	cancel()
 }
 
