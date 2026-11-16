@@ -24,6 +24,7 @@ type Client struct {
 	Worker, Database string
 	Admin            bool
 	History          bool
+	SourceInspector  bool
 	mu               sync.Mutex
 }
 
@@ -37,7 +38,13 @@ func (c *Client) Call(ctx context.Context, input any) (json.RawMessage, error) {
 		return nil, err
 	}
 	args := []string{c.Worker, c.Database}
-	if c.Admin && c.History {
+	modes := 0
+	for _, enabled := range []bool{c.Admin, c.History, c.SourceInspector} {
+		if enabled {
+			modes++
+		}
+	}
+	if modes > 1 {
 		return nil, errors.New("conflicting engineering worker mode")
 	}
 	if c.Admin {
@@ -45,6 +52,9 @@ func (c *Client) Call(ctx context.Context, input any) (json.RawMessage, error) {
 	}
 	if c.History {
 		args = append(args, "--history")
+	}
+	if c.SourceInspector {
+		args = append(args, "--source-inspect")
 	}
 	cmd := exec.CommandContext(ctx, "node", args...)
 	for _, key := range []string{"PATH", "TMPDIR", "TMP", "TEMP", "LANG", "SystemRoot", "WINDIR"} {

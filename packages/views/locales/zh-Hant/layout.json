@@ -321,7 +321,12 @@
       "project_unavailable": "已對應的原生專案已無法使用。",
       "team": "Team",
       "unsaved": "有未儲存的變更",
-      "team_revision": "Team 版本 {{revision}}"
+      "team_revision": "Team 版本 {{revision}}",
+      "native_pending": "原生任務已建立，等待遷移確認。",
+      "native_withdrawn": "遷入已撤回，此任務維持停用。",
+      "native_retained": "已保留原生任務對應關係。",
+      "open_native": "開啟原生任務",
+      "native_unavailable": "原生任務已無法使用，請核對遷移對應關係。"
     }
   }
 }

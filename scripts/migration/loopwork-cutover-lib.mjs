@@ -18,14 +18,18 @@ async function authorized(client) {
   const member = await client.query("SELECT 1 FROM member WHERE workspace_id=$1 AND user_id=$2 AND role IN ('owner','admin')", [cutoverWorkspace, cutoverHuman]);
   if (member.rowCount !== 1) throw new Error("Cutover requires the reserved local human workspace owner");
 }
-async function noAdoption(client, projects) {
+async function noAdoption(client, projects, stagedCutover = null) {
   const result = await client.query(`SELECT
-    EXISTS(SELECT 1 FROM issue WHERE project_id=ANY($1::uuid[])) AS issues,
+    EXISTS(SELECT 1 FROM issue i WHERE project_id=ANY($1::uuid[]) AND NOT EXISTS(
+      SELECT 1 FROM engineering_history_adoption a WHERE a.issue_id=i.id AND a.workspace_id=$2::uuid
+      AND (a.phase='withdrawn' AND i.status='cancelled' OR a.phase='staged' AND a.cutover_id=$3::uuid))) AS issues,
     EXISTS(SELECT 1 FROM chat_session WHERE project_id=ANY($1::uuid[])) AS chats,
     EXISTS(SELECT 1 FROM project_resource WHERE project_id=ANY($1::uuid[])) AS resources,
     EXISTS(SELECT 1 FROM engineering_run_guard WHERE project_id=ANY($1::uuid[])) AS controllers,
     EXISTS(SELECT 1 FROM engineering_repair_fence WHERE project_id=ANY($1::uuid[])) AS repairs,
-    EXISTS(SELECT 1 FROM engineering_repair_handoff WHERE project_id=ANY($1::uuid[])) AS handoffs`, [projects]);
+    EXISTS(SELECT 1 FROM engineering_history_adoption a JOIN engineering_history_preparation p ON p.id=a.preparation_id
+      WHERE p.project_id=ANY($1::uuid[]) AND a.phase='staged' AND a.cutover_id IS DISTINCT FROM $3::uuid) AS staged,
+    EXISTS(SELECT 1 FROM engineering_repair_handoff WHERE project_id=ANY($1::uuid[])) AS handoffs`, [projects,cutoverWorkspace,stagedCutover]);
   if (Object.values(result.rows[0]).some(Boolean)) throw new Error("Initial cutover/rollback requires empty prepared native projects; reconcile existing adoption explicitly");
 }
 
@@ -106,7 +110,7 @@ export async function observeCutoverProcesses(client, archive, id, inspectHost) 
   return transaction(client, async () => {
     const saved = await record(client, id, true);
     if (saved.phase !== "source_frozen") throw new Error("Source process observation requires the frozen phase");
-    await noAdoption(client, saved.project_ids);
+    await noAdoption(client, saved.project_ids,id);
     const proof = await probeSourceProcesses(archive, saved.archive_hash, identity(saved), inspectHost);
     if (!proof.registered_writers_quiesced) throw new Error("Source registered writers require reconciliation");
     const observation = { cutover_id: id, scope_hash: saved.scope_hash, proof };
@@ -127,7 +131,7 @@ export async function freezeCutover(client, archive, id) {
   return transaction(client, async () => {
     const saved = await record(client, id, true);
     if (!["held", "source_frozen"].includes(saved.phase)) throw new Error("Cutover cannot freeze in this phase");
-    await noAdoption(client, saved.project_ids);
+    await noAdoption(client, saved.project_ids,id);
     const receipt = await changeSourceFence(archive, identity(saved), "freeze", async () => {
       const current = await record(client, id, true);
       if (current.phase !== saved.phase) throw new Error("Native cutover barrier changed");

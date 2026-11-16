@@ -242,6 +242,9 @@ type Handler struct {
 	EngineeringHistoryWorker interface {
 		Call(context.Context, any) (json.RawMessage, error)
 	}
+	EngineeringSourceInspector interface {
+		Call(context.Context, any) (json.RawMessage, error)
+	}
 	Queries                *db.Queries
 	ReadSelector           *dbreader.Selector
 	DB                     dbExecutor
@@ -582,6 +585,7 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 		h.EngineeringWorker = &engineering.Client{Worker: cfg.EngineeringWorkerPath, Database: cfg.EngineeringDatabasePath}
 		if cfg.LocalAuthEnabled && cfg.EngineeringHistoryArchive != "" && cfg.EngineeringHistoryHash != "" {
 			h.EngineeringHistoryWorker = &engineering.Client{Worker: cfg.EngineeringWorkerPath, Database: cfg.EngineeringHistoryArchive, History: true}
+			h.EngineeringSourceInspector = &engineering.Client{Worker: cfg.EngineeringWorkerPath, Database: cfg.EngineeringHistoryArchive, SourceInspector: true}
 		}
 		if h.TaskService != nil {
 			h.TaskService.EngineeringTeamOwnsIssue = func(ctx context.Context, issue db.Issue) (bool, error) {

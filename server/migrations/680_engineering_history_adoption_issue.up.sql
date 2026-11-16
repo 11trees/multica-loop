@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX CONCURRENTLY engineering_history_adoption_issue_idx ON engineering_history_adoption(issue_id);

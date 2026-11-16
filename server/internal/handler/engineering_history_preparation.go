@@ -225,7 +225,21 @@ func (h *Handler) GetEngineeringHistoryPreparation(w http.ResponseWriter, r *htt
 		current := index == 0 && row.PacketHash == source.Material.Hash && row.ArchiveHash == source.Source.Hash && int(row.TeamRevision) == revisions[uuidToString(row.TeamID)] && available[uuidToString(row.ProjectID)] && len(blockers) == 0
 		preparations = append(preparations, historyPreparationResponse(row, current))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"source_owner": "LoopWork", "execution_authorized": false, "source_task_id": source.Material.SourceTaskID, "packet_hash": source.Material.Hash, "archive_hash": source.Source.Hash, "mapped_project_id": mappedID, "projects": nativeProjects, "teams": choices, "blockers": blockers, "preparations": preparations})
+	adopted, err := h.Queries.ListEngineeringHistoryTaskAdoptions(ctx, db.ListEngineeringHistoryTaskAdoptionsParams{WorkspaceID: workspace, SourceNamespace: source.Namespace, SourceTaskID: source.Material.SourceTaskID})
+	if err != nil {
+		h.historyPreparationError(w, err)
+		return
+	}
+	adoptions := []map[string]any{}
+	prefix := h.getIssuePrefix(ctx, workspace)
+	for _, row := range adopted {
+		identifier := ""
+		if row.IssueNumber.Valid {
+			identifier = prefix + "-" + int32String(row.IssueNumber.Int32)
+		}
+		adoptions = append(adoptions, map[string]any{"cutover_id": uuidToString(row.CutoverID), "preparation_id": uuidToString(row.PreparationID), "issue_id": uuidToString(row.IssueID), "identifier": identifier, "phase": row.Phase, "native_available": row.IssueNumber.Valid, "execution_authorized": false})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"source_owner": "LoopWork", "execution_authorized": false, "source_task_id": source.Material.SourceTaskID, "packet_hash": source.Material.Hash, "archive_hash": source.Source.Hash, "mapped_project_id": mappedID, "projects": nativeProjects, "teams": choices, "blockers": blockers, "preparations": preparations, "adoptions": adoptions})
 }
 
 type historyPreparationRequest struct {
@@ -280,6 +294,17 @@ func (h *Handler) PrepareEngineeringHistoryTask(w http.ResponseWriter, r *http.R
 	if err = q.LockEngineeringHistoryPreparation(ctx, localWorkspaceID+":"+source.Namespace+":"+source.Material.SourceProject.ID); err != nil {
 		h.historyPreparationError(w, err)
 		return
+	}
+	adoptions, err := q.ListEngineeringHistoryTaskAdoptions(ctx, db.ListEngineeringHistoryTaskAdoptionsParams{WorkspaceID: workspace, SourceNamespace: source.Namespace, SourceTaskID: source.Material.SourceTaskID})
+	if err != nil {
+		h.historyPreparationError(w, err)
+		return
+	}
+	for _, adoption := range adoptions {
+		if adoption.Phase != "withdrawn" {
+			writeError(w, http.StatusConflict, "native migration task is already staged")
+			return
+		}
 	}
 	rows, err := q.ListEngineeringHistoryPreparations(ctx, db.ListEngineeringHistoryPreparationsParams{WorkspaceID: workspace, SourceNamespace: source.Namespace, SourceTaskID: source.Material.SourceTaskID})
 	if err != nil {

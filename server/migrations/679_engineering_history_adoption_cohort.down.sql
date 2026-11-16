@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS engineering_history_adoption_cohort_idx;

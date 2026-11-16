@@ -24,6 +24,17 @@ func (h *Handler) loadHumanEngineeringIssue(w http.ResponseWriter, r *http.Reque
 		return db.Issue{}, "", false
 	}
 	userID, ok := requireUserID(w, r)
+	if ok && r.Method != http.MethodGet {
+		held, err := h.Queries.EngineeringHistoryIssueHeld(r.Context(), issue.ID)
+		if err != nil {
+			writeError(w, http.StatusServiceUnavailable, "migration status is unavailable")
+			return db.Issue{}, "", false
+		}
+		if held {
+			writeError(w, http.StatusConflict, "migration task requires explicit activation")
+			return db.Issue{}, "", false
+		}
+	}
 	return issue, userID, ok
 }
 

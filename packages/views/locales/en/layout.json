@@ -331,7 +331,12 @@
       "project_unavailable": "The mapped native project is no longer available.",
       "team": "Team",
       "unsaved": "Unsaved changes",
-      "team_revision": "Team revision {{revision}}"
+      "team_revision": "Team revision {{revision}}",
+      "native_pending": "Native task created; migration confirmation pending.",
+      "native_withdrawn": "Migration withdrawn. This task remains inactive.",
+      "native_retained": "Native task correspondence retained.",
+      "open_native": "Open native task",
+      "native_unavailable": "The native task is unavailable; review its migration correspondence."
     }
   }
 }

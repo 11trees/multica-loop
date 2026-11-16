@@ -801,6 +801,19 @@ type DingtalkGroupRoute struct {
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 }
 
+type EngineeringHistoryAdoption struct {
+	CutoverID       pgtype.UUID        `json:"cutover_id"`
+	WorkspaceID     pgtype.UUID        `json:"workspace_id"`
+	SourceNamespace string             `json:"source_namespace"`
+	SourceTaskID    string             `json:"source_task_id"`
+	PreparationID   pgtype.UUID        `json:"preparation_id"`
+	IssueID         pgtype.UUID        `json:"issue_id"`
+	Phase           string             `json:"phase"`
+	Payload         []byte             `json:"payload"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	WithdrawnAt     pgtype.Timestamptz `json:"withdrawn_at"`
+}
+
 type EngineeringHistoryCutover struct {
 	ID              pgtype.UUID        `json:"id"`
 	WorkspaceID     pgtype.UUID        `json:"workspace_id"`

@@ -321,7 +321,12 @@
       "project_unavailable": "対応する移行先プロジェクトを利用できません。",
       "team": "Team",
       "unsaved": "未保存の変更",
-      "team_revision": "Team の版 {{revision}}"
+      "team_revision": "Team の版 {{revision}}",
+      "native_pending": "ネイティブタスクを作成しました。移行の確認待ちです。",
+      "native_withdrawn": "移行は取り消されました。このタスクは停止したままです。",
+      "native_retained": "ネイティブタスクとの対応関係を保持しています。",
+      "open_native": "ネイティブタスクを開く",
+      "native_unavailable": "ネイティブタスクを利用できません。移行の対応関係を確認してください。"
     }
   }
 }

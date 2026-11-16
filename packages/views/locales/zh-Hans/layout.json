@@ -321,7 +321,12 @@
       "project_unavailable": "已对应的原生项目已不可用。",
       "team": "Team",
       "unsaved": "有未保存更改",
-      "team_revision": "Team 版本 {{revision}}"
+      "team_revision": "Team 版本 {{revision}}",
+      "native_pending": "原生任务已创建，等待迁移确认。",
+      "native_withdrawn": "迁入已撤回，此任务保持停用。",
+      "native_retained": "已保留原生任务对应关系。",
+      "open_native": "打开原生任务",
+      "native_unavailable": "原生任务已不可用，请核对迁移对应关系。"
     }
   }
 }

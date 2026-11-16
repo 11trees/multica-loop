@@ -11,6 +11,96 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const cancelEngineeringHistoryDraft = `-- name: CancelEngineeringHistoryDraft :one
+UPDATE issue SET status='cancelled',revision=revision+1,updated_at=now(),last_activity_at=now()
+WHERE id=$1 AND workspace_id=$2 AND status='backlog' RETURNING id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at, triage_state, duplicate_of_issue_id, requester_user_id
+`
+
+type CancelEngineeringHistoryDraftParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) CancelEngineeringHistoryDraft(ctx context.Context, arg CancelEngineeringHistoryDraftParams) (Issue, error) {
+	row := q.db.QueryRow(ctx, cancelEngineeringHistoryDraft, arg.ID, arg.WorkspaceID)
+	var i Issue
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Title,
+		&i.Description,
+		&i.Status,
+		&i.Priority,
+		&i.AssigneeType,
+		&i.AssigneeID,
+		&i.CreatorType,
+		&i.CreatorID,
+		&i.ParentIssueID,
+		&i.AcceptanceCriteria,
+		&i.ContextRefs,
+		&i.Position,
+		&i.DueDate,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Number,
+		&i.ProjectID,
+		&i.OriginType,
+		&i.OriginID,
+		&i.FirstExecutedAt,
+		&i.StartDate,
+		&i.Metadata,
+		&i.Stage,
+		&i.Properties,
+		&i.Revision,
+		&i.LastActivityAt,
+		&i.TriageState,
+		&i.DuplicateOfIssueID,
+		&i.RequesterUserID,
+	)
+	return i, err
+}
+
+const createEngineeringHistoryAdoption = `-- name: CreateEngineeringHistoryAdoption :one
+INSERT INTO engineering_history_adoption(cutover_id,workspace_id,source_namespace,source_task_id,preparation_id,issue_id,payload)
+VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING cutover_id, workspace_id, source_namespace, source_task_id, preparation_id, issue_id, phase, payload, created_at, withdrawn_at
+`
+
+type CreateEngineeringHistoryAdoptionParams struct {
+	CutoverID       pgtype.UUID `json:"cutover_id"`
+	WorkspaceID     pgtype.UUID `json:"workspace_id"`
+	SourceNamespace string      `json:"source_namespace"`
+	SourceTaskID    string      `json:"source_task_id"`
+	PreparationID   pgtype.UUID `json:"preparation_id"`
+	IssueID         pgtype.UUID `json:"issue_id"`
+	Payload         []byte      `json:"payload"`
+}
+
+func (q *Queries) CreateEngineeringHistoryAdoption(ctx context.Context, arg CreateEngineeringHistoryAdoptionParams) (EngineeringHistoryAdoption, error) {
+	row := q.db.QueryRow(ctx, createEngineeringHistoryAdoption,
+		arg.CutoverID,
+		arg.WorkspaceID,
+		arg.SourceNamespace,
+		arg.SourceTaskID,
+		arg.PreparationID,
+		arg.IssueID,
+		arg.Payload,
+	)
+	var i EngineeringHistoryAdoption
+	err := row.Scan(
+		&i.CutoverID,
+		&i.WorkspaceID,
+		&i.SourceNamespace,
+		&i.SourceTaskID,
+		&i.PreparationID,
+		&i.IssueID,
+		&i.Phase,
+		&i.Payload,
+		&i.CreatedAt,
+		&i.WithdrawnAt,
+	)
+	return i, err
+}
+
 const createEngineeringHistoryPreparation = `-- name: CreateEngineeringHistoryPreparation :one
 INSERT INTO engineering_history_preparation (
     workspace_id, source_namespace, source_project_id, source_task_id, revision,
@@ -101,6 +191,17 @@ func (q *Queries) CreateEngineeringHistoryProject(ctx context.Context, arg Creat
 	return i, err
 }
 
+const engineeringHistoryIssueHeld = `-- name: EngineeringHistoryIssueHeld :one
+SELECT engineering_history_issue_held($1::uuid)::boolean AS held
+`
+
+func (q *Queries) EngineeringHistoryIssueHeld(ctx context.Context, dollar_1 pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, engineeringHistoryIssueHeld, dollar_1)
+	var held bool
+	err := row.Scan(&held)
+	return held, err
+}
+
 const engineeringHistoryProjectHeld = `-- name: EngineeringHistoryProjectHeld :one
 SELECT engineering_history_project_held($1::uuid)::boolean AS held
 `
@@ -110,6 +211,37 @@ func (q *Queries) EngineeringHistoryProjectHeld(ctx context.Context, dollar_1 pg
 	var held bool
 	err := row.Scan(&held)
 	return held, err
+}
+
+const getEngineeringHistoryPreparationByID = `-- name: GetEngineeringHistoryPreparationByID :one
+SELECT id, workspace_id, source_namespace, source_project_id, source_task_id, revision, archive_hash, packet_hash, project_id, team_id, team_revision, prepared_by, payload, created_at FROM engineering_history_preparation WHERE id=$1 AND workspace_id=$2
+`
+
+type GetEngineeringHistoryPreparationByIDParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) GetEngineeringHistoryPreparationByID(ctx context.Context, arg GetEngineeringHistoryPreparationByIDParams) (EngineeringHistoryPreparation, error) {
+	row := q.db.QueryRow(ctx, getEngineeringHistoryPreparationByID, arg.ID, arg.WorkspaceID)
+	var i EngineeringHistoryPreparation
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.SourceNamespace,
+		&i.SourceProjectID,
+		&i.SourceTaskID,
+		&i.Revision,
+		&i.ArchiveHash,
+		&i.PacketHash,
+		&i.ProjectID,
+		&i.TeamID,
+		&i.TeamRevision,
+		&i.PreparedBy,
+		&i.Payload,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const getEngineeringHistoryProject = `-- name: GetEngineeringHistoryProject :one
@@ -135,6 +267,62 @@ func (q *Queries) GetEngineeringHistoryProject(ctx context.Context, arg GetEngin
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const hasEngineeringHistoryProjectActivity = `-- name: HasEngineeringHistoryProjectActivity :one
+SELECT EXISTS(SELECT 1 FROM chat_session WHERE project_id=ANY($1::uuid[]))
+ OR EXISTS(SELECT 1 FROM project_resource WHERE project_id=ANY($1::uuid[]))
+ OR EXISTS(SELECT 1 FROM engineering_run_guard WHERE project_id=ANY($1::uuid[]))
+ OR EXISTS(SELECT 1 FROM engineering_repair_fence WHERE project_id=ANY($1::uuid[]))
+ OR EXISTS(SELECT 1 FROM engineering_repair_handoff WHERE project_id=ANY($1::uuid[]))
+ OR EXISTS(SELECT 1 FROM agent_task_queue t JOIN issue i ON i.id=t.issue_id WHERE i.project_id=ANY($1::uuid[])) AS active
+`
+
+func (q *Queries) HasEngineeringHistoryProjectActivity(ctx context.Context, projectIds []pgtype.UUID) (pgtype.Bool, error) {
+	row := q.db.QueryRow(ctx, hasEngineeringHistoryProjectActivity, projectIds)
+	var active pgtype.Bool
+	err := row.Scan(&active)
+	return active, err
+}
+
+const listEngineeringHistoryAdoptions = `-- name: ListEngineeringHistoryAdoptions :many
+SELECT cutover_id, workspace_id, source_namespace, source_task_id, preparation_id, issue_id, phase, payload, created_at, withdrawn_at FROM engineering_history_adoption WHERE cutover_id=$1 AND workspace_id=$2 ORDER BY source_task_id
+`
+
+type ListEngineeringHistoryAdoptionsParams struct {
+	CutoverID   pgtype.UUID `json:"cutover_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) ListEngineeringHistoryAdoptions(ctx context.Context, arg ListEngineeringHistoryAdoptionsParams) ([]EngineeringHistoryAdoption, error) {
+	rows, err := q.db.Query(ctx, listEngineeringHistoryAdoptions, arg.CutoverID, arg.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []EngineeringHistoryAdoption{}
+	for rows.Next() {
+		var i EngineeringHistoryAdoption
+		if err := rows.Scan(
+			&i.CutoverID,
+			&i.WorkspaceID,
+			&i.SourceNamespace,
+			&i.SourceTaskID,
+			&i.PreparationID,
+			&i.IssueID,
+			&i.Phase,
+			&i.Payload,
+			&i.CreatedAt,
+			&i.WithdrawnAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listEngineeringHistoryPreparations = `-- name: ListEngineeringHistoryPreparations :many
@@ -184,6 +372,210 @@ func (q *Queries) ListEngineeringHistoryPreparations(ctx context.Context, arg Li
 	return items, nil
 }
 
+const listEngineeringHistoryProjectIssues = `-- name: ListEngineeringHistoryProjectIssues :many
+SELECT i.id, i.workspace_id, i.title, i.description, i.status, i.priority, i.assignee_type, i.assignee_id, i.creator_type, i.creator_id, i.parent_issue_id, i.acceptance_criteria, i.context_refs, i.position, i.due_date, i.created_at, i.updated_at, i.number, i.project_id, i.origin_type, i.origin_id, i.first_executed_at, i.start_date, i.metadata, i.stage, i.properties, i.revision, i.last_activity_at, i.triage_state, i.duplicate_of_issue_id, i.requester_user_id FROM issue i WHERE i.workspace_id=$1 AND i.project_id=ANY($2::uuid[])
+AND NOT EXISTS(SELECT 1 FROM engineering_history_adoption a WHERE a.issue_id=i.id AND a.phase='withdrawn' AND i.status='cancelled') ORDER BY i.id
+`
+
+type ListEngineeringHistoryProjectIssuesParams struct {
+	WorkspaceID pgtype.UUID   `json:"workspace_id"`
+	Column2     []pgtype.UUID `json:"column_2"`
+}
+
+func (q *Queries) ListEngineeringHistoryProjectIssues(ctx context.Context, arg ListEngineeringHistoryProjectIssuesParams) ([]Issue, error) {
+	rows, err := q.db.Query(ctx, listEngineeringHistoryProjectIssues, arg.WorkspaceID, arg.Column2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Issue{}
+	for rows.Next() {
+		var i Issue
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.Title,
+			&i.Description,
+			&i.Status,
+			&i.Priority,
+			&i.AssigneeType,
+			&i.AssigneeID,
+			&i.CreatorType,
+			&i.CreatorID,
+			&i.ParentIssueID,
+			&i.AcceptanceCriteria,
+			&i.ContextRefs,
+			&i.Position,
+			&i.DueDate,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Number,
+			&i.ProjectID,
+			&i.OriginType,
+			&i.OriginID,
+			&i.FirstExecutedAt,
+			&i.StartDate,
+			&i.Metadata,
+			&i.Stage,
+			&i.Properties,
+			&i.Revision,
+			&i.LastActivityAt,
+			&i.TriageState,
+			&i.DuplicateOfIssueID,
+			&i.RequesterUserID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listEngineeringHistoryTaskAdoptions = `-- name: ListEngineeringHistoryTaskAdoptions :many
+SELECT a.cutover_id, a.workspace_id, a.source_namespace, a.source_task_id, a.preparation_id, a.issue_id, a.phase, a.payload, a.created_at, a.withdrawn_at,i.number AS issue_number,i.status AS issue_status FROM engineering_history_adoption a
+LEFT JOIN issue i ON i.id=a.issue_id AND i.workspace_id=a.workspace_id
+WHERE a.workspace_id=$1 AND a.source_namespace=$2 AND a.source_task_id=$3 ORDER BY a.created_at DESC
+`
+
+type ListEngineeringHistoryTaskAdoptionsParams struct {
+	WorkspaceID     pgtype.UUID `json:"workspace_id"`
+	SourceNamespace string      `json:"source_namespace"`
+	SourceTaskID    string      `json:"source_task_id"`
+}
+
+type ListEngineeringHistoryTaskAdoptionsRow struct {
+	CutoverID       pgtype.UUID        `json:"cutover_id"`
+	WorkspaceID     pgtype.UUID        `json:"workspace_id"`
+	SourceNamespace string             `json:"source_namespace"`
+	SourceTaskID    string             `json:"source_task_id"`
+	PreparationID   pgtype.UUID        `json:"preparation_id"`
+	IssueID         pgtype.UUID        `json:"issue_id"`
+	Phase           string             `json:"phase"`
+	Payload         []byte             `json:"payload"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	WithdrawnAt     pgtype.Timestamptz `json:"withdrawn_at"`
+	IssueNumber     pgtype.Int4        `json:"issue_number"`
+	IssueStatus     pgtype.Text        `json:"issue_status"`
+}
+
+func (q *Queries) ListEngineeringHistoryTaskAdoptions(ctx context.Context, arg ListEngineeringHistoryTaskAdoptionsParams) ([]ListEngineeringHistoryTaskAdoptionsRow, error) {
+	rows, err := q.db.Query(ctx, listEngineeringHistoryTaskAdoptions, arg.WorkspaceID, arg.SourceNamespace, arg.SourceTaskID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListEngineeringHistoryTaskAdoptionsRow{}
+	for rows.Next() {
+		var i ListEngineeringHistoryTaskAdoptionsRow
+		if err := rows.Scan(
+			&i.CutoverID,
+			&i.WorkspaceID,
+			&i.SourceNamespace,
+			&i.SourceTaskID,
+			&i.PreparationID,
+			&i.IssueID,
+			&i.Phase,
+			&i.Payload,
+			&i.CreatedAt,
+			&i.WithdrawnAt,
+			&i.IssueNumber,
+			&i.IssueStatus,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockEngineeringHistoryAdoptionProject = `-- name: LockEngineeringHistoryAdoptionProject :one
+SELECT id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, start_date, due_date, workflow_id, creator_type, creator_id, visibility FROM project WHERE id=$1 AND workspace_id=$2 FOR UPDATE
+`
+
+type LockEngineeringHistoryAdoptionProjectParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) LockEngineeringHistoryAdoptionProject(ctx context.Context, arg LockEngineeringHistoryAdoptionProjectParams) (Project, error) {
+	row := q.db.QueryRow(ctx, lockEngineeringHistoryAdoptionProject, arg.ID, arg.WorkspaceID)
+	var i Project
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Title,
+		&i.Description,
+		&i.Icon,
+		&i.Status,
+		&i.LeadType,
+		&i.LeadID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Priority,
+		&i.StartDate,
+		&i.DueDate,
+		&i.WorkflowID,
+		&i.CreatorType,
+		&i.CreatorID,
+		&i.Visibility,
+	)
+	return i, err
+}
+
+const lockEngineeringHistoryCutover = `-- name: LockEngineeringHistoryCutover :one
+SELECT id, workspace_id, source_namespace, archive_hash, scope_hash, project_ids, phase, prepared_by, payload, receipt, created_at, updated_at FROM engineering_history_cutover WHERE id=$1 AND workspace_id=$2 FOR UPDATE
+`
+
+type LockEngineeringHistoryCutoverParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) LockEngineeringHistoryCutover(ctx context.Context, arg LockEngineeringHistoryCutoverParams) (EngineeringHistoryCutover, error) {
+	row := q.db.QueryRow(ctx, lockEngineeringHistoryCutover, arg.ID, arg.WorkspaceID)
+	var i EngineeringHistoryCutover
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.SourceNamespace,
+		&i.ArchiveHash,
+		&i.ScopeHash,
+		&i.ProjectIds,
+		&i.Phase,
+		&i.PreparedBy,
+		&i.Payload,
+		&i.Receipt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const lockEngineeringHistoryIssueSnapshot = `-- name: LockEngineeringHistoryIssueSnapshot :one
+SELECT ((to_jsonb(i)-'created_at'-'updated_at'-'last_activity_at') || jsonb_build_object(
+    'created_at_epoch',extract(epoch FROM i.created_at),'updated_at_epoch',extract(epoch FROM i.updated_at),
+    'last_activity_at_epoch',extract(epoch FROM i.last_activity_at)))::jsonb AS snapshot
+FROM issue i WHERE id=$1 AND workspace_id=$2 FOR UPDATE
+`
+
+type LockEngineeringHistoryIssueSnapshotParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) LockEngineeringHistoryIssueSnapshot(ctx context.Context, arg LockEngineeringHistoryIssueSnapshotParams) ([]byte, error) {
+	row := q.db.QueryRow(ctx, lockEngineeringHistoryIssueSnapshot, arg.ID, arg.WorkspaceID)
+	var snapshot []byte
+	err := row.Scan(&snapshot)
+	return snapshot, err
+}
+
 const lockEngineeringHistoryPreparation = `-- name: LockEngineeringHistoryPreparation :exec
 SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))
 `
@@ -223,6 +615,35 @@ func (q *Queries) LockEngineeringHistoryTargetProject(ctx context.Context, arg L
 		&i.CreatorType,
 		&i.CreatorID,
 		&i.Visibility,
+	)
+	return i, err
+}
+
+const withdrawEngineeringHistoryAdoption = `-- name: WithdrawEngineeringHistoryAdoption :one
+UPDATE engineering_history_adoption SET phase='withdrawn',withdrawn_at=now()
+WHERE cutover_id=$1 AND workspace_id=$2 AND source_task_id=$3 AND phase='staged' RETURNING cutover_id, workspace_id, source_namespace, source_task_id, preparation_id, issue_id, phase, payload, created_at, withdrawn_at
+`
+
+type WithdrawEngineeringHistoryAdoptionParams struct {
+	CutoverID    pgtype.UUID `json:"cutover_id"`
+	WorkspaceID  pgtype.UUID `json:"workspace_id"`
+	SourceTaskID string      `json:"source_task_id"`
+}
+
+func (q *Queries) WithdrawEngineeringHistoryAdoption(ctx context.Context, arg WithdrawEngineeringHistoryAdoptionParams) (EngineeringHistoryAdoption, error) {
+	row := q.db.QueryRow(ctx, withdrawEngineeringHistoryAdoption, arg.CutoverID, arg.WorkspaceID, arg.SourceTaskID)
+	var i EngineeringHistoryAdoption
+	err := row.Scan(
+		&i.CutoverID,
+		&i.WorkspaceID,
+		&i.SourceNamespace,
+		&i.SourceTaskID,
+		&i.PreparationID,
+		&i.IssueID,
+		&i.Phase,
+		&i.Payload,
+		&i.CreatedAt,
+		&i.WithdrawnAt,
 	)
 	return i, err
 }

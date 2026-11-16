@@ -331,7 +331,12 @@
       "project_unavailable": "Le projet cible associé n’est plus disponible.",
       "team": "Team",
       "unsaved": "Modifications non enregistrées",
-      "team_revision": "Révision de Team {{revision}}"
+      "team_revision": "Révision de Team {{revision}}",
+      "native_pending": "Tâche native créée ; confirmation de migration en attente.",
+      "native_withdrawn": "Migration retirée. Cette tâche reste inactive.",
+      "native_retained": "Correspondance avec la tâche native conservée.",
+      "open_native": "Ouvrir la tâche native",
+      "native_unavailable": "La tâche native est indisponible ; vérifiez sa correspondance de migration."
     }
   }
 }

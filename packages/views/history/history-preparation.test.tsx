@@ -3,6 +3,8 @@ import {QueryClient,QueryClientProvider} from "@tanstack/react-query";
 import {fireEvent,screen,waitFor} from "@testing-library/react";
 import {renderWithI18n} from "../test/i18n";
 import {HistoryPreparation} from "./history-preparation";
+import {WorkspaceSlugProvider} from "@multica/core/paths";
+import {NavigationProvider} from "../navigation";
 const mocks=vi.hoisted(()=>({historyPreparation:vi.fn(),prepareHistoryTask:vi.fn()}));
 vi.mock("@multica/core/api",()=>({api:mocks}));
 const base={sourceOwner:"LoopWork",executionAuthorized:false,sourceTaskId:"source-task",packetHash:"b".repeat(64),archiveHash:"a".repeat(64),mappedProjectId:"",projects:[],teams:[{id:"team",name:"Development Team",revision:1,workflow:"develop"}],blockers:[],preparations:[]};
@@ -21,4 +23,10 @@ it("keeps a rejected save unsaved and refreshes the current Team version before 
 it("does not prepare deleted projects or a different frozen material version",async()=>{
  mocks.historyPreparation.mockResolvedValue({...base,blockers:['source_project_deleted']});const view=mount();expect(await screen.findByText(/source project was deleted/)).toBeInTheDocument();expect(screen.queryByRole('button',{name:'Save preparation'})).not.toBeInTheDocument();view.unmount();
  mocks.historyPreparation.mockResolvedValue(base);mount('c'.repeat(64));expect(await screen.findByRole('alert')).toBeInTheDocument();expect(screen.getByRole('button',{name:'Save preparation'})).toBeDisabled();expect(mocks.prepareHistoryTask).not.toHaveBeenCalled();
+});
+
+it("links a staged native Team task and keeps the frozen preparation read-only",async()=>{
+ mocks.historyPreparation.mockResolvedValue({...base,adoptions:[{cutoverId:"cutover",issueId:"native-task",identifier:"LOOP-9",phase:"staged",nativeAvailable:true,executionAuthorized:false}]});
+ renderWithI18n(<WorkspaceSlugProvider slug="test"><NavigationProvider value={{push:vi.fn(),replace:vi.fn(),back:vi.fn(),pathname:"/test/history",searchParams:new URLSearchParams(),hash:"",getShareableUrl:path=>path}}><QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><HistoryPreparation wsId="workspace" userId="owner" taskId="source-task" packetHash={base.packetHash}/></QueryClientProvider></NavigationProvider></WorkspaceSlugProvider>);
+ expect(await screen.findByRole("link",{name:"LOOP-9"})).toHaveAttribute("href","/test/issues/native-task");expect(screen.getByText(/migration confirmation pending/)).toBeInTheDocument();expect(screen.queryByRole("button",{name:"Save preparation"})).not.toBeInTheDocument();expect(screen.queryByLabelText("Team")).not.toBeInTheDocument();expect(mocks.prepareHistoryTask).not.toHaveBeenCalled();
 });

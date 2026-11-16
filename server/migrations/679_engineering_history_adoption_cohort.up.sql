@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX CONCURRENTLY engineering_history_adoption_cohort_idx ON engineering_history_adoption(cutover_id,source_task_id);

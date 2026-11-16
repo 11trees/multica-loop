@@ -411,6 +411,66 @@ Do not capture the frozen databases as a replacement source archive. If returnin
 to LoopWork before adoption, use `rollback` with this same ID; a subsequent new
 cutover needs a fresh capture and preparations.
 
+## Native Team task staging
+
+The reserved local human can now stage the frozen cohort as native backlog tasks:
+
+```sh
+make env-exec ARGS="-- node scripts/migration/loopwork-cutover.mjs stage --id SAVED_CUTOVER_UUID"
+```
+
+The operator authenticates to the local API and supplies only the immutable
+cutover scope hash. The endpoint accepts no task Agent, runtime, source path,
+replacement packet or Team override. The API locks the cutover and native scope,
+uses a separate readonly source-inspection worker for fresh frozen-cohort and
+local registered-writer checks, revalidates every saved preparation/material and
+Team version, then creates the entire cohort in one PostgreSQL transaction.
+Native numbering, quota and ordering rules apply. All tasks remain in Backlog
+with a Squad/Team assignee; no leadership evaluation or Agent task is enqueued.
+Publication follows the commit. Concurrent/lost-acknowledgement retries reuse
+the same issue IDs and numbers; committed staging acknowledgements do not need
+a fresh source observation and never overwrite human edits.
+
+Original titles, description text and source states remain available. Imported
+descriptions render as literal text so old image/file references cannot be loaded
+automatically; a native task links back to the original history/material page.
+Old completion, evidence, question answers and reading records remain historical
+material, not native workflow authority. The historical material page links to
+the native task and makes the staged preparation readonly. Web and Desktop use
+the same shared component, workspace paths and API schema.
+
+Queue insertion/claim, human engineering writes and transitions into ordinary
+execution/Done statuses are held by the migration correspondence as well as the
+project hold. This step creates visible tasks; it does not activate a workflow,
+bind a runtime or reconcile the existing library working directory.
+
+Before execution, a staged cohort can be withdrawn:
+
+```sh
+make env-exec ARGS="-- node scripts/migration/loopwork-cutover.mjs withdraw --id SAVED_CUTOVER_UUID"
+make env-exec ARGS="-- node scripts/migration/loopwork-cutover.mjs rollback --id SAVED_CUTOVER_UUID"
+```
+
+Withdrawal compares the complete initial native task snapshots and refuses
+modified/missing tasks, native resources/execution or configured business work.
+It atomically marks only the untouched cohort withdrawn and cancels its native
+drafts; it deletes no task or source material. Those cancelled tasks retain
+permanent execution/reopening guards even after the source project hold is
+rolled back. Source unfreezing remains a separate verified operation and rejects
+live staging correspondence, including missing staged issues. A later fresh
+cutover can retain old cancelled history while creating its new generation.
+
+Controlled PostgreSQL/SQLite tests cover complete cohort creation, stale or
+blocked source/Team refusal, concurrent acknowledgement retries, withdrawal,
+human-edit preservation, and permanent post-rollback guards. Browser fixture
+walkthroughs cover workspace-correct native links, readonly staged preparation,
+downloaded original material and no remote image requests. These screenshots
+contain fixture data only:
+
+![Staged native task link](assets/history-native-task.png)
+
+![Staged native task link on a narrow screen](assets/history-native-task-narrow.png)
+
 ## Remaining cutover work
 
 1. Reconcile and activate the saved source-task/project/Team preparations into

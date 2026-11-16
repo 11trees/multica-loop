@@ -2,7 +2,7 @@
 import {afterEach,expect,it,vi} from "vitest";
 import {ApiClient} from "../api/client";
 import {historyKeys} from "./queries";
-import {HistoryPacketSchema,historyPacketTables,HistoryPreparationSchema} from "./schema";
+import {HistoryPacketSchema,historyPacketTables,HistoryPreparationSchema,HistoryAdoptionSchema} from "./schema";
 const source={hash:"a".repeat(64),commit:"original-source",captured_at:"2026-11-17T00:00:00Z",name:"LoopWork"};
 afterEach(()=>vi.unstubAllGlobals());
 it("pins request workspace, encodes original non-UUID IDs and rejects an unproven historical response",async()=>{
@@ -31,4 +31,11 @@ it("validates frozen material coverage and source ownership before exposing a pa
   {...packet,hash:'bad'}, {...packet,source:{...source,hash:'c'.repeat(64)}}, {...packet,ownership:{...packet.ownership,native_execution_authorized:true}}, {...packet,schema_complete:false}, {...packet,sections:[{...packet.sections[0],rows:[{revision:'missing original statement'}]},...packet.sections.slice(1)]}, {...packet,sections:[{...packet.sections[0],status:'unavailable'},...packet.sections.slice(1)]}, {...packet,sections:[packet.sections[0],packet.sections[0],...packet.sections.slice(2)]}, {...packet,sections:packet.sections.slice(1)},
  ])expect(HistoryPacketSchema.safeParse({...body,packet:invalid}).success).toBe(false);
  fetch.mockResolvedValue(new Response(JSON.stringify({...body,packet:{...packet,source_task_id:'other-task'}}),{status:200}));await expect(client.historyPacket('workspace','original/task')).rejects.toThrow(/Invalid historical packet/);
+});
+
+it("keeps native task correspondence inert and accepts older history responses without correspondence",()=>{
+ const uuid="11111111-1111-4111-8111-111111111111",row={cutover_id:uuid,preparation_id:uuid,issue_id:uuid,identifier:"LOOP-9",phase:"staged",native_available:true,execution_authorized:false};
+ expect(HistoryAdoptionSchema.parse(row)).toMatchObject({issueId:uuid,phase:"staged",nativeAvailable:true,executionAuthorized:false});
+ expect(HistoryAdoptionSchema.parse({...row,phase:"future"}).phase).toBe("unknown");
+ for(const bad of [{...row,execution_authorized:true},{...row,issue_id:"unscoped"}])expect(HistoryAdoptionSchema.safeParse(bad).success).toBe(false);
 });

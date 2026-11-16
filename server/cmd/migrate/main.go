@@ -140,6 +140,9 @@ var pgBigmOperatorClass = extensionOperatorClass{
 // they are still pending: a fresh self-hosted install, which is exactly where an
 // interrupted build would otherwise leave a permanently unusable index.
 var concurrentIndexCleanups = map[string]string{
+	"679_engineering_history_adoption_cohort":                   "engineering_history_adoption_cohort_idx",
+	"680_engineering_history_adoption_issue":                    "engineering_history_adoption_issue_idx",
+	"681_engineering_history_adoption_source":                   "engineering_history_adoption_source_idx",
 	"676_engineering_history_cutover_id":                        "engineering_history_cutover_id_idx",
 	"677_engineering_history_cutover_scope":                     "engineering_history_cutover_scope_idx",
 	"674_engineering_project_execution_live":                    "engineering_project_execution_live_idx",

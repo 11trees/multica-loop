@@ -49,7 +49,7 @@ export async function cutoverFixture(t) {
       business.exec(`CREATE TABLE "${section.table}"(${section.missing_columns.map((column, index) => `"${column}" TEXT${index ? "" : " PRIMARY KEY"}`).join(",")})`);
     } else for (const column of section.missing_columns) business.exec(`ALTER TABLE "${section.table}" ADD COLUMN "${column}" TEXT`);
   }
-  t.after(async () => { for (const db of Object.values(dbs)) db.close(); await rm(root, { recursive: true, force: true }); });
+  t.after(async () => { for (const db of Object.values(dbs)) if(db.isOpen)db.close(); await rm(root, { recursive: true, force: true }); });
   const capture = await createArchive({ sourceRoot, dataRoot, output: archive });
   return { root, sourceRoot, dataRoot, archive, hash: capture.hash, dbs, business, app, admin };
 }

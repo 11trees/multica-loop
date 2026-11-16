@@ -331,7 +331,12 @@
       "project_unavailable": "El proyecto de destino asociado ya no está disponible.",
       "team": "Team",
       "unsaved": "Cambios sin guardar",
-      "team_revision": "Revisión del Team {{revision}}"
+      "team_revision": "Revisión del Team {{revision}}",
+      "native_pending": "Tarea nativa creada; pendiente de confirmar la migración.",
+      "native_withdrawn": "Migración retirada. Esta tarea sigue inactiva.",
+      "native_retained": "Se conserva la correspondencia con la tarea nativa.",
+      "open_native": "Abrir tarea nativa",
+      "native_unavailable": "La tarea nativa no está disponible; revisa su correspondencia de migración."
     }
   }
 }
