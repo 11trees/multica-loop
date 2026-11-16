@@ -85,11 +85,17 @@ func addAdminHostFlags(cmd *cobra.Command) {
 
 func init() {
 	admin := &cobra.Command{Use: "admin", Short: "Use this investigation's private command protocol"}
-	for _, action := range []string{"status", "history", "evidence", "submit", "workspace-takeover"} {
+	for _, action := range []string{"status", "history", "evidence", "submit", "workspace-takeover", "workspace-write", "workspace-candidate"} {
 		action := action
 		cmd := &cobra.Command{Use: action, Args: exactArgs(0), RunE: func(cmd *cobra.Command, _ []string) error {
 			payload := map[string]any{"action": action}
 			switch action {
+			case "workspace-write":
+				reason, _ := cmd.Flags().GetString("reason")
+				payload["reason"] = reason
+			case "workspace-candidate":
+				key, _ := cmd.Flags().GetString("key")
+				payload["key"] = key
 			case "workspace-takeover":
 				for _, key := range []string{"observation-id", "reason"} {
 					value, _ := cmd.Flags().GetString(key)
@@ -139,6 +145,10 @@ func init() {
 			return err
 		}}
 		switch action {
+		case "workspace-write":
+			cmd.Flags().String("reason", "", "Reason to authorize writes in the host-owned original project")
+		case "workspace-candidate":
+			cmd.Flags().String("key", "", "Stable immutable candidate key (1 to 80 ASCII letters, digits, dot, colon, underscore or hyphen)")
 		case "workspace-takeover":
 			cmd.Flags().String("observation-id", "", "Original business observation from this Case")
 			cmd.Flags().String("reason", "", "Reason for scoped workspace takeover")
@@ -255,6 +265,7 @@ func init() {
 		executor := &adminrunner.Runner{Client: client, Multica: binary, Root: root}
 		h := &handler.Handler{EngineeringTakeoverControl: &engineering.LocalControlClient{Socket: client.Database[:len(client.Database)-len(".admin.sqlite")] + ".control.sock"}, Queries: db.New(pool), EngineeringWorker: &engineering.Client{Worker: client.Worker, Database: client.Database[:len(client.Database)-len(".admin.sqlite")]}, EngineeringAdminWorker: client, EngineeringAdminExecutor: executor}
 		executor.PrepareVerification = h.PrepareEngineeringRepairVerification
+		executor.RepairWorkspace = h.PrepareEngineeringRepairWorkspace
 		executor.VerifyScope = h.ValidateEngineeringIndependentVerification
 		h.RunEngineeringAdmin(ctx)
 		return nil

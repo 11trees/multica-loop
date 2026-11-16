@@ -17,7 +17,7 @@ function observation(id:string,chain="verification") {
  const snapshot=chain==="direct" ? {direct:{input:"Original task with full materials"}} : {contract:{sources:[{key:"acceptance",kind:"acceptance",oracle:"Observe the original user-visible entry"},{key:"guardrail",kind:"guardrail",oracle:"Retain the original restrictions"}]},executedInput:{doNotDiscard:"Original dependency and execution facts"}};
  return {observationId:id,workspaceId,issueId,scope:"work-item",scopeKey:"same-native-source",fingerprint:id,sourceVersion:"original-runtime",summary:"Original failure",origin:"business",evidence:{original:{observationId:id,workspaceId,issueId,chain,snapshotHash:"original-snapshot",receiptHash:"original-receipt",attemptId:"native:123",snapshot}}};
 }
-function setup() {
+function setup(authorize=true) {
  const authority=store.acquireSupervisor("host",30000,true)!, originals=[observation("first"),observation("second","direct")];
  const repair=store.observe(authority,originals[0]);store.observe(authority,originals[1]);
  store.execution.configure({expected_revision:0,configuration:{provider:"codex",executablePath:"/fixture/never-launched"}});
@@ -28,8 +28,10 @@ function setup() {
  store.execution.inspectTakeover(claim,{observation_id:"first",snapshot_hash:"original-snapshot",source_attempt_id:"native:123",project_id:randomUUID(),runtime_id:randomUUID(),registered_repository_path:"/fixture/root",execution_repository_path:"/fixture/removed-worktree",mode:"worktree",receipt_hash:"original-receipt",code_version:"original-code",kernel_version:"original-kernel",host_version:"original-host"});
  const progress={phase:"owned",cancelled:1,unfinished_controllers:0,unknown_tasks:0,targets_hash:"c".repeat(64),workspace_root:"/fixture/root",workspace_version:version,source_attempt_id:"native:123",snapshot_hash:"original-snapshot"};
  store.execution.recordTakeoverProgress(claim,progress);
+ store.execution.bind(claim,{pid:41,marker:"repair-fixture-birth",group_id:41});
+ if(authorize){store.execution.authorizeRepairWrite(claim,"Repair the original project");store.execution.recordRepairCandidate(claim,"actual");}
  command({action:"evidence",key:"actual-change",kind:"change",payload:{observation:"Candidate change was inspected"}});
- const result={outcome:"verification-requested",summary:"Request separate original-contract checks",repairVersion:version,originalObservationIds:["second","first"],repairEvidenceKeys:["actual-change"],verification:{reproductionCommand:"REPAIRER_PROPOSED_COMMAND",versionCheckCommand:"REPAIRER_PROPOSED_VERSION",acceptanceChecks:[{targetRef:"invented-replacement",command:"REPAIRER_PROPOSED_ACCEPTANCE",expected:"Do not inherit this oracle"}]}};
+ const result={outcome:"verification-requested",summary:"Request separate original-contract checks",repairVersion:version,originalObservationIds:["second","first"],repairEvidenceKeys:["actual-change","native-candidate/actual"],verification:{reproductionCommand:"REPAIRER_PROPOSED_COMMAND",versionCheckCommand:"REPAIRER_PROPOSED_VERSION",acceptanceChecks:[{targetRef:"invented-replacement",command:"REPAIRER_PROPOSED_ACCEPTANCE",expected:"Do not inherit this oracle"}]}};
  return {authority,repair,claim,command,progress,result,originals};
 }
 it("freezes every original target from host facts, excludes repairer checks, and waits for actual exit before handing off",()=>{
@@ -95,7 +97,7 @@ it("does not replace an already frozen input when its cohort changes or authorit
  const h=setup();h.command({action:"submit",result:h.result});store.execution.prepareVerification(h.claim);
  const frozen=store.execution.verificationInput(h.claim.attemptId);
  store.execution.recordTakeoverProgress(h.claim,{...h.progress,targets_hash:"e".repeat(64)});
- expect(()=>store.execution.prepareVerification(h.claim)).toThrow(/cannot be replaced/);
+ expect(()=>store.execution.prepareVerification(h.claim)).toThrow(/authorized cohort|cannot be replaced/);
  store.execution.setIntent({intent:"stopped",request_id:"stop"});
  expect(()=>store.execution.prepareVerification(h.claim)).toThrow(/identity, intent or generation/);
  expect(store.execution.verificationInput(h.claim.attemptId)).toEqual(frozen);
@@ -239,4 +241,47 @@ it("rechecks the complete saved receipt against actual journal facts before mark
  const changed={...receipt,checks:receipt.checks.map((check,index)=>index===0?{...check,result:{...check.result!,stdout:"fabricated retained version"}}:check)};
  const db=new DatabaseSync(filename);db.prepare("UPDATE admin_verification_receipt SET payload=? WHERE attempt_id=?").run(JSON.stringify(changed),claim.attemptId);db.close();
  store.execution.finish(claim,{exit_confirmed:true,reason:"Actual worker exited"});expect(store.issue(workspaceId,issueId).status).toBe("queued");
+});
+
+it("requires a host write grant and native candidate evidence before accepting verification",()=>{
+ const h=setup(false);
+ expect(h.command({action:"workspace-write",reason:"Repair the original project"})).toEqual({host_required:true});
+ expect(store.execution.repairWrite(h.claim.attemptId)).toBeNull();
+ expect(()=>store.execution.recordRepairCandidate(h.claim,"actual")).toThrow(/write authorization/);
+ expect(()=>h.command({action:"evidence",key:"native-candidate/actual",kind:"change",payload:{forged:true}})).toThrow(/reserved/);
+ expect(()=>h.command({action:"submit",result:{...h.result,repairEvidenceKeys:["actual-change"]}})).toThrow(/native repair candidate/);
+ const grant=store.execution.authorizeRepairWrite(h.claim,"Repair the original project");
+ expect(grant.body).toMatchObject({pid:41,baselineVersion:version,workspaceRoot:"/fixture/root",originalObservationIds:["first","second"]});
+ const candidate=store.execution.recordRepairCandidate(h.claim,"actual");
+ expect(candidate.body).toMatchObject({grantHash:grant.hash,evidenceKey:"native-candidate/actual",version});
+ expect(h.command({action:"submit",result:h.result})).toMatchObject({submitted:true});
+ expect(()=>store.execution.recordRepairCandidate(h.claim,"later")).toThrow(/before submission/);
+ store.execution.prepareVerification(h.claim);
+ expect(store.execution.verificationInput(h.claim.attemptId)?.nativeCandidateHash).toBe(candidate.hash);
+});
+it("retains the original write baseline and immutable candidate keys across real version updates",()=>{
+ const h=setup(),grant=store.execution.repairWrite(h.claim.attemptId),nextVersion=version.replaceAll("b","d");
+ store.execution.recordTakeoverProgress(h.claim,{...h.progress,workspace_version:nextVersion});
+ expect(store.execution.authorizeRepairWrite(h.claim,"Repair the original project")).toEqual(grant);
+ expect(()=>store.execution.authorizeRepairWrite(h.claim,"Replace reason")).toThrow(/reason cannot be replaced/);
+ expect(()=>store.execution.recordRepairCandidate(h.claim,"actual")).toThrow(/key cannot be replaced/);
+ const next=store.execution.recordRepairCandidate(h.claim,"next");
+ expect(next.body.version).toBe(nextVersion);expect(store.execution.recordRepairCandidate(h.claim,"next")).toEqual(next);
+ expect(()=>h.command({action:"submit",result:{...h.result,repairVersion:nextVersion}})).toThrow(/native repair candidate/);
+ expect(h.command({action:"submit",result:{...h.result,repairVersion:nextVersion,repairEvidenceKeys:[next.body.evidenceKey]}})).toMatchObject({submitted:true});
+ expect(store.execution.repairWrite(h.claim.attemptId)).toEqual(grant);
+});
+it("does not inherit write permission across changed cohorts, originals or stopped intent",()=>{
+ const h=setup();store.execution.recordTakeoverProgress(h.claim,{...h.progress,targets_hash:"e".repeat(64)});
+ expect(()=>store.execution.recordRepairCandidate(h.claim,"changed-cohort")).toThrow(/authorization changed/);
+ store.execution.recordTakeoverProgress(h.claim,h.progress);store.observe(h.authority,observation("new-original"));
+ expect(()=>store.execution.authorizeRepairWrite(h.claim,"Repair the original project")).toThrow(/authorization changed/);
+ store.execution.setIntent({intent:"stopped",request_id:"stop-writes"});
+ expect(()=>store.execution.recordRepairCandidate(h.claim,"after-stop")).toThrow(/identity, intent or generation/);
+ expect(store.execution.repairCandidates(h.claim.attemptId)).toHaveLength(1);
+});
+it("rejects changed native candidate identity when reading a frozen verification input",()=>{
+ const h=setup();h.command({action:"submit",result:h.result});store.execution.prepareVerification(h.claim);
+ const db=new DatabaseSync(filename),row=db.prepare("SELECT payload FROM admin_repair_candidate").get()!,candidate=JSON.parse(String(row.payload));candidate.body.version=version.replaceAll("b","d");db.prepare("UPDATE admin_repair_candidate SET payload=?").run(JSON.stringify(candidate));db.close();
+ expect(()=>store.execution.verificationInput(h.claim.attemptId)).toThrow(/candidate receipt changed/);
 });

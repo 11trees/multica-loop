@@ -18,6 +18,10 @@ func (r *Runner) command(ctx context.Context, claim claim, payload json.RawMessa
 	if err := json.Unmarshal(payload, &request); err != nil {
 		return nil, err
 	}
+	workspace := request.Action == "workspace-write" || request.Action == "workspace-candidate"
+	if workspace && r.RepairWorkspace == nil {
+		return nil, fmt.Errorf("native repair workspace control is unavailable")
+	}
 	verification := request.Action == "submit" && request.Result.Outcome == "verification-requested"
 	if verification && r.PrepareVerification == nil {
 		return nil, fmt.Errorf("independent verification preparation is unavailable")
@@ -25,6 +29,13 @@ func (r *Runner) command(ctx context.Context, claim claim, payload json.RawMessa
 	result, err := r.Client.Call(ctx, map[string]any{"action": "command", "claim": claim, "payload": payload})
 	if err != nil {
 		return nil, err
+	}
+	if workspace {
+		identity, marshalErr := json.Marshal(claim)
+		if marshalErr != nil {
+			return nil, marshalErr
+		}
+		return r.RepairWorkspace(ctx, identity, payload)
 	}
 	if verification {
 		identity, err := json.Marshal(claim)

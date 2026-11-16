@@ -66,27 +66,29 @@ func TestVerificationArtifactsRetainCompleteTreeAndRejectLinks(t *testing.T) {
 	}
 }
 func TestRunnerStopCancelsOnlyDurableNeverLaunchedWaitingTests(t *testing.T) {
-	for _, status := range []string{"waiting", "launching"} {
-		t.Run(status, func(t *testing.T) {
-			calls := 0
-			r := &Runner{Client: verificationTestRPC{call: func(input any) (json.RawMessage, error) {
-				body := input.(map[string]any)
-				if body["action"] == "state" {
-					return json.Marshal(map[string]any{"control": map[string]any{"owner_id": "current", "fencing_token": 7}, "active": []any{map[string]any{"role": "verification", "status": status, "attemptId": "waiting-original"}}})
+	for _, role := range []string{"verification", "verification-execution"} {
+		for _, status := range []string{"waiting", "launching"} {
+			t.Run(role+"/"+status, func(t *testing.T) {
+				calls := 0
+				r := &Runner{Client: verificationTestRPC{call: func(input any) (json.RawMessage, error) {
+					body := input.(map[string]any)
+					if body["action"] == "state" {
+						return json.Marshal(map[string]any{"control": map[string]any{"owner_id": "current", "fencing_token": 7}, "active": []any{map[string]any{"role": role, "status": status, "attemptId": "waiting-original"}}})
+					}
+					if body["action"] != "verification-wait-cancel" || body["attempt_id"] != "waiting-original" || body["authority"].(authority).Token != 7 {
+						t.Fatal("unexpected waiting cancellation")
+					}
+					calls++
+					return json.RawMessage(`{"cancelled":true}`), nil
+				}}}
+				confirmed := r.Stop(context.Background())
+				if status == "waiting" && (!confirmed || calls != 1) {
+					t.Fatal("known never-launched Test held an unknown process barrier")
 				}
-				if body["action"] != "verification-wait-cancel" || body["attempt_id"] != "waiting-original" || body["authority"].(authority).Token != 7 {
-					t.Fatal("unexpected waiting cancellation")
+				if status == "launching" && (confirmed || calls != 0) {
+					t.Fatal("unknown launched identity was treated as no-spawn")
 				}
-				calls++
-				return json.RawMessage(`{"cancelled":true}`), nil
-			}}}
-			confirmed := r.Stop(context.Background())
-			if status == "waiting" && (!confirmed || calls != 1) {
-				t.Fatal("known never-launched Test held an unknown process barrier")
-			}
-			if status == "launching" && (confirmed || calls != 0) {
-				t.Fatal("unknown launched identity was treated as no-spawn")
-			}
-		})
+			})
+		}
 	}
 }

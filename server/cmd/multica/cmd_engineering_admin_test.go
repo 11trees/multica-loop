@@ -82,6 +82,27 @@ func TestEngineeringAdminPrivateCommandUsesInvocationSocketWithoutHumanProfile(t
 	if payload["action"] != "workspace-takeover" || payload["observation_id"] != "original-observation" || payload["reason"] != "Recover original workspace" || len(payload) != 3 {
 		t.Fatalf("Takeover identity was not host-projected: %v", payload)
 	}
+	for _, fixture := range []struct{ action, flag, value string }{{"workspace-write", "reason", "Repair original source"}, {"workspace-candidate", "key", "actual"}} {
+		command, _, findErr := engineeringCmd.Find([]string{"admin", fixture.action})
+		if findErr != nil {
+			t.Fatal(findErr)
+		}
+		command.SetContext(context.Background())
+		command.SetOut(&output)
+		if err = command.Flags().Set(fixture.flag, fixture.value); err != nil {
+			t.Fatal(err)
+		}
+		err = command.RunE(command, nil)
+		_ = command.Flags().Set(fixture.flag, "")
+		command.SetOut(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		payload = <-received
+		if payload["action"] != fixture.action || payload[fixture.flag] != fixture.value || len(payload) != 2 {
+			t.Fatal("workspace command accepted caller scope or changed private payload", payload)
+		}
+	}
 	t.Setenv("MULTICA_ADMIN_TOKEN", "")
 	if _, err = callAdminCommand(context.Background(), map[string]any{"action": "status"}); err == nil {
 		t.Fatal("Human credential was allowed as an invocation fallback")

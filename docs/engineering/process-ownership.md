@@ -4,8 +4,10 @@ LoopWork's repair takeover drains workspace writers before granting an owned
 repair anchor (`repair-takeover.ts` and `execution-processes.ts`). Native task
 termination, cancellation and slot availability do not establish that fact. The
 native ownership journal and project admission guards supply prerequisites;
-Recorded Codex takeover draining is connected; controlled repair writes and actual
-independent check execution remain unconnected. Separate [Test preparation](repair-verification.md) is connected.
+recorded Codex takeover draining is connected. Separate [write grants and
+candidate capture](repair-workspace.md), [Test preparation and native independent
+checks](repair-verification.md) build on these prerequisites without releasing
+the business fence.
 
 ## Task preparation and cleanup
 
@@ -136,7 +138,7 @@ bindings even if cleanup removed the directory; it neither recreates the path
 nor proves it still exists. The Go takeover coordinator must additionally verify
 the native task dispatch claim, project/resource mapping, source-version
 authority and current management lease before acquiring a fence, and revalidate
-after draining. The independent host now inspects durable Admin requests against the native dispatch claim and project/runtime directory mapping. The private API now acquires and commits the draining fence before native cancellation. Recorded local Codex draining is connected; controlled repair write access remains incomplete. Observation delivery still
+after draining. The independent host now inspects durable Admin requests against the native dispatch claim and project/runtime directory mapping. The private API now acquires and commits the draining fence before native cancellation. Recorded local Codex draining is connected; separate host write grants and candidate capture now use this owned cohort. Observation delivery still
 preserves historical faults even when their native claim is no longer current;
 historical evidence alone cannot authorize a new repair.
 
@@ -150,8 +152,8 @@ without reconstructing the old directory; an absent registered root holds the
 fence. The private Unix transport test uses the bundled business and management
 workers, observes durable draining progress, submits the control-plane final
 no-spawn receipt, and observes the same inventory become owned. These fixtures
-never resolve an installed provider or inspect an account. They do not accept
-repair writes, independent repair verification or historical cutover.
+never resolve an installed provider or inspect an account. They do not establish historical cutover. Scoped write/candidate and independent
+verification acceptance are documented in their own controlled test boundaries.
 
 ### Repair content identity
 

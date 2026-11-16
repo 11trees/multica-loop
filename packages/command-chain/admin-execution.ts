@@ -23,6 +23,13 @@ export type AdminClaim = z.infer<typeof adminClaimSchema>;
 const takeoverInspectionSchema=z.strictObject({observation_id:text,snapshot_hash:text,source_attempt_id:text,project_id:z.uuid(),runtime_id:z.uuid(),registered_repository_path:text,execution_repository_path:text,mode:z.enum(["in_place","worktree"]),receipt_hash:text,code_version:z.string(),kernel_version:text.nullable(),host_version:text.nullable()});
 const takeoverProgressSchema=z.strictObject({phase:z.enum(["draining","owned"]),cancelled:z.number().int().nonnegative(),unfinished_controllers:z.number().int().nonnegative(),unknown_tasks:z.number().int().nonnegative(),targets_hash:text.regex(/^[a-f0-9]{64}$/),workspace_root:text.nullable(),workspace_version:repairContentVersionSchema.nullable().default(null),source_attempt_id:text,snapshot_hash:text});
 const takeoverSchema=z.strictObject({claim:adminClaimSchema,case_id:text,observation_id:text,snapshot_hash:text,workspace_id:z.uuid(),issue_id:z.uuid(),source_attempt_id:text,reason:text,phase:z.enum(["requested","source-inspected"]),inspection:takeoverInspectionSchema.nullable()});
+const nativeHash = text.regex(/^[a-f0-9]{64}$/);
+const candidateKey = text.regex(/^[a-zA-Z0-9._:-]{1,80}$/);
+const writeGrantBody = z.strictObject({claim:adminClaimSchema,intentRevision:z.number().int().positive(),pid:z.number().int().positive(),marker:text,source:takeoverInspectionSchema,targetsHash:nativeHash,workspaceRoot:text,baselineVersion:repairContentVersionSchema,originalObservationIds:originals,reason:text.max(16000)});
+const candidateBody = z.strictObject({grantHash:nativeHash,key:candidateKey,evidenceKey:text,version:repairContentVersionSchema});
+const writeGrantSchema=z.strictObject({body:writeGrantBody,hash:nativeHash});
+const candidateSchema=z.strictObject({body:candidateBody,hash:nativeHash});
+const nativeReceiptHash=(body:unknown)=>createHash("sha256").update(json(body)).digest("hex");
 const attemptSchema = z.strictObject({ role:z.enum(["investigation","verification","verification-execution"]).default("investigation"), verification:z.strictObject({sourceRepairAttemptId:text,inputHash:text,sourcePreparationAttemptId:text.optional(),planHash:text.optional()}).optional(), attemptId: text, caseId: text, ownerId: text, supervisionToken: z.number().int().positive(), generation: z.number().int().positive(), intentRevision: z.number().int().nonnegative(), sessionId: z.uuid(),
     status: z.enum(["waiting", "launching", "running", "completed", "failed", "interrupted"]), pid: z.number().int().positive().nullable(), startMarker: text.nullable(), processGroupId: z.number().int().positive().nullable(),
     runtime: z.strictObject({ revision: z.number().int().positive(), configuration: adminRuntimeSchema }), statusViewed: z.boolean(), submission: adminSubmissionSchema.nullable(), startedAt: z.number(), finishedAt: z.number().nullable(), lastError: z.string().nullable(), recoveryDecision: z.strictObject({ policyVersion: z.literal(1), failedAttemptIds: z.array(text), method: z.enum(["investigate", "minimal-reproduction", "independent-diagnosis", "replan", "alternate-runtime"]), switchRuntime: z.boolean(), action: z.literal("continue-repair") }), interruptionCause: z.enum(["user-stop", "host-loss"]).optional() });
@@ -36,7 +43,10 @@ export function initializeAdminExecution(db: DatabaseSync, version: number) {
     if (version < 2)
         db.exec("ALTER TABLE admin_control ADD COLUMN execution_supported INTEGER NOT NULL DEFAULT 0");
     if (version < 6) db.exec("DROP INDEX IF EXISTS admin_one_live_attempt");
-    db.exec(`CREATE TABLE IF NOT EXISTS admin_verification_check(attempt_id TEXT NOT NULL,ordinal INTEGER NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(attempt_id,ordinal));
+    if(version<8) db.exec("UPDATE admin_case SET status='queued' WHERE current_attempt_id IS NULL AND status IN ('verifying','verification-prepared','verified')");
+    db.exec(`CREATE TABLE IF NOT EXISTS admin_repair_write(attempt_id TEXT PRIMARY KEY,payload TEXT NOT NULL);
+ CREATE TABLE IF NOT EXISTS admin_repair_candidate(attempt_id TEXT NOT NULL,receipt_key TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(attempt_id,receipt_key));
+ CREATE TABLE IF NOT EXISTS admin_verification_check(attempt_id TEXT NOT NULL,ordinal INTEGER NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(attempt_id,ordinal));
  CREATE TABLE IF NOT EXISTS admin_verification_receipt(attempt_id TEXT PRIMARY KEY,payload TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS admin_verification_plan(attempt_id TEXT PRIMARY KEY,payload TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS admin_verification_input(attempt_id TEXT PRIMARY KEY,payload TEXT NOT NULL);
@@ -137,6 +147,8 @@ export class AdminExecutionStore {
     command(claim: AdminClaim, input: unknown) {
         const value = z.discriminatedUnion("action", [
             z.strictObject({ action: z.literal("status") }),
+            z.strictObject({ action:z.literal("workspace-write"),reason:text.max(16000) }),
+            z.strictObject({ action:z.literal("workspace-candidate"),key:candidateKey }),
             z.strictObject({ action: z.literal("workspace-takeover"), observation_id: text, reason: text.max(16000) }),
             z.strictObject({ action: z.literal("history"), collection: z.enum(["observations", "evidence", "attempts"]), index: z.number().int().nonnegative(), start: z.number().int().nonnegative(), length: z.number().int().min(1).max(16000), hash: text.optional() }),
             z.strictObject({ action: z.literal("evidence"), key: text, kind: z.enum(["hypothesis", "finding", "action", "change"]), payload: z.record(z.string(), z.unknown()) }),
@@ -154,7 +166,11 @@ export class AdminExecutionStore {
                     remaining -= preview.length;
                 } return [collection, { total: reader.total, rows }]; }));
                 const prepared = this.verificationInput(attempt.attemptId);
-                return { attempt, history, takeover: this.takeover(attempt.attemptId), takeoverProgress: this.progress(attempt.attemptId), verificationInput: prepared ? {hash:prepared.hash,expectedVersion:prepared.input.expectedVersion,targetCount:prepared.input.targets.length} : null, requiredOriginalObservationIds: this.db.prepare("SELECT observation_id FROM admin_observation WHERE case_id=? AND origin<>'admin' ORDER BY rowid").all(attempt.caseId).map(row => String(row.observation_id)), agent_action: attempt.submission ? "end_execution" : "investigate" };
+                return { attempt, history, repairWrite:this.repairWrite(attempt.attemptId), repairCandidates:this.repairCandidates(attempt.attemptId), takeover: this.takeover(attempt.attemptId), takeoverProgress: this.progress(attempt.attemptId), verificationInput: prepared ? {hash:prepared.hash,expectedVersion:prepared.input.expectedVersion,targetCount:prepared.input.targets.length} : null, requiredOriginalObservationIds: this.db.prepare("SELECT observation_id FROM admin_observation WHERE case_id=? AND origin<>'admin' ORDER BY rowid").all(attempt.caseId).map(row => String(row.observation_id)), agent_action: attempt.submission ? "end_execution" : "investigate" };
+            }
+            if(value.action==="workspace-write"||value.action==="workspace-candidate"){
+                this.repairWriteContext(claim);
+                return {host_required:true};
             }
             if (value.action === "workspace-takeover") {
                 if (attempt.submission) throw new DraftConflictError("Admin already submitted; end execution");
@@ -180,6 +196,7 @@ export class AdminExecutionStore {
             if (value.action === "evidence") {
                 if (attempt.submission)
                     throw new DraftConflictError("Admin already submitted; end execution");
+                if(value.key.startsWith("native-candidate/"))throw new DraftConflictError("Native candidate evidence is reserved for the host");
                 const payload = json(value.payload);
                 this.db.prepare("INSERT INTO admin_evidence VALUES(?,?,?,?) ON CONFLICT(attempt_id,receipt_key) DO NOTHING").run(attempt.attemptId, value.key, value.kind, payload);
                 const prior = this.db.prepare("SELECT kind,payload FROM admin_evidence WHERE attempt_id=? AND receipt_key=?").get(attempt.attemptId, value.key)!;
@@ -292,6 +309,48 @@ export class AdminExecutionStore {
     });}
     independentVerificationReceipt(attemptId:string){const row=this.db.prepare("SELECT payload FROM admin_verification_receipt WHERE attempt_id=?").get(attemptId);return row?independentReceiptSchema.parse(JSON.parse(String(row.payload))):null;}
     readIndependentVerificationReceipt(authority:AdminAuthority,attemptId:string){this.requireAuthority(authority);return this.independentVerificationReceipt(text.parse(attemptId));}
+    repairWrite(attemptId:string){
+        const row=this.db.prepare("SELECT payload FROM admin_repair_write WHERE attempt_id=?").get(attemptId);
+        if(!row)return null;
+        const grant=writeGrantSchema.parse(JSON.parse(String(row.payload)));
+        if(grant.body.claim.attemptId!==attemptId||nativeReceiptHash(grant.body)!==grant.hash)throw new DraftConflictError("Native repair write receipt changed");
+        return grant;
+    }
+    repairCandidates(attemptId:string){return this.db.prepare("SELECT payload FROM admin_repair_candidate WHERE attempt_id=? ORDER BY rowid").all(attemptId).map(row=>{
+        const candidate=candidateSchema.parse(JSON.parse(String(row.payload)));
+        if(nativeReceiptHash(candidate.body)!==candidate.hash||candidate.body.evidenceKey!==`native-candidate/${candidate.body.key}`)throw new DraftConflictError("Native repair candidate receipt changed");
+        return candidate;
+    });}
+    private repairWriteContext(claim:AdminClaim){
+        const attempt=this.current(claim,true),request=this.takeover(claim.attemptId),progress=this.progress(claim.attemptId);
+        if(attempt.role!=="investigation"||attempt.submission||attempt.status!=="running"||!attempt.pid||!attempt.startMarker||attempt.processGroupId!==attempt.pid)throw new DraftConflictError("Repair writes require the current bound investigator before submission");
+        if(!request?.inspection||progress?.phase!=="owned"||!progress.workspace_version||!progress.workspace_root||progress.workspace_root!==request.inspection.registered_repository_path||progress.source_attempt_id!==request.source_attempt_id||progress.snapshot_hash!==request.snapshot_hash)throw new DraftConflictError("Repair writes require fresh owned source and content");
+        const observations=this.originalObservations(attempt.caseId);
+        if(observations.some(row=>row.workspaceId!==request.workspace_id||row.issueId!==request.issue_id))throw new DraftConflictError("Repair originals changed native scope");
+        return {attempt,request,progress,originalObservationIds:observations.map(row=>String(row.observationId)).sort()};
+    }
+    private assertWriteBinding(claim:AdminClaim){
+        const current=this.repairWriteContext(claim),grant=this.repairWrite(claim.attemptId);
+        if(!grant||json(grant.body.claim)!==json(claim)||grant.body.intentRevision!==current.attempt.intentRevision||grant.body.pid!==current.attempt.pid||grant.body.marker!==current.attempt.startMarker||json(grant.body.source)!==json(current.request.inspection)||grant.body.targetsHash!==current.progress.targets_hash||grant.body.workspaceRoot!==current.progress.workspace_root||json(grant.body.originalObservationIds)!==json(current.originalObservationIds))throw new DraftConflictError("Repair write authorization changed; start a new repair attempt");
+        return {...current,grant};
+    }
+    authorizeRepairWrite(claim:AdminClaim,reason:string){return this.transaction(()=>{
+        const current=this.repairWriteContext(claim),prior=this.repairWrite(claim.attemptId);
+        reason=text.max(16000).parse(reason);
+        if(prior){this.assertWriteBinding(claim);if(prior.body.reason!==reason)throw new DraftConflictError("Repair write reason cannot be replaced");return prior;}
+        const body=writeGrantBody.parse({claim,intentRevision:current.attempt.intentRevision,pid:current.attempt.pid,marker:current.attempt.startMarker,source:current.request.inspection,targetsHash:current.progress.targets_hash,workspaceRoot:current.progress.workspace_root,baselineVersion:current.progress.workspace_version,originalObservationIds:current.originalObservationIds,reason});
+        const grant={body,hash:nativeReceiptHash(body)};
+        this.db.prepare("INSERT INTO admin_repair_write VALUES(?,?)").run(claim.attemptId,json(grant));return grant;
+    });}
+    recordRepairCandidate(claim:AdminClaim,key:string){return this.transaction(()=>{
+        key=candidateKey.parse(key);const {grant,progress}=this.assertWriteBinding(claim);
+        const body=candidateBody.parse({grantHash:grant.hash,key,evidenceKey:`native-candidate/${key}`,version:progress.workspace_version}),candidate={body,hash:nativeReceiptHash(body)};
+        const previous=this.repairCandidates(claim.attemptId),prior=previous.find(row=>row.body.key===key);
+        if(prior&&json(prior)!==json(candidate))throw new DraftConflictError("Repair candidate key cannot be replaced");
+        if(!prior){if(previous.length>=100)throw new DraftConflictError("Repair attempt exceeds 100 retained candidates");this.db.prepare("INSERT INTO admin_repair_candidate VALUES(?,?,?)").run(claim.attemptId,key,json(candidate));
+            this.db.prepare("INSERT INTO admin_evidence VALUES(?,?,?,?)").run(claim.attemptId,body.evidenceKey,"change",json({nativeRepairCandidate:candidate,writeAuthorization:grant}));}
+        return candidate;
+    });}
     private originalObservations(caseId: string) {
         return this.db.prepare("SELECT payload FROM admin_observation WHERE case_id=? AND origin<>'admin' ORDER BY rowid").all(caseId).map(row => JSON.parse(String(row.payload)));
     }
@@ -304,25 +363,29 @@ export class AdminExecutionStore {
         if (json([...ids].sort()) !== json([...submission.originalObservationIds].sort())) throw new DraftConflictError("Independent verification must preserve every original observation");
         originalRepairTargets(observations);
         if (new Set(submission.repairEvidenceKeys).size !== submission.repairEvidenceKeys.length || submission.repairEvidenceKeys.some(key => !this.db.prepare("SELECT 1 FROM admin_evidence WHERE attempt_id=? AND receipt_key=?").get(attempt.attemptId, key))) throw new DraftConflictError("Repair evidence must reference this attempt's saved immutable facts");
-        return {request, progress, observations};
+        const grant=this.repairWrite(attempt.attemptId),candidate=this.repairCandidates(attempt.attemptId).find(row=>row.body.grantHash===grant?.hash&&row.body.version===submission.repairVersion&&submission.repairEvidenceKeys.includes(row.body.evidenceKey));
+        if(!grant||!candidate||grant.body.targetsHash!==progress.targets_hash||grant.body.workspaceRoot!==progress.workspace_root||json(grant.body.source)!==json(request.inspection)||json(grant.body.originalObservationIds)!==json(ids.sort()))throw new DraftConflictError("Independent verification requires a native repair candidate from this authorized cohort");
+        return {request, progress, observations,candidate};
     }
     readVerificationInput(authority: AdminAuthority, attemptId: string) { this.requireAuthority(authority); return this.verificationInput(text.parse(attemptId)); }
     verificationInput(attemptId: string) {
         const row = this.db.prepare("SELECT payload FROM admin_verification_input WHERE attempt_id=?").get(attemptId);
         if (!row) return null;
-        const value = z.strictObject({input:repairVerificationInputSchema,hash:text}).parse(JSON.parse(String(row.payload)));
+        const value = z.strictObject({input:repairVerificationInputSchema,hash:text,nativeCandidateHash:nativeHash}).parse(JSON.parse(String(row.payload)));
         if (value.input.sourceRepairAttemptId !== attemptId || json(value.input.targets) !== json(originalRepairTargets(value.input.originalObservations)) || repairVerificationInputHash(value.input) !== value.hash) throw new DraftConflictError("Frozen independent verification input changed");
+        const candidate=this.repairCandidates(attemptId).find(row=>row.hash===value.nativeCandidateHash),grant=this.repairWrite(attemptId);
+        if(!candidate||candidate.body.version!==value.input.expectedVersion||candidate.body.grantHash!==grant?.hash)throw new DraftConflictError("Frozen verification lost its native candidate identity");
         return value;
     }
     prepareVerification(claim: AdminClaim) {
         return this.transaction(() => {
             const attempt = this.current(claim, true);
             if (attempt.submission?.outcome !== "verification-requested") throw new DraftConflictError("No submitted verification request");
-            const {request, progress, observations} = this.validateVerificationSubmission(attempt, attempt.submission), inspected = request.inspection!;
+            const {request, progress, observations,candidate} = this.validateVerificationSubmission(attempt, attempt.submission), inspected = request.inspection!;
             const input = repairVerificationInputSchema.parse({version:1,caseId:attempt.caseId,sourceRepairAttemptId:attempt.attemptId,generation:attempt.generation,ownerId:attempt.ownerId,supervisionToken:attempt.supervisionToken,intentRevision:attempt.intentRevision,expectedVersion:progress.workspace_version,
                 workspaceBinding:{workspaceId:request.workspace_id,issueId:request.issue_id,projectId:inspected.project_id,runtimeId:inspected.runtime_id,workspaceRoot:progress.workspace_root,executionPath:inspected.execution_repository_path,mode:inspected.mode,sourceAttemptId:request.source_attempt_id,snapshotHash:request.snapshot_hash,targetsHash:progress.targets_hash},
                 originalObservations:observations,targets:originalRepairTargets(observations)});
-            const value = {input,hash:repairVerificationInputHash(input)}, prior = this.verificationInput(attempt.attemptId);
+            const value = {input,hash:repairVerificationInputHash(input),nativeCandidateHash:candidate.hash}, prior = this.verificationInput(attempt.attemptId);
             if (prior && json(prior) !== json(value)) throw new DraftConflictError("Frozen independent verification input cannot be replaced");
             if (!prior) this.db.prepare("INSERT INTO admin_verification_input VALUES(?,?)").run(attempt.attemptId,json(value));
             return {prepared:true,input_hash:value.hash,target_count:input.targets.length};
@@ -336,7 +399,7 @@ export class AdminExecutionStore {
     currentTakeover(claim:AdminClaim) {
         const attempt=this.current(claim,true),request=this.takeover(claim.attemptId);
         if((attempt.submission && attempt.submission.outcome!=="verification-requested") || !request || request.phase!=="source-inspected")throw new DraftConflictError("Takeover source is not inspected or invocation already submitted");
-        return {request,intent_revision:attempt.intentRevision};
+        return {request,attempt,intent_revision:attempt.intentRevision};
     }
     private progress(attemptId:string){const row=this.db.prepare("SELECT payload FROM admin_takeover_progress WHERE attempt_id=?").get(attemptId);return row ? takeoverProgressSchema.parse(JSON.parse(String(row.payload))) : null;}
     recordTakeoverProgress(claim:AdminClaim,input:unknown){

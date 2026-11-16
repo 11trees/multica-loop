@@ -80,7 +80,7 @@ func fixtureIndependentPlan() {
 	}
 }
 func TestIndependentTestPreparationUsesSeparateFixtureAndPreservesActualArtifacts(t *testing.T) {
-	for _, mode := range []string{"success", "omit", "tamper", "check-fail", "source-write", "artifact-write", "artifact-mutated", "plan-metadata-corrupt", "timeout", "overflow", "leftover", "user-stop"} {
+	for _, mode := range []string{"success", "repair-write", "omit", "tamper", "check-fail", "source-write", "artifact-write", "artifact-mutated", "plan-metadata-corrupt", "timeout", "overflow", "leftover", "user-stop"} {
 		t.Run(mode, func(t *testing.T) {
 			root := t.TempDir()
 			for _, key := range []string{"HOME", "USERPROFILE", "CODEX_HOME"} {
@@ -99,7 +99,11 @@ func TestIndependentTestPreparationUsesSeparateFixtureAndPreservesActualArtifact
 					t.Fatal(err, string(out))
 				}
 			}
-			if err := os.WriteFile(filepath.Join(repository, "source.txt"), []byte("fixed"), 0600); err != nil {
+			initial := "fixed"
+			if mode == "repair-write" {
+				initial = "broken"
+			}
+			if err := os.WriteFile(filepath.Join(repository, "source.txt"), []byte(initial), 0600); err != nil {
 				t.Fatal(err)
 			}
 			versionModule, err := filepath.Abs("../../../../packages/command-chain/repair-workspace-version.ts")
@@ -153,7 +157,8 @@ func TestIndependentTestPreparationUsesSeparateFixtureAndPreservesActualArtifact
 			call(map[string]any{"action": "configuration", "payload": map[string]any{"expected_revision": 0, "configuration": map[string]string{"provider": "codex", "executablePath": provider}}})
 			call(map[string]any{"action": "intent", "payload": map[string]string{"intent": "running", "request_id": "start"}})
 			var repair struct {
-				Claim claim `json:"claim"`
+				Claim   claim   `json:"claim"`
+				Attempt attempt `json:"attempt"`
 			}
 			if err = json.Unmarshal(call(map[string]any{"action": "claim", "authority": acquired.Authority}), &repair); err != nil {
 				t.Fatal(err)
@@ -166,10 +171,70 @@ func TestIndependentTestPreparationUsesSeparateFixtureAndPreservesActualArtifact
 			call(map[string]any{"action": "takeover-inspected", "claim": repair.Claim, "payload": map[string]any{"observation_id": "original-failure", "snapshot_hash": "original-snapshot", "source_attempt_id": "native:123", "project_id": "33333333-3333-4333-8333-333333333333", "runtime_id": "44444444-4444-4444-8444-444444444444", "registered_repository_path": repository, "execution_repository_path": repository, "mode": "in_place", "receipt_hash": "original-receipt", "code_version": "original-code", "kernel_version": "original-kernel", "host_version": "original-host"}})
 			progress := map[string]any{"phase": "owned", "cancelled": 1, "unfinished_controllers": 0, "unknown_tasks": 0, "targets_hash": strings.Repeat("a", 64), "workspace_root": repository, "workspace_version": expected, "source_attempt_id": "native:123", "snapshot_hash": "original-snapshot"}
 			call(map[string]any{"action": "takeover-progress", "claim": repair.Claim, "payload": progress})
-			command(map[string]any{"action": "evidence", "key": "change", "kind": "change", "payload": map[string]string{"fact": "Authorized fixture candidate inspected"}})
-			command(map[string]any{"action": "submit", "result": map[string]any{"outcome": "verification-requested", "summary": "Request an independent original-contract check", "repairVersion": expected, "originalObservationIds": []string{"original-failure"}, "repairEvidenceKeys": []string{"change"}, "verification": map[string]any{"reproductionCommand": "REPAIRER_PROPOSAL", "versionCheckCommand": "REPAIRER_PROPOSAL", "acceptanceChecks": []any{map[string]string{"targetRef": "replacement", "command": "REPAIRER_PROPOSAL", "expected": "Do not adopt"}}}}})
-			call(map[string]any{"action": "verification-prepare", "claim": repair.Claim})
-			call(map[string]any{"action": "finish", "claim": repair.Claim, "payload": map[string]any{"exit_confirmed": true, "reason": "Original fixture invocation never spawned"}})
+			if mode == "repair-write" {
+				repairRunner := &Runner{Client: client, Root: filepath.Join(root, "repair-logs"), Multica: binary}
+				refresh := func(identity json.RawMessage) error {
+					var actual claim
+					if json.Unmarshal(identity, &actual) != nil || actual != repair.Claim {
+						return fmt.Errorf("foreign repair claim")
+					}
+					progress["workspace_version"] = readVersion()
+					_, err := client.Call(ctx, map[string]any{"action": "takeover-progress", "claim": repair.Claim, "payload": progress})
+					return err
+				}
+				repairRunner.RepairWorkspace = func(ctx context.Context, identity, payload json.RawMessage) (json.RawMessage, error) {
+					if err := refresh(identity); err != nil {
+						return nil, err
+					}
+					var action struct {
+						Action string `json:"action"`
+						Reason string `json:"reason"`
+						Key    string `json:"key"`
+					}
+					if err := json.Unmarshal(payload, &action); err != nil {
+						return nil, err
+					}
+					if action.Action == "workspace-write" {
+						return client.Call(ctx, map[string]any{"action": "repair-write-authorize", "claim": repair.Claim, "reason": action.Reason})
+					}
+					return client.Call(ctx, map[string]any{"action": "repair-candidate-record", "claim": repair.Claim, "key": action.Key})
+				}
+				repairRunner.PrepareVerification = func(ctx context.Context, identity json.RawMessage) error {
+					if err := refresh(identity); err != nil {
+						return err
+					}
+					_, err := client.Call(ctx, map[string]any{"action": "verification-prepare", "claim": repair.Claim})
+					return err
+				}
+				repairRunner.launch(ctx, repair.Claim, repair.Attempt)
+				repairRunner.mu.Lock()
+				actualRun := repairRunner.active
+				repairRunner.mu.Unlock()
+				select {
+				case <-actualRun.done:
+				case <-ctx.Done():
+					t.Fatal("actual fixture repair did not settle")
+				}
+				if !repairRunner.Stop(ctx) {
+					t.Fatal("repair provider group did not exit")
+				}
+				expected = readVersion()
+				progress["workspace_version"] = expected
+				var repairState struct {
+					Status string `json:"status"`
+				}
+				if json.Unmarshal(call(map[string]string{"action": "issue", "workspace_id": workspace, "issue_id": issue}), &repairState) != nil || repairState.Status != "verifying" {
+					t.Fatal("actual write/candidate did not hand off to independent Test", repairState.Status)
+				}
+			} else {
+				call(map[string]any{"action": "bind", "claim": repair.Claim, "payload": map[string]any{"pid": 41, "marker": "fixture-managed-repair", "group_id": 41}})
+				call(map[string]any{"action": "repair-write-authorize", "claim": repair.Claim, "reason": "Controlled kernel fixture"})
+				call(map[string]any{"action": "repair-candidate-record", "claim": repair.Claim, "key": "actual"})
+				command(map[string]any{"action": "evidence", "key": "change", "kind": "change", "payload": map[string]string{"fact": "Authorized fixture candidate inspected"}})
+				command(map[string]any{"action": "submit", "result": map[string]any{"outcome": "verification-requested", "summary": "Request an independent original-contract check", "repairVersion": expected, "originalObservationIds": []string{"original-failure"}, "repairEvidenceKeys": []string{"change", "native-candidate/actual"}, "verification": map[string]any{"reproductionCommand": "REPAIRER_PROPOSAL", "versionCheckCommand": "REPAIRER_PROPOSAL", "acceptanceChecks": []any{map[string]string{"targetRef": "replacement", "command": "REPAIRER_PROPOSAL", "expected": "Do not adopt"}}}}})
+				call(map[string]any{"action": "verification-prepare", "claim": repair.Claim})
+				call(map[string]any{"action": "finish", "claim": repair.Claim, "payload": map[string]any{"exit_confirmed": true, "reason": "Synthetic repair identity settled in the management fixture"}})
+			}
 			scopeCalls := 0
 			nativeWorker := filepath.Join(root, "native-check-worker")
 			workerWrapper := "#!/bin/sh\nexport MULTICA_FIXTURE_VERIFICATION_WORKER=1\nexec '" + strings.ReplaceAll(binary, "'", "'\\''") + "' -test.run '^TestNativeVerificationWorkerFixture$'\n"
@@ -340,7 +405,7 @@ func TestIndependentTestPreparationUsesSeparateFixtureAndPreservesActualArtifact
 			if string(receipt) != "null" && json.Unmarshal(receipt, &verdict) != nil {
 				t.Fatal("invalid native receipt")
 			}
-			if mode == "success" {
+			if mode == "success" || mode == "repair-write" {
 				if repairCase.Status != "verified" || !verdict.Passed || !verdict.WorkerExited || len(verdict.Checks) != 6 {
 					t.Fatal("actual native original checks did not pass", repairCase.Status, string(receipt))
 				}

@@ -70,6 +70,34 @@ func TestAdminFakeProviderHelper(t *testing.T) {
 			if json.Unmarshal(status, &view) != nil || view.Attempt.PID != os.Getpid() || view.Attempt.Marker == "" {
 				os.Exit(82)
 			}
+			if os.Getenv("MULTICA_FIXTURE_VERIFICATION_MODE") == "repair-write" {
+				grantRaw := fixtureAdminCommand(map[string]any{"action": "workspace-write", "reason": "Repair original source"})
+				var grant struct {
+					Body struct {
+						Root string `json:"workspaceRoot"`
+					} `json:"body"`
+				}
+				if json.Unmarshal(grantRaw, &grant) != nil || grant.Body.Root == "" {
+					os.Exit(86)
+				}
+				if err := os.WriteFile(filepath.Join(grant.Body.Root, "source.txt"), []byte("fixed"), 0600); err != nil {
+					os.Exit(87)
+				}
+				candidateRaw := fixtureAdminCommand(map[string]any{"action": "workspace-candidate", "key": "actual"})
+				var candidate struct {
+					Body struct {
+						Version     string `json:"version"`
+						EvidenceKey string `json:"evidenceKey"`
+					} `json:"body"`
+				}
+				if json.Unmarshal(candidateRaw, &candidate) != nil || candidate.Body.Version == "" {
+					os.Exit(88)
+				}
+				fixtureAdminCommand(map[string]any{"action": "submit", "result": map[string]any{"outcome": "verification-requested", "summary": "Original source repaired by the bound fixture", "repairVersion": candidate.Body.Version, "originalObservationIds": []string{"original-failure"}, "repairEvidenceKeys": []string{candidate.Body.EvidenceKey}, "verification": map[string]any{"reproductionCommand": "REPAIRER_PROPOSAL", "versionCheckCommand": "REPAIRER_PROPOSAL", "acceptanceChecks": []any{map[string]string{"targetRef": "replacement", "command": "REPAIRER_PROPOSAL", "expected": "Do not inherit"}}}}})
+				_ = output.Encode(map[string]any{"id": json.RawMessage(request.ID), "result": map[string]any{"turn": map[string]any{"id": "fixture-turn", "status": "inProgress"}}})
+				_ = output.Encode(map[string]any{"method": "turn/completed", "params": map[string]any{"threadId": "fixture-thread", "turn": map[string]any{"id": "fixture-turn", "status": "completed"}}})
+				continue
+			}
 			if os.Getenv("MULTICA_FIXTURE_ADMIN_HOLD") == "1" {
 				_ = output.Encode(map[string]any{"id": json.RawMessage(request.ID), "result": map[string]any{"turn": map[string]any{"id": "fixture-turn", "status": "inProgress"}}})
 				_ = output.Encode(map[string]any{"method": "turn/started", "params": map[string]any{"threadId": "fixture-thread", "turn": map[string]any{"id": "fixture-turn"}}})

@@ -4,15 +4,17 @@ LoopWork's `independent-verification-preparation.ts` derives targets from origin
 failures. A repairer's command suggestions cannot define independent acceptance.
 This migration connects submission, private host preparation, physical handoff,
 separate independent Test allocation, fresh source authorization, frozen check
-preparation and native check execution with physical receipts. Controlled repair
-writes and verified business handoff remain incomplete.
+preparation and native check execution with physical receipts. Scoped
+[repair writes and candidate capture](repair-workspace.md) are connected;
+verified business handoff remains incomplete.
 
 ## Request and fresh candidate binding
 
 A live investigator first reads status, obtains an owned native takeover and
 records immutable repair evidence. Its `verification-requested` submission must
 name the current host-observed `workspace-content-v1` version, every original
-non-Admin observation in the Case and saved evidence keys from this attempt.
+non-Admin observation in the Case and saved evidence keys from this attempt,
+including the host-created `native-candidate/<key>` receipt from its write grant.
 Missing/foreign/duplicate references, a draining fence and stale versions are
 rejected. The first terminal submission remains immutable.
 
@@ -31,6 +33,9 @@ Schema 5 added `admin_verification_input`; schema 6 adds the independent plan
 store and includes never-launched waiting Tests in the single active-slot index.
 Schema 7 adds ordered `admin_verification_check` records and immutable
 `admin_verification_receipt` records for native execution.
+Schema 8 requires native write/candidate receipts and pins the exact candidate
+hash in the independent input envelope. Older settled prepared Cases requeue for
+repair while their prior input and original history remain retained.
 Upgrades retain original Cases, observations and stopped intent. The host freezes the repair attempt/generation,
 intent and supervision identity, project/runtime and both repository paths, exact
 native source/checkpoint and writer-inventory hash, expected content version,
@@ -152,8 +157,8 @@ scope gate. Separate PostgreSQL/private-socket tests cover source authorization
 and predecessor fence handover; they do not establish one complete real-provider
 production run. Linux cross-compilation is not Linux runtime acceptance.
 
-Still required: controlled repair writes/candidates, verified business handoff
-and broader recovery. Running-service identity, runtime repairs and shared-path
+Still required: verified business handoff and broader recovery. Running-service
+identity, runtime repairs, isolated repair builds and shared-path
 ownership retain their separate acceptance requirements. A `verified` repair
 Case does not release the business fence, resume the interrupted task, replace
 the Team's normal delivery verification or satisfy native Done. Real-provider
