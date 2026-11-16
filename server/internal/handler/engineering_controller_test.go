@@ -128,6 +128,23 @@ func TestEngineeringControllerIdentityAndTerminalCleanup(t *testing.T) {
 	f.call(t, "end", map[string]any{"no_provider_started": true}, 409)
 	f.call(t, "workspace", map[string]any{"workspace_path": t.TempDir(), "mode": "in_place"}, 409)
 }
+func TestEngineeringControllerDoesNotConfirmStartedProcessWithoutPhysicalIdentity(t *testing.T) {
+	f := newControllerFixture(t)
+	f.begin(t)
+	f.workspace(t)
+	allocation := uuid.NewString()
+	f.call(t, "process-reserve", map[string]any{"allocation_id": allocation}, http.StatusOK)
+	f.call(t, "process-exit", map[string]any{"allocation_id": allocation, "pid": 0, "exit_confirmed": true}, http.StatusOK)
+	if result := f.call(t, "end", map[string]any{"no_provider_started": false}, http.StatusOK); result["quiesced"] != false {
+		t.Fatal("A zero-PID no-spawn receipt confirmed a claimed provider launch", result)
+	}
+	dbfx.Exec(t, "UPDATE agent_task_queue SET status='cancelled' WHERE id=$1", f.task)
+	unfinished, err := f.h.Queries.HasUnfinishedEngineeringIssueTask(context.Background(), parseUUID(f.issue))
+	if err != nil || !unfinished {
+		t.Fatal("Contradictory launch facts released native idle guard", err)
+	}
+}
+
 func TestEngineeringControllerRecordsPIDAfterFenceOrCancel(t *testing.T) {
 	for _, cancel := range []bool{false, true} {
 		t.Run(fmt.Sprintf("cancel=%t", cancel), func(t *testing.T) {

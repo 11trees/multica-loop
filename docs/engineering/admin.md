@@ -81,7 +81,7 @@ A native task or an investigation invocation cannot use these management command
 
 ## Investigation and physical ownership
 
-The management database schema is version 2. It freezes one invocation generation,
+The management database schema is version 4. It freezes one invocation generation,
 session identity, runtime revision and recovery method per allocation. A durable
 fair queue rotates Cases, with at most one live investigation process globally.
 There is no fallback executable discovery or unconfigured alternate runtime.
@@ -207,16 +207,22 @@ route and constructs no separate TaskService or event bus.
 For an inspected, live invocation the host calls the bridge with only its claim.
 The API re-reads management authority/intent/session, the original business
 checkpoint and the native source task dispatch/runtime. It requires a committed
-`draining` project fence matching Case, attempt, generation, supervision token,
+project fence matching Case, attempt, generation, supervision token,
 intent revision, original observation/hash/claim and registered repository.
 It acquires the project row for update, revalidates the source and management identity, creates the draining fence, and commits before cancellation. An existing fence must match the same owner/source; later-generation handover additionally requires the management store to confirm the predecessor invocation physically exited.
 
-The API enumerates active issue and chat tasks in that project and calls its
-existing `CancelTaskWithReason`, rechecking authority and source before each task
-and afterward. Token revocation and daemon notification stay in the native
-service. It returns the unfinished controller count and remains `draining`, even
-when that count is zero. It neither kills the shared daemon nor asserts physical
-exit, owned repair access, verified repair or business completion. Physical draining and owned repair access still require integration.
+The API persists its versioned writer inventory before cancelling active issue
+and chat tasks through `CancelTaskWithReason`. It rechecks authority and source
+before and after cancellation and physical operations. Token revocation and
+daemon notification stay in the native service. It can stop recorded local
+Codex groups with exact host/birth identity, and never signals the shared daemon.
+
+Provider exit cannot replace a final cleanup receipt. Unknown legacy tasks,
+missing identities, unsupported writers, contradictory zero-PID receipts or an
+absent registered directory keep the fence draining. Only a fully accounted
+cohort and native cleanup proof can produce `owned`; this denotes project
+resource quiescence and does not grant repair writes or verified repair.
+See [native physical ownership](process-ownership.md) for the acceptance boundary.
 
 
 ### Draining-fence acquisition and source authority
@@ -240,5 +246,19 @@ Retries by the exact same owner reuse the fence. A newer generation may replace
 only a lower-generation fence from the same Case and unchanged original source.
 Management must confirm the previous invocation reached a physically settled
 terminal state; unknown/live predecessors and other Cases are rejected. The
-original source fields remain unchanged during handover. Acquisition and
-handover enter `draining`, never `owned`; they do not authorize repair writes.
+original source fields remain unchanged during handover. Initial acquisition and
+owner handover enter `draining`; only physical reconciliation can establish
+`owned`. Replaying the same owned source is idempotent and still does not
+authorize repair writes.
+
+### Durable physical progress
+
+The separate `admin_takeover_progress` table records private API receipts per
+invocation. `engineering admin status` exposes `takeoverProgress` with phase,
+unfinished/unknown counts, inventory hash and the registered anchor when owned.
+The agent cannot manufacture this receipt through its command surface. Management
+accepts it only for the current acknowledged source and live invocation; revoked
+claims cannot update progress, and successor generations start without inheriting
+a stale permission. Schema upgrades from earlier management stores preserve
+Cases and original observations without starting execution. Investigation
+remains read-only; an owned progress receipt cannot close or resume business.

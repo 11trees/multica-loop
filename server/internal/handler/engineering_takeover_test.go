@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/multica-ai/multica/server/internal/engineering"
+	"github.com/multica-ai/multica/server/internal/engineering/processidentity"
 	"github.com/multica-ai/multica/server/internal/testutil"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
@@ -128,7 +129,7 @@ func TestEngineeringTakeoverControlUsesNativeCancellationAndRetainsCleanupBarrie
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.(map[string]any)["cancelled"] != 2 || result.(map[string]any)["unfinished_controllers"] != 1 || result.(map[string]any)["phase"] != "draining" {
+	if result.(engineeringRepairProgress).Cancelled != 2 || result.(engineeringRepairProgress).UnfinishedControllers != 1 || result.(engineeringRepairProgress).Phase != "draining" {
 		t.Fatalf("cancellation invented physical cleanup: %v", result)
 	}
 	if mustControllerTask(t, f.controllerFixture).Status != "cancelled" {
@@ -332,7 +333,16 @@ func TestEngineeringTakeoverBundledWorkersAndPrivateControl(t *testing.T) {
 		t.Fatal(err)
 	}
 	f := newControllerFixture(t)
-	f.begin(t)
+	host, err := processidentity.HostID()
+	if err != nil {
+		t.Skip("local physical identity unavailable")
+	}
+	marker, err := processidentity.Marker(os.Getpid())
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.call(t, "begin", map[string]any{"provider": "codex", "host_id": host, "pid": os.Getpid(), "marker": marker}, 200)
+	f.call(t, "workspace", map[string]any{"host_id": host, "workspace_path": repository, "mode": "in_place"}, 200)
 	native := mustControllerTask(t, f)
 	dbfx.Exec(t, "UPDATE agent_runtime SET runtime_mode='local',daemon_id='takeover-rpc-fixture' WHERE id=$1", uuidToString(native.RuntimeID))
 	resource, _ := json.Marshal(map[string]any{"local_path": repository, "daemon_id": "takeover-rpc-fixture", "execution_mode": "in_place"})
@@ -401,8 +411,22 @@ func TestEngineeringTakeoverBundledWorkersAndPrivateControl(t *testing.T) {
 		t.Fatal("private transport did not cancel native source")
 	}
 	controllers, err := f.h.Queries.ListEngineeringProjectControllers(ctx, db.ListEngineeringProjectControllersParams{WorkspaceID: fence.WorkspaceID, ProjectID: fence.ProjectID})
-	if err != nil || len(controllers) != 1 || controllers[0].Phase != "preparing" {
+	if err != nil || len(controllers) != 1 || controllers[0].Phase != "executing" {
 		t.Fatal("transport invented physical cleanup", err)
+	}
+	var state struct {
+		Progress engineeringRepairProgress `json:"takeoverProgress"`
+	}
+	if err = json.Unmarshal(call(management, map[string]any{"action": "command", "claim": allocated.Claim, "payload": map[string]string{"action": "status"}}), &state); err != nil || state.Progress.Phase != "draining" || state.Progress.WorkspaceRoot != nil || len(state.Progress.TargetsHash) != 64 {
+		t.Fatal("private drain progress was not durable in management storage", err)
+	}
+	targetsHash := state.Progress.TargetsHash
+	f.call(t, "end", map[string]any{"host_id": host, "no_provider_started": true}, 200)
+	if err = f.h.ReconcileEngineeringTakeovers(ctx, acquired.Authority); err != nil {
+		t.Fatal(err)
+	}
+	if err = json.Unmarshal(call(management, map[string]any{"action": "command", "claim": allocated.Claim, "payload": map[string]string{"action": "status"}}), &state); err != nil || state.Progress.Phase != "owned" || state.Progress.WorkspaceRoot == nil || *state.Progress.WorkspaceRoot != repository || state.Progress.TargetsHash != targetsHash {
+		t.Fatal("final controller receipt did not produce the same owned cohort through private transport", err)
 	}
 	cancel()
 }

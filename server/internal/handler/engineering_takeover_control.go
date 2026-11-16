@@ -158,7 +158,7 @@ func (h *Handler) engineeringTakeoverSource(ctx context.Context, claim json.RawM
 	return pin, nil
 }
 func engineeringFenceMatches(f db.EngineeringRepairFence, p db.CreateEngineeringRepairFenceParams) bool {
-	return f.WorkspaceID == p.WorkspaceID && f.ProjectID == p.ProjectID && f.CaseID == p.CaseID && f.AttemptID == p.AttemptID && f.Generation == p.Generation && f.OwnerID == p.OwnerID && f.SupervisionToken == p.SupervisionToken && f.IntentRevision == p.IntentRevision && f.ObservationID == p.ObservationID && f.IssueID == p.IssueID && f.SourceAttemptID == p.SourceAttemptID && f.SourceRevision == p.SourceRevision && f.SnapshotHash == p.SnapshotHash && f.WorkspacePath == p.WorkspacePath && f.Phase == "draining"
+	return f.WorkspaceID == p.WorkspaceID && f.ProjectID == p.ProjectID && f.CaseID == p.CaseID && f.AttemptID == p.AttemptID && f.Generation == p.Generation && f.OwnerID == p.OwnerID && f.SupervisionToken == p.SupervisionToken && f.IntentRevision == p.IntentRevision && f.ObservationID == p.ObservationID && f.IssueID == p.IssueID && f.SourceAttemptID == p.SourceAttemptID && f.SourceRevision == p.SourceRevision && f.SnapshotHash == p.SnapshotHash && f.WorkspacePath == p.WorkspacePath && (f.Phase == "draining" || f.Phase == "owned")
 }
 func (h *Handler) acquireEngineeringRepairFence(ctx context.Context, claim json.RawMessage) (db.EngineeringRepairFence, error) {
 	initial, err := h.engineeringTakeoverSource(ctx, claim)
@@ -263,6 +263,10 @@ func (h *Handler) DrainEngineeringProject(ctx context.Context, body json.RawMess
 	if err = validate(); err != nil {
 		return nil, err
 	}
+	targets, err := h.recordEngineeringRepairTargets(ctx, fence)
+	if err != nil {
+		return nil, err
+	}
 	if h.TaskService == nil {
 		return nil, fmt.Errorf("native cancellation unavailable")
 	}
@@ -290,11 +294,10 @@ func (h *Handler) DrainEngineeringProject(ctx context.Context, body json.RawMess
 	if err != nil {
 		return nil, err
 	}
-	unfinished := 0
-	for _, controller := range controllers {
-		if controller.Phase != "quiesced" {
-			unfinished++
+	for _, guard := range controllers {
+		if err = h.reconcileEngineeringPhysicalController(ctx, guard, validate); err != nil {
+			return nil, err
 		}
 	}
-	return map[string]any{"cancelled": cancelled, "unfinished_controllers": unfinished, "phase": "draining"}, nil
+	return h.finishEngineeringPhysicalDrain(ctx, fence, targets, cancelled, validate)
 }

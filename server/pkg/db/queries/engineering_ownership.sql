@@ -90,3 +90,10 @@ SELECT * FROM engineering_run_guard WHERE workspace_id = @workspace_id AND proje
 SELECT t.* FROM agent_task_queue t LEFT JOIN issue i ON i.id=t.issue_id LEFT JOIN chat_session c ON c.id=t.chat_session_id
 WHERE COALESCE(i.project_id,c.project_id) = @project_id AND COALESCE(i.workspace_id,c.workspace_id) = @workspace_id
  AND t.status IN ('queued','dispatched','waiting_local_directory','running') ORDER BY t.created_at,t.id;
+
+-- name: ListEngineeringProjectWriterTasks :many
+SELECT t.* FROM agent_task_queue t
+LEFT JOIN issue i ON i.id=t.issue_id LEFT JOIN chat_session c ON c.id=t.chat_session_id
+WHERE COALESCE(i.project_id,c.project_id) = @project_id AND COALESCE(i.workspace_id,c.workspace_id) = @workspace_id
+ AND (t.dispatched_at IS NOT NULL OR t.started_at IS NOT NULL OR t.status IN ('queued','dispatched','waiting_local_directory','running'))
+ORDER BY t.created_at,t.id;

@@ -38,6 +38,27 @@ type ControllerRequest struct {
 	Confirmed, NoProviderStarted                             *bool
 }
 
+func controllerProcessFacts(processes []db.EngineeringRunProcess) (allExited, started bool) {
+	allExited = true
+	for _, process := range processes {
+		allExited = allExited && process.Phase == "exited"
+		started = started || process.Pid.Valid && process.Pid.Int64 > 0 || process.ExitPid.Valid && process.ExitPid.Int64 > 0
+	}
+	return allExited, started
+}
+
+// ControllerCleanupConfirmed checks the saved final receipt against physical identities.
+func ControllerCleanupConfirmed(guard db.EngineeringRunGuard, processes []db.EngineeringRunProcess) bool {
+	if !guard.NoProviderStarted.Valid {
+		return false
+	}
+	allExited, started := controllerProcessFacts(processes)
+	if guard.NoProviderStarted.Bool {
+		return allExited && !started
+	}
+	return allExited && guard.Provider == "codex" && started
+}
+
 // RecordController accepts projected native identity, never a model credential.
 func (s Store) RecordController(ctx context.Context, task db.AgentTaskQueue, workspace pgtype.UUID, input ControllerRequest) (map[string]any, error) {
 	tx, err := s.Transactions.Begin(ctx)
@@ -128,15 +149,13 @@ func (s Store) RecordController(ctx context.Context, task db.AgentTaskQueue, wor
 		if err != nil {
 			return nil, err
 		}
-		allExited, actualStarted := true, false
-		for _, process := range processes {
-			allExited = allExited && process.Phase == "exited"
-			actualStarted = actualStarted || process.Pid.Valid || process.ExitPid.Valid && process.ExitPid.Int64 > 0
-		}
+		_, actualStarted := controllerProcessFacts(processes)
 		if *input.NoProviderStarted && actualStarted {
 			return nil, conflict("no-spawn cleanup contradicts recorded physical identity")
 		}
-		quiesced := allExited && (*input.NoProviderStarted || guard.Provider == "codex" && len(processes) > 0)
+		cleanup := guard
+		cleanup.NoProviderStarted = pgtype.Bool{Bool: *input.NoProviderStarted, Valid: true}
+		quiesced := ControllerCleanupConfirmed(cleanup, processes)
 		phase := "unconfirmed"
 		if quiesced {
 			phase = "quiesced"

@@ -3,7 +3,7 @@
 The native requirement page and management CLI capture comments and queue a
 frozen Feedback Triage role. Immediate dispositions can retain the original
 report; forward work remains pending and blocks requirement completion. The
-worker embeds nine definitions, including Feedback Verify. Frozen feedback
+worker embeds thirteen definitions, including Feedback Verify. Frozen feedback
 reproduction/planning appends managed deliveries. The native verifier independently
 settles each comment against authoritative accepted work; completed feedback then
 requires a new final review and exact human reading after delivery changes.

@@ -118,13 +118,23 @@ it("persists an immutable takeover request scoped to the live Case and retains i
  expect(store.execution.pendingTakeovers(authority)).toEqual([expect.objectContaining({phase:"source-inspected"})]);
  expect(store.execution.currentTakeover(claim)).toMatchObject({request:{phase:"source-inspected"}});
  expect(store.execution.command(claim,{action:"status"})).toMatchObject({takeover:{phase:"source-inspected"},agent_action:"investigate"});
+ const progress={phase:"draining",cancelled:1,unfinished_controllers:1,unknown_tasks:1,targets_hash:"a".repeat(64),workspace_root:null,source_attempt_id:"native:123",snapshot_hash:"original-snapshot"};
+ expect(()=>store.execution.command(claim,{action:"takeover-progress",payload:progress})).toThrow();
+ expect(store.execution.recordTakeoverProgress(claim,progress)).toEqual({recorded:true});
+ expect(store.execution.command(claim,{action:"status"})).toMatchObject({takeoverProgress:progress});
+ expect(()=>store.execution.recordTakeoverProgress(claim,{...progress,snapshot_hash:"changed"})).toThrow(/original source/);
+ expect(()=>store.execution.recordTakeoverProgress(claim,{...progress,phase:"owned",workspace_root:"/invented",unknown_tasks:0,unfinished_controllers:0})).toThrow(/original source/);
+ expect(()=>store.execution.recordTakeoverProgress(claim,{...progress,phase:"owned",workspace_root:"/fixture/root"})).toThrow(/original source/);
+ expect(store.execution.recordTakeoverProgress(claim,{...progress,phase:"owned",workspace_root:"/fixture/root",unknown_tasks:0,unfinished_controllers:0})).toEqual({recorded:true});
+
  store.execution.setIntent({intent:"stopped",request_id:"stop"});
  expect(()=>store.execution.inspectTakeover(claim,inspection)).toThrow(/identity, intent or generation/);
+ expect(()=>store.execution.recordTakeoverProgress(claim,progress)).toThrow(/identity, intent or generation/);
  expect(store.execution.pendingTakeovers(authority)).toEqual([]);
  store.execution.retire(authority,{attempt_id:claim.attemptId,exit_confirmed:true,pid:0,marker:"",owned_launch:true,reason:"Fixture confirmed no process spawned"});
  store.execution.setIntent({intent:"running",request_id:"resume"});
  const successor=store.execution.claim(authority)!.claim;
- store.execution.command(successor,{action:"status"});store.execution.command(successor,command);store.execution.inspectTakeover(successor,inspection);
+ expect(store.execution.command(successor,{action:"status"})).toMatchObject({takeoverProgress:null});store.execution.command(successor,command);store.execution.inspectTakeover(successor,inspection);
  expect(store.execution.predecessorStopped(successor,claim.attemptId)).toEqual({stopped:true});
  expect(()=>store.execution.predecessorStopped(successor,successor.attemptId)).toThrow(/another Case or generation/);
  expect(()=>store.execution.predecessorStopped(claim,successor.attemptId)).toThrow(/identity, intent or generation/);
