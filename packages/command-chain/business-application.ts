@@ -1,3 +1,4 @@
+import type {NativeBindingCommit} from "./native-binding";
 import { createHash, randomUUID } from "node:crypto";
 import { inspectRepairCheckpoint } from "./repair-checkpoint";
 import type { InterventionRecord } from "./intervention-store";
@@ -176,7 +177,7 @@ export class BusinessApplication {
     }
     return pending;
   }
-  async invoke(request: ApplicationRequest) {
+  async invoke(request: ApplicationRequest,commitBinding?:NativeBindingCommit) {
     const { actor, action } = request;
     if (action === "configure-business") return this.configure(request);
     if (actor.kind === "coordinator" || actor.kind === "team-manager") throw new Error("Use the business continuation coordinator");
@@ -221,12 +222,16 @@ export class BusinessApplication {
       const execution = executionSchema.parse({ draftId: entry.draftId, repositoryPath: root, mode: input.mode,
         branchRef: input.mode === "worktree" ? repositoryBranch(root) : null, overlays: captureRepositoryOverlays(root, input.overlays, true) });
       this.readonlyExecution(record, entry, execution);
+
+      if(!commitBinding)throw new Error("Native binding requires the host transaction");
+      return commitBinding(()=>{
       const existing = this.db.prepare("SELECT payload FROM business_execution WHERE workspace_id=? AND issue_id=? AND revision=? AND agent_id=? AND attempt_id=?").get(record.workspaceId, record.issueId, record.revision, actor.agentId, actor.attemptId);
       if (existing && JSON.stringify(executionSchema.parse(JSON.parse(String(existing.payload)))) !== JSON.stringify(execution)) throw new DraftConflictError("Native business attempt binding cannot be replaced");
       const changed=this.db.prepare("INSERT INTO business_execution(workspace_id,issue_id,revision,agent_id,attempt_id,payload) SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM business_contract WHERE workspace_id=? AND issue_id=? AND revision=? AND version=?) AND NOT EXISTS(SELECT 1 FROM engineering_intervention_pending WHERE workspace_id=? AND issue_id=?) AND NOT EXISTS(SELECT 1 FROM engineering_repair_retired_claim WHERE workspace_id=? AND issue_id=? AND attempt_id=?) ON CONFLICT(workspace_id,issue_id,revision,agent_id,attempt_id) DO UPDATE SET payload=business_execution.payload")
         .run(record.workspaceId, record.issueId, record.revision, actor.agentId, actor.attemptId, JSON.stringify(execution),record.workspaceId,record.issueId,record.revision,record.version,record.workspaceId,record.issueId,actor.workspaceId,actor.issueId,actor.attemptId);
       if(changed.changes!==1)throw new DraftConflictError("Business execution binding changed or surrendered execution");
       return { bound: true, repository_path: root };
+      });
     }
     if (actor.kind !== "human" && actor.kind !== "task") throw new Error("Authenticated business control is required");
     if (actor.kind === "task") {

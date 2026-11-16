@@ -1,3 +1,4 @@
+import type {NativeBindingCommit} from "./native-binding";
 import { createHash, randomUUID } from "node:crypto";
 import { lstatSync, realpathSync, readFileSync } from "node:fs";
 import { isAbsolute, relative, sep } from "node:path";
@@ -116,7 +117,7 @@ export class DirectApplication {
     if (changed.changes !== 1) throw new DraftConflictError("This issue already owns a workflow; reconcile it before replacement");
     return { configured: true };
   }
-  invoke(request: ApplicationRequest) {
+  invoke(request: ApplicationRequest,commitBinding?:NativeBindingCommit) {
     const { actor, action } = request;
     if (action === "configure-direct") return this.configure(request);
     if (actor.kind === "coordinator" || actor.kind === "team-manager") throw new Error("Use the Direct continuation coordinator");
@@ -158,6 +159,8 @@ export class DirectApplication {
       if (input.mode !== record.mode || input.mode === "worktree" && repositoryCommonDirectory(root) !== repositoryCommonDirectory(record.repositoryPath) || input.mode === "in_place" && root !== record.repositoryPath) throw new Error("Direct runtime repository or execution mode changed");
       captureOverlays(root, input.overlays);
       const previous = record.attempts.find(item => item.id === actor.attemptId), branchRef = input.mode === "worktree" ? repositoryBranch(root) : null;
+      if(!commitBinding)throw new Error("Native binding requires the host transaction");
+      return commitBinding(()=>{
       if (previous) {
         if (previous.repositoryPath !== root || previous.mode !== input.mode || previous.branchRef !== branchRef || record.activeAttemptId !== previous.id) throw new DraftConflictError("Direct attempt binding cannot be replaced or revived");
       } else {
@@ -166,6 +169,7 @@ export class DirectApplication {
         record.activeAttemptId = actor.attemptId; this.save(record);
       }
       return { bound: true, repository_path: root };
+      });
     }
     if (action === "overview" || action === "read") {
       if (actor.kind !== "human" && actor.kind !== "task") throw new Error("Authenticated Direct read is required");

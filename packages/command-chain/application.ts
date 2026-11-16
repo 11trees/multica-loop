@@ -1,8 +1,9 @@
+import type {NativeBindingCommit} from "./native-binding";
 import {repairDispatchStallSchema} from "./repair-dispatch-stall";
 import {readRepairDispatchReadiness} from "./repair-readiness-store";
 import {readRecoveryCheckpoint,readPreparedRecoverySource} from "./repair-recovery-store";
 import {repairRecoveryFaultSchema} from "./repair-recovery-fault";
-import {assertRepairExecutionBinding,initializeRepairExecutions,prepareRepairExecutionHint,bindRepairExecutionHint,repairExecutionHintSchema} from "./repair-execution";
+import {assertRepairExecutionBinding,initializeRepairExecutions,prepareRepairExecutionHint,validateRepairExecutionHint,bindRepairExecutionHint,repairExecutionHintSchema} from "./repair-execution";
 import { initializeRepairHandoffs,prepareRepairHandoff } from "./repair-handoff-store";
 import {repairRootPayload, initializeRepairApplications, readStagedRepair, stagedPreparation, reservedRepairProposal, persistStagedRepair } from "./repair-stage-store";
 import {initializeRepairProgress,readRepairProgress} from "./repair-progress-store";
@@ -775,22 +776,12 @@ export class EngineeringApplication {
         }
       }
     }
-    if(request.recovery_execution){if(actor.kind!=="daemon"||action!=="bind")throw new Error("Only the native runtime bind can project recovery task context");bindRepairExecutionHint(this.db,actor,request.recovery_execution,this.recoveryActiveDraftId(actor.workspaceId,actor.issueId));}
-    let pending = this.interventions.pending(actor.workspaceId, actor.issueId);
+    if(actor.kind==="daemon"&&action==="bind")return this.bindNativeExecution(request);
+    if(request.recovery_execution)throw new Error("Only the native runtime bind can project recovery task context");
+    const pending = this.interventions.pending(actor.workspaceId, actor.issueId);
     const surrendered = actor.kind === "task" || actor.kind === "daemon" ? this.interventions.surrendered(actor.workspaceId, actor.issueId, actor.attemptId) : undefined;
     const retired=(actor.kind==="task"||actor.kind==="daemon")&&this.interventions.retired(actor.workspaceId,actor.issueId,actor.attemptId);
     if(retired&&action!=="process")throw new DraftConflictError("Native execution claim was replaced; end execution");
-    if(pending&&!surrendered&&(actor.kind==="task"||actor.kind==="daemon")){
-      const dispatch=repairDispatchForTask(this.db,actor.workspaceId,actor.issueId,actor.attemptId.split(":")[0]!);
-      if(dispatch?.state==="ready"&&dispatch.observationId===pending.observationId&&dispatch.ready.continuation.agent_id===actor.agentId){
-        if(actor.kind==="daemon"&&action==="bind"){this.processes.assertExited(actor.workspaceId,actor.issueId);activateRepairDispatch(this.db,pending,actor);pending=this.interventions.pending(actor.workspaceId,actor.issueId);}
-        else if(actor.kind==="task"&&action==="selection")pending=undefined;
-      }
-    }
-    if(actor.kind==="daemon"&&action==="bind"){
-      const dispatch=repairDispatchForTask(this.db,actor.workspaceId,actor.issueId,actor.attemptId.split(":")[0]!);
-      if(dispatch?.state==="active"&&dispatch.attemptId!==actor.attemptId&&dispatch.attemptId&&this.db.prepare("SELECT 1 FROM engineering_process WHERE workspace_id=? AND issue_id=? AND attempt_id=? AND status<>'exited'").get(actor.workspaceId,actor.issueId,dispatch.attemptId))throw new DraftConflictError("Previous recovery claim has not confirmed physical exit");
-    }
     if(action==="process"){
       if(actor.kind!=="daemon")throw new Error("Only the native runtime can record physical process facts");
       return this.processes.invoke({workspaceId:actor.workspaceId,issueId:actor.issueId,agentId:actor.agentId,attemptId:actor.attemptId},request.payload,!!pending || !!surrendered || retired,actor.projectId);
@@ -806,6 +797,7 @@ export class EngineeringApplication {
       return this.processes.scope(actor.workspaceId,actor.issueId);
     }
     if(["completion","direct-completed","verified-binding"].includes(action))this.processes.assertExited(actor.workspaceId,actor.issueId);
+    if(actor.kind==="task"&&action==="selection"&&pending&&!surrendered){const dispatch=repairDispatchForTask(this.db,actor.workspaceId,actor.issueId,actor.attemptId.split(":")[0]!);if(dispatch?.state==="ready"&&dispatch.observationId===pending.observationId&&dispatch.ready.continuation.agent_id===actor.agentId)return this.invokeWorkflow(request);}
     if (action === "intervention-request") {
       if (surrendered || pending) return this.interventions.request(actor, request.payload, null,request.host_version);
       if (actor.kind !== "task") throw new Error("Only the current native task can request intervention");
@@ -821,16 +813,10 @@ export class EngineeringApplication {
       const frozen = original.snapshot as Awaited<ReturnType<EngineeringApplication["invokeWorkflow"]>>;
       return { ...frozen, intervention: this.interventions.view(original), agent_action: "end_execution" };
     }
-    if(actor.kind==="daemon"&&action==="bind")assertRepairExecutionBinding(this.db,actor,this.recoveryActiveDraftId(actor.workspaceId,actor.issueId));
     const result = await this.invokeWorkflow(request);
     if(actor.kind==="human"&&action==="prepare-run"){
       const selected=z.object({agent_id:z.uuid()}).parse(result),checkpoint=z.object({expected_revision:z.number().int().positive(),expected_sequence:z.number().int().nonnegative()}).parse(request.payload),hint=prepareRepairExecutionHint(this.db,actor,selected.agent_id,checkpoint.expected_revision,checkpoint.expected_sequence,this.recoveryActiveDraftId(actor.workspaceId,actor.issueId));
       if(hint)return {...result,recovery_execution:hint};
-    }
-    if(action==="bind"&&actor.kind==="daemon"){
-      const binding=z.object({bound:z.literal(true),repository_path:text}).parse(result),mode=z.object({mode:z.enum(["in_place","worktree"])}).parse(request.payload).mode;
-      this.processes.bind({workspaceId:actor.workspaceId,issueId:actor.issueId,agentId:actor.agentId,attemptId:actor.attemptId},actor.projectId,binding.repository_path,mode);
-      refreshRepairDispatchClaim(this.db,actor);
     }
     if (actor.kind === "task" && ["read", "start", "direct-run"].includes(action)) this.interventions.viewed(actor, result);
     if (action === "overview" && pending) return { ...result, status: "waiting_for_intervention", intervention: this.interventions.view(pending) };
@@ -838,7 +824,40 @@ export class EngineeringApplication {
     return result;
   }
 
-  private async invokeWorkflow(input: ApplicationRequest) {
+  private bindingState(workspaceId:string,issueId:string){
+    const sidecars=this.db.prepare("SELECT payload FROM engineering_feedback_batch WHERE workspace_id=? AND issue_id=? ORDER BY batch_id").all(workspaceId,issueId).map(row=>row.payload),roots=["direct_contract","business_contract","requirement_contract","engineering_contract"].map(table=>this.db.prepare(`SELECT payload FROM ${table} WHERE workspace_id=? AND issue_id=? ORDER BY ${table==="direct_contract"?"version":"revision"} DESC LIMIT 1`).get(workspaceId,issueId)?.payload??null),draftId=this.recoveryActiveDraftId(workspaceId,issueId);
+    return JSON.stringify({roots,sidecars,draftId,draft:draftId?this.db.prepare("SELECT payload FROM chain_drafts WHERE id=?").get(draftId)?.payload??null:null});
+  }
+  private assertNativeBind(request:ApplicationRequest){
+    const actor=request.actor;if(actor.kind!=="daemon")throw new Error("Only a native runtime can bind execution");
+    if(this.interventions.retired(actor.workspaceId,actor.issueId,actor.attemptId))throw new DraftConflictError("Native execution claim was replaced; end execution");
+    if(this.interventions.surrendered(actor.workspaceId,actor.issueId,actor.attemptId))throw new DraftConflictError("Native binding changed or surrendered execution");
+    const hint=request.recovery_execution?validateRepairExecutionHint(this.db,actor,request.recovery_execution,this.recoveryActiveDraftId(actor.workspaceId,actor.issueId)):undefined;
+    const pending=this.interventions.pending(actor.workspaceId,actor.issueId),dispatch=repairDispatchForTask(this.db,actor.workspaceId,actor.issueId,actor.attemptId.split(":")[0]!)??(hint?repairDispatchForTask(this.db,actor.workspaceId,actor.issueId,hint.entry_task_id):undefined);
+    if(pending&&!(dispatch?.state==="ready"&&dispatch.observationId===pending.observationId&&dispatch.ready.continuation.agent_id===actor.agentId))throw new DraftConflictError("Native binding changed or surrendered execution");
+    if(pending)this.processes.assertExited(actor.workspaceId,actor.issueId);
+    if(dispatch?.state==="active"&&dispatch.attemptId!==actor.attemptId&&dispatch.attemptId&&this.db.prepare("SELECT 1 FROM engineering_process WHERE workspace_id=? AND issue_id=? AND attempt_id=? AND status<>'exited'").get(actor.workspaceId,actor.issueId,dispatch.attemptId))throw new DraftConflictError("Previous recovery claim has not confirmed physical exit");
+    if(!hint)assertRepairExecutionBinding(this.db,actor,this.recoveryActiveDraftId(actor.workspaceId,actor.issueId));
+    return pending;
+  }
+  private async bindNativeExecution(request:ApplicationRequest){
+    const actor=request.actor;if(actor.kind!=="daemon")throw new Error("Only a native runtime can bind execution");
+    this.assertNativeBind(request);const before=this.bindingState(actor.workspaceId,actor.issueId);
+    return this.invokeWorkflow(request,write=>{
+      this.db.exec("BEGIN IMMEDIATE");try{
+        const pending=this.assertNativeBind(request);
+        if(this.bindingState(actor.workspaceId,actor.issueId)!==before)throw new DraftConflictError("Native binding changed or surrendered execution during validation");
+        if(request.recovery_execution)bindRepairExecutionHint(this.db,actor,request.recovery_execution,this.recoveryActiveDraftId(actor.workspaceId,actor.issueId));
+        if(pending)activateRepairDispatch(this.db,pending,actor);
+        assertRepairExecutionBinding(this.db,actor,this.recoveryActiveDraftId(actor.workspaceId,actor.issueId));
+        const result=write(),mode=z.object({mode:z.enum(["in_place","worktree"])}).parse(request.payload).mode;
+        this.processes.bind({workspaceId:actor.workspaceId,issueId:actor.issueId,agentId:actor.agentId,attemptId:actor.attemptId},actor.projectId,result.repository_path,mode);
+        refreshRepairDispatchClaim(this.db,actor);this.db.exec("COMMIT");return result;
+      }catch(error){this.db.exec("ROLLBACK");throw error;}
+    });
+  }
+
+  private async invokeWorkflow(input: ApplicationRequest,commitBinding?:NativeBindingCommit) {
     const request = applicationRequestSchema.parse(input);
     const { actor, action } = request;
     if(actor.kind==="team-manager")throw new Error("Team management cannot invoke task workflows");
@@ -847,7 +866,7 @@ export class EngineeringApplication {
       return [...this.direct.continuations(),...await this.business.continuations(),...await this.requirements.continuations(),...await this.managedProgress(),...await this.continuations()];
     }
     if (action === "continuations") throw new Error("Only the host coordinator can list continuations");
-    if(action === "configure-direct" || action !== "business-comment-protected" && this.direct.current(actor.workspaceId,actor.issueId))return this.direct.invoke(request);
+    if(action === "configure-direct" || action !== "business-comment-protected" && this.direct.current(actor.workspaceId,actor.issueId))return this.direct.invoke(request,commitBinding);
     if(action === "business-comment-protected"){
       if(actor.kind !== "host")throw new Error("Only the host can inspect specification comment ownership");
       const input=z.strictObject({comment_id:z.uuid()}).parse(request.payload);
@@ -863,9 +882,9 @@ export class EngineeringApplication {
       const input=z.strictObject({expected_version:z.number().int().nonnegative(),execution_resources:z.array(z.strictObject({path:z.string().min(1),mode:z.enum(["in_place","worktree"])})).length(6)}).parse(request.payload);
       return this.business.handoff(actor.workspaceId,actor.issueId,input.expected_version,input.execution_resources,({record,source})=>this.requirements.importBusiness({workspaceId:record.workspaceId,issueId:record.issueId,userId:record.createdBy,repositoryPath:record.repositoryPath,codeVersion:record.codeVersion,input:record.input,decisionMode:record.decisionMode,mode:record.mode,policy:{roles:record.delivery!.roles,maxReworks:record.delivery!.maxReworks},source,definitions:{context:record.delivery!.contextSource,planning:record.delivery!.planningSource,review:record.delivery!.reviewSource}}));
     }
-    if(action === "configure-business")return this.business.invoke(request);
+    if(action === "configure-business")return this.business.invoke(request,commitBinding);
     const business=this.business.current(actor.workspaceId,actor.issueId);
-    if(business && (!business.delivery?.handedOff || action.startsWith("business-")) && action !== "parent-scope")return this.business.invoke(request);
+    if(business && (!business.delivery?.handedOff || action.startsWith("business-")) && action !== "parent-scope")return this.business.invoke(request,commitBinding);
     const managedUnit=this.requirements.managedUnit(actor.workspaceId,actor.issueId);
     const managedOrigin=managedUnit ? this.requirements.current(actor.workspaceId,managedUnit.parentIssueId)?.contextContract.businessSource : undefined;
     if(managedOrigin)this.business.validateHandoff(actor.workspaceId,managedUnit!.parentIssueId,managedOrigin);
@@ -899,7 +918,7 @@ export class EngineeringApplication {
     const mode=z.object({kind:z.string().optional()}).passthrough().safeParse(request.payload);
     if(action === "configure" && mode.success && mode.data.kind === "requirement"){
       if(this.current(actor.workspaceId,actor.issueId))throw new Error("This issue already owns a delivery workflow; use a parent issue for requirement planning");
-      return this.requirements.invoke(request);
+      return this.requirements.invoke(request,commitBinding);
     }
     if(requirement){
       if(action === "configure")throw new Error("This issue owns a requirement workflow; configure a requirement revision");
@@ -916,7 +935,7 @@ export class EngineeringApplication {
         }));
         return {...result,requirement:{...result.requirement,progress}};
       }
-      return this.requirements.invoke(request);
+      return this.requirements.invoke(request,commitBinding);
     }
     const record = this.current(actor.workspaceId, actor.issueId);
     if (action === "overview" || action === "prepare-run") {
@@ -991,6 +1010,9 @@ export class EngineeringApplication {
       const branchRef = git(code.repositoryPath, ["rev-parse", "--abbrev-ref", "HEAD"]) === "HEAD" ? "" : repositoryBranch(code.repositoryPath);
       if (development && payload.mode === "worktree" && !branchRef) throw new Error("Worktree development requires a durable branch");
       const execution = executionSchema.parse({ repairEpoch:record.repairEpoch,repositoryPath: code.repositoryPath, mode: payload.mode, branchRef, agentId: actor.agentId, attemptId: actor.attemptId, overlays });
+
+      if(!commitBinding)throw new Error("Native binding requires the host transaction");
+      return commitBinding(()=>{
       const previous = this.db.prepare("SELECT payload FROM engineering_execution WHERE workspace_id = ? AND issue_id = ? AND revision = ? AND agent_id = ? AND attempt_id = ?")
         .get(record.workspaceId, record.issueId, record.contract.binding.revision, actor.agentId, actor.attemptId);
       const identity = (value: Execution) => ({ ...value, overlays: value.overlays.map(({ hash: _hash, ...overlay }) => overlay).sort((a, b) => a.path.localeCompare(b.path)) });
@@ -999,6 +1021,7 @@ export class EngineeringApplication {
         .run(record.workspaceId, record.issueId, record.contract.binding.revision, actor.agentId, actor.attemptId, JSON.stringify(execution),record.workspaceId,record.issueId,record.contract.binding.revision,record.repairEpoch,record.workspaceId,record.issueId,actor.workspaceId,actor.issueId,actor.attemptId);
       if(changed.changes!==1)throw new DraftConflictError("Execution binding changed or surrendered execution");
       return { bound: true, repository_path: execution.repositoryPath };
+      });
     }
     if (action === "receipt") {
       if (actor.kind !== "daemon") throw new Error("Only the runtime can capture command receipts");

@@ -196,3 +196,15 @@ unchanged. These reads establish source identity only. Scoped repair write grant
 candidate capture, independent native check execution and controlled business
 publication have their own protocols. Running-service identity and full
 real-provider recovery acceptance remain incomplete.
+
+## Atomic native binding
+
+Repository and workflow preflight runs before the host opens its SQLite writer
+transaction. At the final write boundary, the host rechecks the owner root, active
+draft and Feedback state, then commits recovery hint projection, ready activation,
+ordinary execution/root binding, physical repository binding and actual-claim
+replacement together. A failed preflight changes none of those records; a failed
+physical-binding insert rolls all of them back. Nested binding helpers use
+savepoints within the host transaction. An asynchronous repository check never
+holds that transaction open. Existing partially bound historical rows still need
+explicit recovery; this prevention does not establish their repair or acceptance.

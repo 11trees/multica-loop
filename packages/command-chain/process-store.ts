@@ -32,13 +32,14 @@ export class EngineeringProcessStore {
     bind(owner: Owner, projectId: string | undefined, repositoryPath: string, mode: "in_place" | "worktree") {
         owner = ownerSchema.parse(owner);
         const payload = JSON.stringify({ projectId: projectId ?? null, repositoryPath, mode });
-        this.transaction(() => {
+        this.db.exec("SAVEPOINT physical_repository_binding");try {
             if(this.db.prepare("SELECT 1 FROM engineering_repair_retired_claim WHERE workspace_id=? AND issue_id=? AND attempt_id=?").get(owner.workspaceId,owner.issueId,owner.attemptId))throw new DraftConflictError("Native execution claim was replaced");
             const prior = this.db.prepare("SELECT payload FROM engineering_process_binding WHERE workspace_id=? AND issue_id=? AND agent_id=? AND attempt_id=?").get(owner.workspaceId, owner.issueId, owner.agentId, owner.attemptId);
             if (prior && prior.payload !== payload)
                 throw new DraftConflictError("Physical process repository binding cannot change within a native claim");
             this.db.prepare("INSERT OR IGNORE INTO engineering_process_binding VALUES(?,?,?,?,?)").run(owner.workspaceId, owner.issueId, owner.agentId, owner.attemptId, payload);
-        });
+        this.db.exec("RELEASE physical_repository_binding");
+        }catch(error){this.db.exec("ROLLBACK TO physical_repository_binding;RELEASE physical_repository_binding");throw error;}
     }
     invoke(owner: Owner, input: unknown, surrendered = false, projectId?: string) {
         owner = ownerSchema.parse(owner);

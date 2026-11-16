@@ -1,3 +1,4 @@
+import type {NativeBindingCommit} from "./native-binding";
 import { inspectRepairCheckpoint } from "./repair-checkpoint";
 import type { InterventionRecord } from "./intervention-store";
 import { EngineeringTeamStore,type EngineeringTeamBinding } from "./team-store";
@@ -623,7 +624,7 @@ export class RequirementApplication {
       if(reason)pending.push({workspace_id:record.workspaceId,issue_id:record.issueId,agent_id:role.agentId,user_id:forward?.userId ?? feedback?.createdBy ?? review?.userId ?? record.createdBy,task_id:stableId(`multica:engineering:continuation:${role.draftId}:${draft?.sequence ?? 0}`),expected_revision:record.contextContract.binding.revision,expected_sequence:draft?.sequence ?? 0,reason});
     }return pending;
   }
-  async invoke(request:ApplicationRequest){
+  async invoke(request:ApplicationRequest,commitBinding?:NativeBindingCommit){
     const {actor,action}=request;if(actor.kind === "coordinator" || actor.kind === "team-manager")throw new Error("Use the requirement continuation coordinator");
     let record=this.current(actor.workspaceId,actor.issueId);
     if(action === "configure"){
@@ -693,9 +694,13 @@ export class RequirementApplication {
       if(repositoryCommonDirectory(code.repositoryPath) !== repositoryCommonDirectory(record.repositoryPath) || payload.mode === "in_place" && code.repositoryPath !== record.repositoryPath)throw new Error("Requirement execution belongs to another repository");
       const overlays=captureRepositoryOverlays(code.repositoryPath,payload.overlays,true),snapshot=repositorySnapshot(code.repositoryPath,true,overlays);
       if(snapshot.codeVersion !== role.contract.binding.codeVersion)throw new Error("Requirement execution is not at the frozen repository commit");
+
+      if(!commitBinding)throw new Error("Native binding requires the host transaction");
+      return commitBinding(()=>{
       const previous=this.db.prepare("SELECT payload FROM requirement_execution WHERE workspace_id=? AND issue_id=? AND revision=? AND agent_id=? AND attempt_id=?").get(record.workspaceId,record.issueId,record.contextContract.binding.revision,actor.agentId,actor.attemptId);
       if(previous){const binding=executionSchema.parse(JSON.parse(String(previous.payload)));if((forwardGroup || role.chain === "feedback-verify" || review?.contract.correction || binding.feedbackCheckpoint) && binding.feedbackCheckpoint?.draftId !== role.draftId)throw new Error("Native feedback attempt belongs to another checkpoint");}
       const changed=this.db.prepare("INSERT INTO requirement_execution(workspace_id,issue_id,revision,agent_id,attempt_id,payload) SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM requirement_contract WHERE workspace_id=? AND issue_id=? AND revision=? AND COALESCE(json_extract(payload,'$.repairEpoch'),0)=?) AND NOT EXISTS(SELECT 1 FROM engineering_intervention_pending WHERE workspace_id=? AND issue_id=?) AND NOT EXISTS(SELECT 1 FROM engineering_repair_retired_claim WHERE workspace_id=? AND issue_id=? AND attempt_id=?) ON CONFLICT(workspace_id,issue_id,revision,agent_id,attempt_id) DO UPDATE SET payload=requirement_execution.payload").run(record.workspaceId,record.issueId,record.contextContract.binding.revision,actor.agentId,actor.attemptId,JSON.stringify({repositoryPath:code.repositoryPath,overlays,...(forwardGroup || role.chain === "feedback-verify" || review?.contract.correction ? {feedbackCheckpoint:{draftId:role.draftId,mode:payload.mode,branchRef:payload.mode === "worktree" ? repositoryBranch(code.repositoryPath) : null}} : {})}),record.workspaceId,record.issueId,record.contextContract.binding.revision,record.repairEpoch,record.workspaceId,record.issueId,actor.workspaceId,actor.issueId,actor.attemptId);if(changed.changes!==1)throw new DraftConflictError("Requirement execution binding changed or surrendered execution");return {bound:true,repository_path:code.repositoryPath};
+      });
     }
     if(actor.kind !== "human" && actor.kind !== "task")throw new Error("Authenticated requirement control is required");
     if(actor.kind === "task"){
