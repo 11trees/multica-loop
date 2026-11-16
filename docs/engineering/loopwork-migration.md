@@ -11,6 +11,9 @@ and audit records retain their ownership.
 
 The [coverage audit](migration-status.md) maps every source command chain and
 user pipeline to current target evidence and remaining work.
+[Historical record capture](history-migration.md) now preserves the current shared
+business and independent management databases without transferring execution
+ownership. Native record adoption and cutover remain separate requirements.
 
 The fork starts from Multica `v0.8.2`, commit
 `b7f8efcaae6c5f3273c0038252b5d10c81b41068`. `origin` is

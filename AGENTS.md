@@ -59,6 +59,8 @@ Use `Makefile`, workspace `package.json` files, and `pnpm-workspace.yaml` for cu
 
 - Completed recovery delivery-stage settlement requires a distinct host witness of the terminal draft/event, exact native claim, owner root and physical/workflow execution bindings. Keep candidate observation readonly; check native terminal/cleanup, publication, current management authority and project fences/reservations before replaying the original owner settlement transaction. Preserve completed draft bytes and ordinary failure/rework decisions. Lost acknowledgements replay immutable settlement identity; settlement alone cannot close a Case or native Done, and missing execution directories must not be recreated.
 
+- Historical LoopWork capture reads source database/WAL bytes only and checkpoints private copies outside the source roots. Preserve original IDs, contracts, evidence and repair lineage in separate history storage; do not project old tokens, leases, runtime intent or completion/reading records into native authority. Already merged legacy sources must not be imported twice, and unfinished tasks retain one explicit owner until validated cutover.
+
 Run these from the repository root:
 
 | Scope | Checks |
