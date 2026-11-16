@@ -385,8 +385,8 @@ source database freeze is a separate operator action from these controlled tests
 ### Current local cutover
 
 The actual local source cohort is now frozen under cutover
-`413044d6-fac8-47bd-a79f-b00ce732515b`, with the native project still held and no
-native issues or executions adopted. The one project correspondence and all four
+`413044d6-fac8-47bd-a79f-b00ce732515b`, with the native project still held. Four native Backlog Team tasks have now
+been staged; no native workflow or execution has been activated. The one project correspondence and all four
 revision-1 task preparations remain unchanged. Original business/application/
 management row and schema digests are preserved; only private guard schema was
 added to the original databases. The immutable archive remains unchanged.
@@ -471,10 +471,32 @@ contain fixture data only:
 
 ![Staged native task link on a narrow screen](assets/history-native-task-narrow.png)
 
+### Actual native task correspondence
+
+The frozen active cohort is now visible as four native tasks, all assigned to
+Develop Team revision 1 and held in Backlog:
+
+| Original task | Native task |
+| --- | --- |
+| `REQ-54979609-26ac-46fc-9a67-f06cf51bc82a` | `LOCAL-297` |
+| `REQ-60c12691-55bc-452b-be04-e07b0ee238e0` | `LOCAL-298` |
+| `REQ-d92ddf44-0d87-4d7f-9d25-e1c069dcc306` | `LOCAL-299` |
+| `REQ-dfdf6a69-9723-444a-8c8a-2e677c5f64d8` | `LOCAL-300` |
+
+The real API retry returned the same IDs and numbers. Original titles,
+description text, packet hashes, preparations and Team identity match their
+saved correspondence. The history material page exposes those native links.
+The prepared project still has zero Agent runs, controllers and project runtime
+resources; its source databases remain frozen. The two pre-existing fixture
+issues were not adopted or replaced. Task staging does not clear the project
+hold, launch a provider, accept the library working tree or transfer old reading
+and completion authority.
+
 ## Remaining cutover work
 
-1. Reconcile and activate the saved source-task/project/Team preparations into
-   native issues only after exclusive-owner cutover prerequisites pass.
+1. Reconcile and activate the staged native Team tasks against their saved
+   source-task/project/Team preparations only after exclusive-owner cutover
+   prerequisites pass. Keep their existing native IDs; do not create another cohort.
    Historical statuses, answers and read acknowledgements cannot authorize a
    new workflow or Done; the preparation record is not execution authority.
 2. Drain or explicitly reconcile every unfinished source task. Source database
