@@ -163,4 +163,3 @@ test('an inherited GIT_DIR cannot redirect source identity to a different reposi
   try { assert.equal(await readRepairWorkspaceVersion(h.root), expected); }
   finally { if (prior === undefined) delete process.env.GIT_DIR; else process.env.GIT_DIR = prior; }
 });
-
