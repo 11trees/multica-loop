@@ -2,6 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
 import { browseArchive, verifyArchive } from "./loopwork-history-lib.mjs";
 import { changeSourceFence, cutoverDigest, inspectSourceFence, prepareSourceFence, sourceNamespace } from "./loopwork-source-fence.mjs";
+import { probeSourceProcesses } from "./loopwork-source-processes.mjs";
 
 export const cutoverWorkspace = "323d1db3-abcf-4890-a2ca-df15a057fdf7";
 export const cutoverHuman = "db20ef47-8076-41a0-af0d-2814950fbe42";
@@ -97,6 +98,25 @@ function canonical(value) {
 }
 export const stableDigest = value => cutoverDigest(canonical(value));
 
+export async function probeCutoverSource(client, archive, expectedHash) {
+  await authorized(client);
+  return probeSourceProcesses(archive, expectedHash);
+}
+export async function observeCutoverProcesses(client, archive, id, inspectHost) {
+  return transaction(client, async () => {
+    const saved = await record(client, id, true);
+    if (saved.phase !== "source_frozen") throw new Error("Source process observation requires the frozen phase");
+    await noAdoption(client, saved.project_ids);
+    const proof = await probeSourceProcesses(archive, saved.archive_hash, identity(saved), inspectHost);
+    if (!proof.registered_writers_quiesced) throw new Error("Source registered writers require reconciliation");
+    const observation = { cutover_id: id, scope_hash: saved.scope_hash, proof };
+    const hash = stableDigest(observation), previous = saved.receipt?.physical_observations ?? [];
+    const receipt = { ...saved.receipt, physical_observations: previous.some(row => row.hash === hash) ? previous : [...previous, { hash, ...observation }] };
+    await client.query("UPDATE engineering_history_cutover SET receipt=$2,updated_at=now() WHERE id=$1", [id, receipt]);
+    return { ...projection(saved), source_processes: proof, observation_hash: hash };
+  });
+}
+
 export async function statusCutover(client, archive, id) {
   const saved = await record(client, id);
   if (saved.phase === "cancelled") return { ...projection(saved), source: saved.receipt, source_inspected_now: false, source_observed_at: saved.updated_at };
@@ -113,7 +133,7 @@ export async function freezeCutover(client, archive, id) {
       if (current.phase !== saved.phase) throw new Error("Native cutover barrier changed");
     });
     if (receipt.state !== "frozen") throw new Error("Source cohort is not fully frozen");
-    await client.query("UPDATE engineering_history_cutover SET phase='source_frozen',receipt=$2,updated_at=now() WHERE id=$1", [id, receipt]);
+    await client.query("UPDATE engineering_history_cutover SET phase='source_frozen',receipt=$2,updated_at=now() WHERE id=$1", [id, { ...receipt, physical_observations: saved.receipt?.physical_observations ?? [] }]);
     return { ...projection({ ...saved, phase: "source_frozen" }), source: receipt };
   });
 }
@@ -136,7 +156,7 @@ export async function rollbackCutover(client, archive, id) {
     });
     if (receipt.state !== "unfenced") throw new Error("Source cohort is still fenced");
     await noAdoption(client, saved.project_ids);
-    await client.query("UPDATE engineering_history_cutover SET phase='cancelled',receipt=$2,updated_at=now() WHERE id=$1", [id, receipt]);
+    await client.query("UPDATE engineering_history_cutover SET phase='cancelled',receipt=$2,updated_at=now() WHERE id=$1", [id, { ...receipt, physical_observations: saved.receipt?.physical_observations ?? [] }]);
     return { ...projection({ ...saved, phase: "cancelled" }), source: receipt };
   });
 }

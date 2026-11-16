@@ -299,9 +299,11 @@ Run from this checkout's managed environment:
 
 ```sh
 make env-exec ARGS="-- node scripts/migration/loopwork-cutover.mjs plan"
+make env-exec ARGS="-- node scripts/migration/loopwork-cutover.mjs probe"
 make env-exec ARGS="-- node scripts/migration/loopwork-cutover.mjs hold --expected-scope REVIEWED_PLAN_SHA256"
 make env-exec ARGS="-- node scripts/migration/loopwork-cutover.mjs status --id SAVED_CUTOVER_UUID"
 make env-exec ARGS="-- node scripts/migration/loopwork-cutover.mjs freeze --id SAVED_CUTOVER_UUID"
+make env-exec ARGS="-- node scripts/migration/loopwork-cutover.mjs observe --id SAVED_CUTOVER_UUID"
 make env-exec ARGS="-- node scripts/migration/loopwork-cutover.mjs rollback --id SAVED_CUTOVER_UUID"
 ```
 
@@ -344,6 +346,27 @@ receipt; `status` labels that receipt as a past observation rather than inspecti
 a source that may legitimately have resumed. A new cutover requires a fresh
 archive/preparation after rollback because source file fingerprints have changed.
 
+`probe` checks the unchanged, unfenced source against the current local host.
+It reads the exact named business and management process tables from the verified
+archive and checks source files before and after OS observation. The supported
+retirement proof requires saved process markers and UTC registration times to
+precede the current kernel boot, old stopped/crashed runs to predate that boot,
+no matching live writer identity, and no process holding a watched source
+database/WAL/SHM file. A missing PID, null launch identity, same-boot process,
+unsupported schema, missing inspection tool or incomplete snapshot cannot satisfy
+this proof. Windows and nonempty process records without UTC registration times
+need a separate explicit drain method. No provider is resolved or launched, no
+process receives a signal, and process command lines/environments are not read.
+
+After freezing, `observe` repeats those checks against the exact frozen cohort
+and appends a hash-bound observation to its native cutover receipt. Identical
+observation replay keeps one entry; later observations remain separate. Freeze
+retries and pre-adoption rollback retain that history. Observations identify the
+local registered LoopWork writer cohort, not unregistered commands, other users,
+remote hosts or arbitrary repository writers. Their
+`registered_writers_quiesced` flag never grants native execution; the broader
+`physical_quiescence_confirmed` field remains false.
+
 These guards protect ordinary DML in the known database cohort. They do not fence
 arbitrary DDL, filesystem writers, unclassified databases or repository processes.
 Stopped rows and frozen databases both retain
@@ -357,8 +380,36 @@ blobs/64-bit integers and repair provenance, partial freeze/rollback, foreign or
 missing guards, source drift, lost native acknowledgements, native issue/chat
 admission and queue skipping. The full real-source `plan` also reads the existing
 four eligible preparations and three source databases successfully. The original
-source databases have not been frozen, and no actual cutover record or native
-issue has been created by this change.
+source database freeze is a separate operator action from these controlled tests.
+
+### Current local cutover
+
+The actual local source cohort is now frozen under cutover
+`413044d6-fac8-47bd-a79f-b00ce732515b`, with the native project still held and no
+native issues or executions adopted. The one project correspondence and all four
+revision-1 task preparations remain unchanged. Original business/application/
+management row and schema digests are preserved; only private guard schema was
+added to the original databases. The immutable archive remains unchanged.
+
+The saved local observation covers 119 registered writers and 107 stopped/crashed
+runs. Their history precedes the current boot on 2026-10-26; no source database
+holder was observed. This is the named local registered-writer proof above,
+with no native execution authority or claim of global filesystem quiescence.
+The source's two old context-chat sessions remain idle historical records and
+are not counted as registered process identities.
+
+The prepared project's source directory is `/Users/landi/Products/library`.
+It contains uncommitted tracked and untracked changes. No file in that project
+has been edited, reset, cleaned or committed by this cutover. Reconcile its actual
+working state before native execution; do not assume a clean checkout or replace
+it with an old task's commit. Team role runtimes remain unbound, and real-provider
+acceptance still requires explicit authorization.
+
+Use `status`/`observe` with the saved cutover ID while frozen. The old `plan` and
+`probe` require an unfenced original preimage and intentionally refuse this state.
+Do not capture the frozen databases as a replacement source archive. If returning
+to LoopWork before adoption, use `rollback` with this same ID; a subsequent new
+cutover needs a fresh capture and preparations.
 
 ## Remaining cutover work
 

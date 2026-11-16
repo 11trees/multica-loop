@@ -71,6 +71,8 @@ Use `Makefile`, workspace `package.json` files, and `pnpm-workspace.yaml` for cu
 
 - Pre-activation history cutover commits a native project hold before installing source database write guards. Retain that hold across partial SQLite commits, interrupted acknowledgements and rollback; never infer physical exit or execution authority from a stopped intent or frozen source. Inspect original database/WAL bytes through private copies, bind every guard to the saved source preimage and cutover identity, and never export application credentials. Only remove the native hold after verified source unfreezing and empty native adoption. Keep cancelled records and require a fresh capture after rollback; this operator protocol does not activate native issues.
 
+- Source process observations use fixed OS inspection commands and an explicit registered-writer schema. A later local boot needs both the saved process marker and UTC registration time; missing PIDs or terminal statuses alone prove no exit. Refuse incomplete snapshots, open source databases and unsupported writer identities. Preserve hash-bound observation history across freeze retries and rollback, keep its local registered-writer scope explicit, and never turn it into global repository ownership or provider-launch authority.
+
 Run these from the repository root:
 
 | Scope | Checks |

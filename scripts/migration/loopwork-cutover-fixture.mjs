@@ -30,10 +30,16 @@ export async function cutoverFixture(t) {
     INSERT INTO documents VALUES('original','pending',X'FF000102',9223372036854775807);
     CREATE TABLE loop_lifecycle_state(singleton INTEGER PRIMARY KEY,desired_intent TEXT,actual_phase TEXT);
     INSERT INTO loop_lifecycle_state VALUES(1,'stopped','stopped');
-    CREATE TABLE loop_runs(run_id TEXT PRIMARY KEY,status TEXT); INSERT INTO loop_runs VALUES('run','stopped');
+    CREATE TABLE loop_runs(run_id TEXT PRIMARY KEY,status TEXT,started_at TEXT); INSERT INTO loop_runs VALUES('run','stopped','2000-01-01T00:00:00.000Z');
     CREATE TABLE execution_attempts(execution_id TEXT PRIMARY KEY,status TEXT); INSERT INTO execution_attempts VALUES('attempt','applied');
-    CREATE TABLE loop_managed_processes(process_id TEXT PRIMARY KEY,status TEXT); INSERT INTO loop_managed_processes VALUES('process','exited');`);
+    CREATE TABLE loop_managed_processes(process_id TEXT PRIMARY KEY,status TEXT,pid INTEGER,process_start_marker TEXT,registered_at TEXT); INSERT INTO loop_managed_processes VALUES('process','exited',424242,'Sat Jan 1 00:00:00 2000','2000-01-01 00:00:00');
+    CREATE TABLE execution_processes(allocation_id TEXT PRIMARY KEY,pid INTEGER,process_start_marker TEXT,process_group_id INTEGER,created_at TEXT,status TEXT);`);
   admin.exec("CREATE TABLE admin_control(singleton INTEGER PRIMARY KEY,desired_intent TEXT); INSERT INTO admin_control VALUES(1,'stopped'); CREATE TABLE repair_cases(case_id TEXT PRIMARY KEY,original_json TEXT); INSERT INTO repair_cases VALUES('case','Original failure provenance'); CREATE TABLE admin_runtime_cli_processes(allocation_id TEXT PRIMARY KEY,status TEXT)");
+  admin.exec("CREATE TABLE repair_attempts(attempt_id TEXT PRIMARY KEY,pid INTEGER,start_marker TEXT,process_group_id INTEGER,started_at TEXT)");
+  for (const table of ["admin_business_worker_processes", "admin_harness_build_processes", "admin_runtime_host_processes", "admin_runtime_ui_processes", "admin_runtime_cli_processes", "admin_runtime_update_processes"]) {
+    if (table !== "admin_runtime_cli_processes") admin.exec(`CREATE TABLE "${table}"(allocation_id TEXT PRIMARY KEY,status TEXT)`);
+    admin.exec(`ALTER TABLE "${table}" ADD COLUMN pid INTEGER; ALTER TABLE "${table}" ADD COLUMN marker TEXT; ALTER TABLE "${table}" ADD COLUMN group_id INTEGER`);
+  }
   const catalog = business.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(({ name }) => {
     const columns = business.prepare(`PRAGMA table_info("${name}")`).all();
     return { name, columns: columns.map(row => row.name), primary_key: columns.filter(row => row.pk).map(row => row.name) };
