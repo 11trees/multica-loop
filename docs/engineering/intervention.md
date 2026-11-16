@@ -108,7 +108,8 @@ The complete Admin repair path remains in the migration coverage audit.
 Business recovery is not implemented yet. It needs a durable host-owned handoff
 intent binding the physically settled independent receipt, native candidate,
 every original observation and unchanged checkpoint. Recheck actual content,
-native project/cohort, current Team and saved human authority before acting.
+native project/cohort, the task's frozen Team policy and saved human authority
+before acting. Later Team profile edits do not reconfigure the interrupted task.
 Management intent, the business checkpoint and the PostgreSQL fence/queue live in
 separate stores; retries must reuse a persisted identity and recover partial
 commits without opening admission before the handoff is ready.
