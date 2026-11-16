@@ -39,3 +39,13 @@ it("keeps native task correspondence inert and accepts older history responses w
  expect(HistoryAdoptionSchema.parse({...row,phase:"future"}).phase).toBe("unknown");
  for(const bad of [{...row,execution_authorized:true},{...row,issue_id:"unscoped"}])expect(HistoryAdoptionSchema.safeParse(bad).success).toBe(false);
 });
+
+it("activates only the explicitly reviewed scope and workspace without accepting a started run",async()=>{
+ const uuid="11111111-1111-4111-8111-111111111111",input={expectedScopeHash:"a".repeat(64),expectedWorkspaceHash:"b".repeat(64),executionMode:"in_place" as const};
+ const receipt={format:"loopwork-native-activation-v1",cutover_id:uuid,scope_hash:input.expectedScopeHash,workspace_hash:input.expectedWorkspaceHash,activated_by:uuid,activated_at:"2026-11-17T00:00:00Z",execution_mode:"in_place",execution_started:false,source_inspection:{},tasks:[{cutover_id:uuid,preparation_id:uuid,source_task_id:"source-task",issue_id:uuid,identifier:"LOOP-9",phase:"activated",team_id:uuid,team_revision:1,execution_authorized:false}],resources:[{id:uuid,project_id:uuid,resource_ref:{local_path:"/current/fixture",daemon_id:uuid,execution_mode:"in_place"}}],roles:[{agent_id:uuid,runtime_id:uuid,daemon_id:uuid}]};
+ const fetch=vi.fn().mockResolvedValue(new Response(JSON.stringify(receipt),{status:200}));vi.stubGlobal("fetch",fetch);const client=new ApiClient("https://history.test");
+ expect(await client.activateHistoryCutover("workspace",uuid,input)).toMatchObject({workspaceHash:input.expectedWorkspaceHash,executionStarted:false});
+ expect(JSON.parse(fetch.mock.calls[0]![1]?.body)).toEqual({expected_scope_hash:input.expectedScopeHash,expected_workspace_hash:input.expectedWorkspaceHash,execution_mode:"in_place"});expect(new Headers(fetch.mock.calls[0]![1]?.headers).get("X-Workspace-ID")).toBe("workspace");
+ for(const bad of [{...receipt,workspace_hash:"c".repeat(64)},{...receipt,execution_started:true},{...receipt,tasks:[{...receipt.tasks[0],execution_authorized:true}]},{...receipt,resources:[]}]){fetch.mockResolvedValue(new Response(JSON.stringify(bad),{status:200}));await expect(client.activateHistoryCutover("workspace",uuid,input)).rejects.toThrow(/Invalid migration activation/);}
+ expect(HistoryAdoptionSchema.parse({cutover_id:uuid,preparation_id:uuid,issue_id:uuid,identifier:"LOOP-9",phase:"activated",execution_authorized:false}).phase).toBe("activated");
+});

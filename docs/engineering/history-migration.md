@@ -518,8 +518,8 @@ history; `workspace-check` requires the explicitly named latest hash and refuses
 changed bytes, index, paths or HEAD without replacing the saved baseline. Freeze
 retries and pre-activation rollback retain every workspace observation. A match
 does not accept the code, transfer ownership, configure a runtime, release either
-hold or enqueue a task. Final activation must repeat these checks in its own
-authorized protocol; that activation protocol remains incomplete.
+hold or enqueue a task. The separate native activation protocol below repeats these checks before
+committing ownership; a standalone workspace recheck cannot release a hold.
 
 The actual `/Users/landi/Products/library` observation is
 `8db6d16dbecc9eb2f1668de987734237f253335fe1e46e3f283ac869ae40cecb`,
@@ -531,9 +531,73 @@ dirty/staged divergence, deleted directories, untracked bytes with unchanged
 HEAD/index, executable modes, inert symlinks, inherited Git configuration,
 observation replay, drift refusal and preservation across freeze/rollback.
 
+## Native Team activation
+
+After the current workspace and role runtimes have been explicitly reviewed:
+
+```sh
+make env-exec ARGS="-- node scripts/migration/loopwork-cutover.mjs activate --id SAVED_CUTOVER_UUID --expected-workspace SAVED_WORKSPACE_SHA256 --execution-mode in_place"
+```
+
+The endpoint accepts only the saved cutover scope, latest workspace digest and
+`in_place`/`worktree` mode. It accepts no path, replacement goal, per-task Agent,
+provider or runtime override. Runtime selection remains in the Team's native
+role Agents. Activation checks the complete staged cohort, unchanged initial
+native tasks, original packets and latest preparations, exact Team version,
+current roster and human invocation permissions. Existing business bindings,
+foreign native work, resources, runs, controllers or repair state require
+reconciliation first. Each role needs a fresh online local runtime authorized
+for that human, with the daemon ID matching this host's existing `daemon.id`.
+Reading that identity never initializes a daemon or discovers installed CLIs.
+
+A separate sanitized readonly worker checks the latest hash-bound observation
+against paths derived from the original packets, recompiles current workspace
+contents and rechecks the frozen databases and local registered-writer proof.
+Symlinks require separate reconciliation. Dirty included contents are retained
+in place; worktree activation requires clean included contents and the current
+daemon's advertised worktree capability. Ignored files remain outside the
+workspace witness. This check establishes the named source/cohort prerequisites,
+not a global filesystem lease or cross-project repository arbitration.
+
+Under the native project admission locks, one PostgreSQL transaction persists
+an immutable activation receipt, its preallocated local-directory resource IDs
+and the complete cohort's `activated` correspondence. Other transactions retain
+the old hold until commit. Failure after the ownership transition rolls the
+entire operation back. Lost/concurrent acknowledgement retries return the same
+receipt and resource/task IDs before consulting mutable source or Team state;
+they do not restore later-edited resources or enqueue tasks.
+
+The owned pending notice is replaced with a neutral import notice; original
+titles, descriptions, source states and material links remain intact. All tasks
+remain **Backlog**. Acceptance and Start use the ordinary native task
+and Team controls, with their normal role/runtime, workflow, completion and
+reading checks. At first start, a migrated task also retains its prepared Team
+version and project; changing the Team requires reconciliation rather than
+silently starting a different workflow. Original source database guards stay
+installed. Activation never imports old evidence/reading as native authority,
+starts a model, or permits the pre-activation `withdraw`/`rollback` protocol.
+Post-activation rollback remains separate, incomplete work.
+
+Controlled native tests cover in-place and worktree activation, stale workspace,
+source/Team/task and runtime refusal, independent human authority, atomic
+resource-persistence failure, concurrent/lost acknowledgement, no Agent queue,
+retained Backlog tasks, immutable receipts, migration-down refusal and prepared-Team enforcement at
+later Start. A real sanitized source-worker check also matches the saved
+`library` baseline; this is not real-provider acceptance. Shared Web/Desktop
+history links distinguish activated correspondence without adding execution
+controls to historical material. Screenshots contain fixture data only:
+
+![Activated task correspondence](assets/history-activated-task.png)
+
+![Activated correspondence on a narrow screen](assets/history-activated-task-narrow.png)
+
+The actual four local tasks remain staged and held. Their six Develop roles
+still have no runtime binding; no actual activation, project resource or model
+run is claimed by these controlled tests.
+
 ## Remaining cutover work
 
-1. Reconcile and activate the staged native Team tasks against their saved
+1. Activate the actual staged native Team tasks against their saved
    source-task/project/Team preparations only after exclusive-owner cutover
    prerequisites pass. Keep their existing native IDs; do not create another cohort.
    Historical statuses, answers and read acknowledgements cannot authorize a

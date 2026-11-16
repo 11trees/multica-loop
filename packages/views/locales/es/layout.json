@@ -336,7 +336,8 @@
       "native_withdrawn": "Migración retirada. Esta tarea sigue inactiva.",
       "native_retained": "Se conserva la correspondencia con la tarea nativa.",
       "open_native": "Abrir tarea nativa",
-      "native_unavailable": "La tarea nativa no está disponible; revisa su correspondencia de migración."
+      "native_unavailable": "La tarea nativa no está disponible; revisa su correspondencia de migración.",
+      "native_activated": "Migración activada. Continúa desde la tarea nativa."
     }
   }
 }

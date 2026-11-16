@@ -41,6 +41,9 @@ type historyAdoptionPayload struct {
 	NativeIssue json.RawMessage `json:"native_issue"`
 }
 
+const historyPendingNotice = "Migration pending. Confirm the original task and materials before starting."
+const historyActivatedNotice = "Imported from LoopWork. Original source states and materials remain historical."
+
 func historyConflict(message string) error {
 	return &engineering.Rejection{Message: message, Conflict: true}
 }
@@ -63,7 +66,7 @@ func historyDraftDescription(taskID string, source engineeringHistoryPreparation
 			for strings.Contains(description+string(states), fence) {
 				fence += "`"
 			}
-			body := "Migration pending. Confirm the original task and materials before starting.\n\nSource status:\n\n" + fence + "text\n" + string(states) + "\n" + fence + "\n\n[Original task and materials](/loopwork-local/history?task=" + url.QueryEscape(taskID) + ")\n\nOriginal description:\n\n" + fence + "text\n" + description + "\n" + fence + "\n"
+			body := historyPendingNotice + "\n\nSource status:\n\n" + fence + "text\n" + string(states) + "\n" + fence + "\n\n[Original task and materials](/loopwork-local/history?task=" + url.QueryEscape(taskID) + ")\n\nOriginal description:\n\n" + fence + "text\n" + description + "\n" + fence + "\n"
 			if strings.TrimSpace(title) == "" {
 				return "", "", historyConflict("original task goal is unavailable")
 			}

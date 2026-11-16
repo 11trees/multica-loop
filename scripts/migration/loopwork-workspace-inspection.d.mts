@@ -1,0 +1,1 @@
+export function inspectActivationWorkspaces(archive:string,input:{expected_hash:string;expected_workspace_hash:string;workspace_observation:unknown;record:{id:string;archive_hash:string;scope_hash:string;source_namespace:string;payload:unknown}}):Promise<unknown>;

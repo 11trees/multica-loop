@@ -827,6 +827,7 @@ type EngineeringHistoryCutover struct {
 	Receipt         []byte             `json:"receipt"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	Activation      []byte             `json:"activation"`
 }
 
 type EngineeringHistoryPreparation struct {

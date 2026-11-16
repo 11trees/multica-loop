@@ -11,6 +11,117 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const activateEngineeringHistoryAdoption = `-- name: ActivateEngineeringHistoryAdoption :one
+UPDATE engineering_history_adoption SET phase='activated'
+WHERE cutover_id=$1 AND workspace_id=$2 AND source_task_id=$3 AND phase='staged' RETURNING cutover_id, workspace_id, source_namespace, source_task_id, preparation_id, issue_id, phase, payload, created_at, withdrawn_at
+`
+
+type ActivateEngineeringHistoryAdoptionParams struct {
+	CutoverID    pgtype.UUID `json:"cutover_id"`
+	WorkspaceID  pgtype.UUID `json:"workspace_id"`
+	SourceTaskID string      `json:"source_task_id"`
+}
+
+func (q *Queries) ActivateEngineeringHistoryAdoption(ctx context.Context, arg ActivateEngineeringHistoryAdoptionParams) (EngineeringHistoryAdoption, error) {
+	row := q.db.QueryRow(ctx, activateEngineeringHistoryAdoption, arg.CutoverID, arg.WorkspaceID, arg.SourceTaskID)
+	var i EngineeringHistoryAdoption
+	err := row.Scan(
+		&i.CutoverID,
+		&i.WorkspaceID,
+		&i.SourceNamespace,
+		&i.SourceTaskID,
+		&i.PreparationID,
+		&i.IssueID,
+		&i.Phase,
+		&i.Payload,
+		&i.CreatedAt,
+		&i.WithdrawnAt,
+	)
+	return i, err
+}
+
+const activateEngineeringHistoryCutover = `-- name: ActivateEngineeringHistoryCutover :one
+UPDATE engineering_history_cutover SET phase='activated',activation=$3,updated_at=now()
+WHERE id=$1 AND workspace_id=$2 AND phase='source_frozen' RETURNING id, workspace_id, source_namespace, archive_hash, scope_hash, project_ids, phase, prepared_by, payload, receipt, created_at, updated_at, activation
+`
+
+type ActivateEngineeringHistoryCutoverParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	Activation  []byte      `json:"activation"`
+}
+
+func (q *Queries) ActivateEngineeringHistoryCutover(ctx context.Context, arg ActivateEngineeringHistoryCutoverParams) (EngineeringHistoryCutover, error) {
+	row := q.db.QueryRow(ctx, activateEngineeringHistoryCutover, arg.ID, arg.WorkspaceID, arg.Activation)
+	var i EngineeringHistoryCutover
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.SourceNamespace,
+		&i.ArchiveHash,
+		&i.ScopeHash,
+		&i.ProjectIds,
+		&i.Phase,
+		&i.PreparedBy,
+		&i.Payload,
+		&i.Receipt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Activation,
+	)
+	return i, err
+}
+
+const activateEngineeringHistoryDraftNotice = `-- name: ActivateEngineeringHistoryDraftNotice :one
+UPDATE issue SET description=$3,revision=revision+1,updated_at=now(),last_activity_at=now()
+WHERE id=$1 AND workspace_id=$2 AND status='backlog' RETURNING id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at, triage_state, duplicate_of_issue_id, requester_user_id
+`
+
+type ActivateEngineeringHistoryDraftNoticeParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	Description pgtype.Text `json:"description"`
+}
+
+func (q *Queries) ActivateEngineeringHistoryDraftNotice(ctx context.Context, arg ActivateEngineeringHistoryDraftNoticeParams) (Issue, error) {
+	row := q.db.QueryRow(ctx, activateEngineeringHistoryDraftNotice, arg.ID, arg.WorkspaceID, arg.Description)
+	var i Issue
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Title,
+		&i.Description,
+		&i.Status,
+		&i.Priority,
+		&i.AssigneeType,
+		&i.AssigneeID,
+		&i.CreatorType,
+		&i.CreatorID,
+		&i.ParentIssueID,
+		&i.AcceptanceCriteria,
+		&i.ContextRefs,
+		&i.Position,
+		&i.DueDate,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Number,
+		&i.ProjectID,
+		&i.OriginType,
+		&i.OriginID,
+		&i.FirstExecutedAt,
+		&i.StartDate,
+		&i.Metadata,
+		&i.Stage,
+		&i.Properties,
+		&i.Revision,
+		&i.LastActivityAt,
+		&i.TriageState,
+		&i.DuplicateOfIssueID,
+		&i.RequesterUserID,
+	)
+	return i, err
+}
+
 const cancelEngineeringHistoryDraft = `-- name: CancelEngineeringHistoryDraft :one
 UPDATE issue SET status='cancelled',revision=revision+1,updated_at=now(),last_activity_at=now()
 WHERE id=$1 AND workspace_id=$2 AND status='backlog' RETURNING id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at, triage_state, duplicate_of_issue_id, requester_user_id
@@ -191,6 +302,30 @@ func (q *Queries) CreateEngineeringHistoryProject(ctx context.Context, arg Creat
 	return i, err
 }
 
+const createEngineeringHistoryResource = `-- name: CreateEngineeringHistoryResource :exec
+INSERT INTO project_resource(id,project_id,workspace_id,resource_type,resource_ref,position,created_by)
+VALUES($1,$2,$3,'local_directory',$4,0,$5)
+`
+
+type CreateEngineeringHistoryResourceParams struct {
+	ID          pgtype.UUID `json:"id"`
+	ProjectID   pgtype.UUID `json:"project_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ResourceRef []byte      `json:"resource_ref"`
+	CreatedBy   pgtype.UUID `json:"created_by"`
+}
+
+func (q *Queries) CreateEngineeringHistoryResource(ctx context.Context, arg CreateEngineeringHistoryResourceParams) error {
+	_, err := q.db.Exec(ctx, createEngineeringHistoryResource,
+		arg.ID,
+		arg.ProjectID,
+		arg.WorkspaceID,
+		arg.ResourceRef,
+		arg.CreatedBy,
+	)
+	return err
+}
+
 const engineeringHistoryIssueHeld = `-- name: EngineeringHistoryIssueHeld :one
 SELECT engineering_history_issue_held($1::uuid)::boolean AS held
 `
@@ -211,6 +346,38 @@ func (q *Queries) EngineeringHistoryProjectHeld(ctx context.Context, dollar_1 pg
 	var held bool
 	err := row.Scan(&held)
 	return held, err
+}
+
+const getActivatedEngineeringHistoryPreparation = `-- name: GetActivatedEngineeringHistoryPreparation :one
+SELECT p.id, p.workspace_id, p.source_namespace, p.source_project_id, p.source_task_id, p.revision, p.archive_hash, p.packet_hash, p.project_id, p.team_id, p.team_revision, p.prepared_by, p.payload, p.created_at FROM engineering_history_adoption a JOIN engineering_history_preparation p ON p.id=a.preparation_id
+WHERE a.issue_id=$1 AND a.workspace_id=$2 AND a.phase='activated'
+`
+
+type GetActivatedEngineeringHistoryPreparationParams struct {
+	IssueID     pgtype.UUID `json:"issue_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) GetActivatedEngineeringHistoryPreparation(ctx context.Context, arg GetActivatedEngineeringHistoryPreparationParams) (EngineeringHistoryPreparation, error) {
+	row := q.db.QueryRow(ctx, getActivatedEngineeringHistoryPreparation, arg.IssueID, arg.WorkspaceID)
+	var i EngineeringHistoryPreparation
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.SourceNamespace,
+		&i.SourceProjectID,
+		&i.SourceTaskID,
+		&i.Revision,
+		&i.ArchiveHash,
+		&i.PacketHash,
+		&i.ProjectID,
+		&i.TeamID,
+		&i.TeamRevision,
+		&i.PreparedBy,
+		&i.Payload,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const getEngineeringHistoryPreparationByID = `-- name: GetEngineeringHistoryPreparationByID :one
@@ -529,7 +696,7 @@ func (q *Queries) LockEngineeringHistoryAdoptionProject(ctx context.Context, arg
 }
 
 const lockEngineeringHistoryCutover = `-- name: LockEngineeringHistoryCutover :one
-SELECT id, workspace_id, source_namespace, archive_hash, scope_hash, project_ids, phase, prepared_by, payload, receipt, created_at, updated_at FROM engineering_history_cutover WHERE id=$1 AND workspace_id=$2 FOR UPDATE
+SELECT id, workspace_id, source_namespace, archive_hash, scope_hash, project_ids, phase, prepared_by, payload, receipt, created_at, updated_at, activation FROM engineering_history_cutover WHERE id=$1 AND workspace_id=$2 FOR UPDATE
 `
 
 type LockEngineeringHistoryCutoverParams struct {
@@ -553,6 +720,7 @@ func (q *Queries) LockEngineeringHistoryCutover(ctx context.Context, arg LockEng
 		&i.Receipt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Activation,
 	)
 	return i, err
 }
@@ -583,6 +751,42 @@ SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))
 func (q *Queries) LockEngineeringHistoryPreparation(ctx context.Context, scope string) error {
 	_, err := q.db.Exec(ctx, lockEngineeringHistoryPreparation, scope)
 	return err
+}
+
+const lockEngineeringHistoryRuntime = `-- name: LockEngineeringHistoryRuntime :one
+SELECT id, workspace_id, daemon_id, name, runtime_mode, provider, status, device_info, metadata, last_seen_at, created_at, updated_at, owner_id, legacy_daemon_id, visibility, profile_id, custom_name, shared_with, max_concurrent_tasks FROM agent_runtime WHERE id=$1 AND workspace_id=$2 FOR SHARE
+`
+
+type LockEngineeringHistoryRuntimeParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) LockEngineeringHistoryRuntime(ctx context.Context, arg LockEngineeringHistoryRuntimeParams) (AgentRuntime, error) {
+	row := q.db.QueryRow(ctx, lockEngineeringHistoryRuntime, arg.ID, arg.WorkspaceID)
+	var i AgentRuntime
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.DaemonID,
+		&i.Name,
+		&i.RuntimeMode,
+		&i.Provider,
+		&i.Status,
+		&i.DeviceInfo,
+		&i.Metadata,
+		&i.LastSeenAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.OwnerID,
+		&i.LegacyDaemonID,
+		&i.Visibility,
+		&i.ProfileID,
+		&i.CustomName,
+		&i.SharedWith,
+		&i.MaxConcurrentTasks,
+	)
+	return i, err
 }
 
 const lockEngineeringHistoryTargetProject = `-- name: LockEngineeringHistoryTargetProject :one

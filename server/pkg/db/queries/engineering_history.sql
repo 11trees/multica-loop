@@ -75,3 +75,26 @@ INSERT INTO engineering_history_preparation (
     workspace_id, source_namespace, source_project_id, source_task_id, revision,
     archive_hash, packet_hash, project_id, team_id, team_revision, prepared_by, payload
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *;
+
+-- name: ActivateEngineeringHistoryCutover :one
+UPDATE engineering_history_cutover SET phase='activated',activation=$3,updated_at=now()
+WHERE id=$1 AND workspace_id=$2 AND phase='source_frozen' RETURNING *;
+
+-- name: ActivateEngineeringHistoryAdoption :one
+UPDATE engineering_history_adoption SET phase='activated'
+WHERE cutover_id=$1 AND workspace_id=$2 AND source_task_id=$3 AND phase='staged' RETURNING *;
+
+-- name: LockEngineeringHistoryRuntime :one
+SELECT * FROM agent_runtime WHERE id=$1 AND workspace_id=$2 FOR SHARE;
+
+-- name: GetActivatedEngineeringHistoryPreparation :one
+SELECT p.* FROM engineering_history_adoption a JOIN engineering_history_preparation p ON p.id=a.preparation_id
+WHERE a.issue_id=$1 AND a.workspace_id=$2 AND a.phase='activated';
+
+-- name: CreateEngineeringHistoryResource :exec
+INSERT INTO project_resource(id,project_id,workspace_id,resource_type,resource_ref,position,created_by)
+VALUES($1,$2,$3,'local_directory',$4,0,$5);
+
+-- name: ActivateEngineeringHistoryDraftNotice :one
+UPDATE issue SET description=$3,revision=revision+1,updated_at=now(),last_activity_at=now()
+WHERE id=$1 AND workspace_id=$2 AND status='backlog' RETURNING *;

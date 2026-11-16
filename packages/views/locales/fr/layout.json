@@ -336,7 +336,8 @@
       "native_withdrawn": "Migration retirée. Cette tâche reste inactive.",
       "native_retained": "Correspondance avec la tâche native conservée.",
       "open_native": "Ouvrir la tâche native",
-      "native_unavailable": "La tâche native est indisponible ; vérifiez sa correspondance de migration."
+      "native_unavailable": "La tâche native est indisponible ; vérifiez sa correspondance de migration.",
+      "native_activated": "Migration activée. Continuez depuis la tâche native."
     }
   }
 }

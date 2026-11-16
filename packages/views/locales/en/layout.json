@@ -336,7 +336,8 @@
       "native_withdrawn": "Migration withdrawn. This task remains inactive.",
       "native_retained": "Native task correspondence retained.",
       "open_native": "Open native task",
-      "native_unavailable": "The native task is unavailable; review its migration correspondence."
+      "native_unavailable": "The native task is unavailable; review its migration correspondence.",
+      "native_activated": "Migration activated. Continue from the native task."
     }
   }
 }

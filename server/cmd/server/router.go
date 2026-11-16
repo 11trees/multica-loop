@@ -2128,6 +2128,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			r.Get("/api/engineering/history/tasks/{sourceTaskID}/preparation", h.GetEngineeringHistoryPreparation)
 			r.Post("/api/engineering/history/tasks/{sourceTaskID}/preparation", h.PrepareEngineeringHistoryTask)
 			r.Post("/api/engineering/history/cutovers/{cutoverID}/stage", h.StageEngineeringHistoryCutover)
+			r.Post("/api/engineering/history/cutovers/{cutoverID}/activate", h.ActivateEngineeringHistoryCutover)
 			r.Post("/api/engineering/history/cutovers/{cutoverID}/withdraw", h.WithdrawEngineeringHistoryCutover)
 			r.Get("/api/engineering/history/tasks/{sourceTaskID}/documents/{sourceDocumentID}", h.GetEngineeringHistoryDocument)
 			r.Get("/api/engineering/run", h.GetEngineeringRunContext)

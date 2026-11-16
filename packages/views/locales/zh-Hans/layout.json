@@ -326,7 +326,8 @@
       "native_withdrawn": "迁入已撤回，此任务保持停用。",
       "native_retained": "已保留原生任务对应关系。",
       "open_native": "打开原生任务",
-      "native_unavailable": "原生任务已不可用，请核对迁移对应关系。"
+      "native_unavailable": "原生任务已不可用，请核对迁移对应关系。",
+      "native_activated": "迁移已激活，请在原生任务中继续。"
     }
   }
 }

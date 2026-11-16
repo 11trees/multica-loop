@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS engineering_history_adoption_owner_idx;

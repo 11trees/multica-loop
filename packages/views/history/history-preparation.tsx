@@ -10,7 +10,7 @@ import {AppLink} from "../navigation";
 
 function NativeAdoptionLinks({adoptions}:{adoptions:HistoryAdoption[]}){
  const paths=useWorkspacePaths(),{t}=useT("layout");
- return <div className="flex flex-col gap-2">{adoptions.map(item=><div key={item.cutoverId} className="flex flex-col gap-1"><p>{item.phase==="staged"?t($=>$.history.preparation.native_pending):item.phase==="withdrawn"?t($=>$.history.preparation.native_withdrawn):t($=>$.history.preparation.native_retained)}</p>{item.nativeAvailable?<AppLink className="w-fit underline underline-offset-4" href={paths.issueDetail(item.issueId)}>{item.identifier||t($=>$.history.preparation.open_native)}</AppLink>:<p className="text-muted-foreground">{t($=>$.history.preparation.native_unavailable)}</p>}</div>)}</div>;
+ return <div className="flex flex-col gap-2">{adoptions.map(item=><div key={item.cutoverId} className="flex flex-col gap-1"><p>{item.phase==="activated"?t($=>$.history.preparation.native_activated):item.phase==="staged"?t($=>$.history.preparation.native_pending):item.phase==="withdrawn"?t($=>$.history.preparation.native_withdrawn):t($=>$.history.preparation.native_retained)}</p>{item.nativeAvailable?<AppLink className="w-fit underline underline-offset-4" href={paths.issueDetail(item.issueId)}>{item.identifier||t($=>$.history.preparation.open_native)}</AppLink>:<p className="text-muted-foreground">{t($=>$.history.preparation.native_unavailable)}</p>}</div>)}</div>;
 }
 
 export function HistoryPreparation({wsId,userId,taskId,packetHash}:{wsId:string;userId:string;taskId:string;packetHash:string}){

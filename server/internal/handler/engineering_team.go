@@ -3,6 +3,8 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"github.com/jackc/pgx/v5"
 	"github.com/multica-ai/multica/server/internal/engineering"
 	"github.com/multica-ai/multica/server/internal/issuestatus"
 	"github.com/multica-ai/multica/server/internal/projectaccess"
@@ -11,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"time"
 )
@@ -372,6 +375,19 @@ func (h *Handler) startEngineeringTeamIssue(ctx context.Context, issue db.Issue,
 	}
 	if profile == nil {
 		return reject("set this Team's predefined workflow before starting")
+	}
+	if routing.Binding == nil {
+		prepared, loadErr := h.Queries.GetActivatedEngineeringHistoryPreparation(ctx, db.GetActivatedEngineeringHistoryPreparationParams{IssueID: issue.ID, WorkspaceID: issue.WorkspaceID})
+		if loadErr == nil {
+			var frozen struct {
+				Profile engineeringTeamSnapshot `json:"team_profile"`
+			}
+			if json.Unmarshal(prepared.Payload, &frozen) != nil || !reflect.DeepEqual(frozen.Profile, *profile) || prepared.ProjectID != issue.ProjectID || prepared.TeamID != issue.AssigneeID {
+				return reject("migrated task retains its prepared Team version and project; reconcile changes before starting")
+			}
+		} else if !errors.Is(loadErr, pgx.ErrNoRows) {
+			return loadErr
+		}
 	}
 	if profile.TeamID != uuidToString(squad.ID) || profile.WorkspaceID != uuidToString(issue.WorkspaceID) || profile.Revision < 1 || len(engineeringTeamRoles[profile.Definition.Workflow]) == 0 {
 		return reject("Team definition scope is unavailable")

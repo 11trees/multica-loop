@@ -25,8 +25,8 @@ it("does not prepare deleted projects or a different frozen material version",as
  mocks.historyPreparation.mockResolvedValue(base);mount('c'.repeat(64));expect(await screen.findByRole('alert')).toBeInTheDocument();expect(screen.getByRole('button',{name:'Save preparation'})).toBeDisabled();expect(mocks.prepareHistoryTask).not.toHaveBeenCalled();
 });
 
-it("links a staged native Team task and keeps the frozen preparation read-only",async()=>{
- mocks.historyPreparation.mockResolvedValue({...base,adoptions:[{cutoverId:"cutover",issueId:"native-task",identifier:"LOOP-9",phase:"staged",nativeAvailable:true,executionAuthorized:false}]});
+it.each(["staged","activated"])("links a %s native Team task and keeps the frozen preparation read-only",async(phase)=>{
+ mocks.historyPreparation.mockResolvedValue({...base,adoptions:[{cutoverId:"cutover",issueId:"native-task",identifier:"LOOP-9",phase,nativeAvailable:true,executionAuthorized:false}]});
  renderWithI18n(<WorkspaceSlugProvider slug="test"><NavigationProvider value={{push:vi.fn(),replace:vi.fn(),back:vi.fn(),pathname:"/test/history",searchParams:new URLSearchParams(),hash:"",getShareableUrl:path=>path}}><QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><HistoryPreparation wsId="workspace" userId="owner" taskId="source-task" packetHash={base.packetHash}/></QueryClientProvider></NavigationProvider></WorkspaceSlugProvider>);
- expect(await screen.findByRole("link",{name:"LOOP-9"})).toHaveAttribute("href","/test/issues/native-task");expect(screen.getByText(/migration confirmation pending/)).toBeInTheDocument();expect(screen.queryByRole("button",{name:"Save preparation"})).not.toBeInTheDocument();expect(screen.queryByLabelText("Team")).not.toBeInTheDocument();expect(mocks.prepareHistoryTask).not.toHaveBeenCalled();
+ expect(await screen.findByRole("link",{name:"LOOP-9"})).toHaveAttribute("href","/test/issues/native-task");expect(screen.getByText(phase==="activated"?/Migration activated/:/migration confirmation pending/)).toBeInTheDocument();expect(screen.queryByRole("button",{name:"Save preparation"})).not.toBeInTheDocument();expect(screen.queryByLabelText("Team")).not.toBeInTheDocument();expect(mocks.prepareHistoryTask).not.toHaveBeenCalled();
 });

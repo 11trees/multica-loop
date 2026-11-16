@@ -13,6 +13,8 @@ import { main } from "./loopwork-cutover.mjs";
 
 test("operator arguments reject missing scope and nonlocal database before connecting", async () => {
   await assert.rejects(main(["freeze"]), /Usage/);
+  await assert.rejects(main(["activate", "--id", randomUUID()]), /Usage/);
+  await assert.rejects(main(["activate", "--id", randomUUID(), "--expected-workspace", "a".repeat(64), "--execution-mode", "unknown"]), /Usage/);
   await assert.rejects(main(["hold", "--expected-scope", "wrong"]), /Invalid/);
   await assert.rejects(main(["workspace-check", "--id", randomUUID()]), /Usage/);
   await assert.rejects(main(["workspace-check", "--id", randomUUID(), "--expected-workspace", "wrong"]), /Usage/);
