@@ -40,7 +40,24 @@ func fixtureIndependentPlan() {
 	}
 	directory := filepath.Dir(os.Getenv("MULTICA_VERIFICATION_INPUT"))
 	script := filepath.Join(directory, "assert-original.cjs")
-	if err = os.WriteFile(script, []byte(`const assert=require('node:assert/strict');const fs=require('node:fs');const path=require('node:path');assert.equal(fs.readFileSync(path.join(process.argv[2],'source.txt'),'utf8'),'fixed');`), 0600); err != nil {
+	code := `const assert=require('node:assert/strict');const fs=require('node:fs');const path=require('node:path');assert.equal(fs.readFileSync(path.join(process.argv[2],'source.txt'),'utf8'),'fixed');`
+	switch os.Getenv("MULTICA_FIXTURE_VERIFICATION_MODE") {
+	case "check-fail":
+		code = `require('node:assert/strict').equal('actual','wrong-original-expectation');`
+	case "source-write":
+		code = `require('node:fs').writeFileSync(require('node:path').join(process.argv[2],'source.txt'),'unexpected check edit');`
+	case "artifact-write":
+		code = `require('node:fs').appendFileSync(__filename,'\n// changed frozen script');`
+	case "leftover":
+		code = `require('node:child_process').spawn('/bin/sleep',['10'],{stdio:'ignore'}).unref();`
+	case "overflow":
+		code = `process.stdout.write(Buffer.alloc(3*1024*1024,'x'));`
+	case "timeout":
+		code = `setTimeout(()=>{},10000);`
+	case "user-stop":
+		code = `require('node:fs').writeFileSync(require('node:path').join(process.env.HOME,'native-check-ready'),'ready');setTimeout(()=>{},10000);`
+	}
+	if err = os.WriteFile(script, []byte(code), 0600); err != nil {
 		os.Exit(89)
 	}
 	command := fmt.Sprintf("node %q %q", script, facts.Input.Binding.Root)
@@ -63,7 +80,7 @@ func fixtureIndependentPlan() {
 	}
 }
 func TestIndependentTestPreparationUsesSeparateFixtureAndPreservesActualArtifacts(t *testing.T) {
-	for _, mode := range []string{"success", "omit", "tamper"} {
+	for _, mode := range []string{"success", "omit", "tamper", "check-fail", "source-write", "artifact-write", "artifact-mutated", "plan-metadata-corrupt", "timeout", "overflow", "leftover", "user-stop"} {
 		t.Run(mode, func(t *testing.T) {
 			root := t.TempDir()
 			for _, key := range []string{"HOME", "USERPROFILE", "CODEX_HOME"} {
@@ -154,9 +171,20 @@ func TestIndependentTestPreparationUsesSeparateFixtureAndPreservesActualArtifact
 			call(map[string]any{"action": "verification-prepare", "claim": repair.Claim})
 			call(map[string]any{"action": "finish", "claim": repair.Claim, "payload": map[string]any{"exit_confirmed": true, "reason": "Original fixture invocation never spawned"}})
 			scopeCalls := 0
-			runner := &Runner{Client: client, Root: filepath.Join(root, "runtime")}
+			nativeWorker := filepath.Join(root, "native-check-worker")
+			workerWrapper := "#!/bin/sh\nexport MULTICA_FIXTURE_VERIFICATION_WORKER=1\nexec '" + strings.ReplaceAll(binary, "'", "'\\''") + "' -test.run '^TestNativeVerificationWorkerFixture$'\n"
+			if err = os.WriteFile(nativeWorker, []byte(workerWrapper), 0700); err != nil {
+				t.Fatal(err)
+			}
+			runner := &Runner{Client: client, Root: filepath.Join(root, "runtime"), Multica: nativeWorker, CheckTimeout: 800 * time.Millisecond}
+			if mode == "user-stop" {
+				runner.CheckTimeout = 10 * time.Second
+			}
 			runner.VerifyScope = func(ctx context.Context, identity json.RawMessage) error {
 				scopeCalls++
+				if _, err := client.Call(ctx, map[string]any{"action": "renew", "authority": acquired.Authority}); err != nil {
+					return err
+				}
 				var current claim
 				if err := json.Unmarshal(identity, &current); err != nil {
 					return err
@@ -204,7 +232,7 @@ func TestIndependentTestPreparationUsesSeparateFixtureAndPreservesActualArtifact
 				t.Fatal(err)
 			}
 			plan := call(map[string]any{"action": "verification-plan-read", "authority": acquired.Authority, "attempt_id": identity.AttemptID})
-			if mode == "success" {
+			if mode != "omit" && mode != "tamper" {
 				if repairCase.Status != "verification-prepared" || string(plan) == "null" || scopeCalls < 3 {
 					t.Fatal("separate plan preparation failed", repairCase.Status, string(plan))
 				}
@@ -225,11 +253,127 @@ func TestIndependentTestPreparationUsesSeparateFixtureAndPreservesActualArtifact
 					t.Fatal("actual plan scripts and original facts were not retained")
 				}
 			}
-			if mode != "success" && (repairCase.Status != "queued" || string(plan) != "null") {
+			if (mode == "omit" || mode == "tamper") && (repairCase.Status != "queued" || string(plan) != "null") {
 				t.Fatal("invalid or source-writing Test entered prepared state", repairCase.Status, string(plan))
 			}
 			if repairCase.Count != 1 {
 				t.Fatal("original failure history changed")
+			}
+			if mode == "omit" || mode == "tamper" {
+				return
+			}
+			if mode == "artifact-mutated" {
+				var saved struct {
+					Artifacts verificationArtifacts `json:"artifacts"`
+				}
+				if err = json.Unmarshal(plan, &saved); err != nil {
+					t.Fatal(err)
+				}
+				if err = os.WriteFile(filepath.Join(saved.Artifacts.Directory, "assert-original.cjs"), []byte("throw Error('replaced witness');"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if mode == "plan-metadata-corrupt" {
+				mutate := exec.Command("node", "-e", `const {DatabaseSync}=require('node:sqlite');const db=new DatabaseSync(process.argv[1]);const row=db.prepare('SELECT payload FROM admin_verification_plan WHERE attempt_id=?').get(process.argv[2]);const plan=JSON.parse(row.payload);plan.acceptanceChecks[0].command='printf fake-pass';db.prepare('UPDATE admin_verification_plan SET payload=? WHERE attempt_id=?').run(JSON.stringify(plan),process.argv[2]);db.close();`, client.Database, identity.AttemptID)
+				if out, err := mutate.CombinedOutput(); err != nil {
+					t.Fatal(err, string(out))
+				}
+			}
+			// A new generation and private worker execute the retained plan.
+			if err = runner.Tick(ctx, acquired.Authority.OwnerID, acquired.Authority.Token); err != nil {
+				t.Fatal(err)
+			}
+			if err = runner.Tick(ctx, acquired.Authority.OwnerID, acquired.Authority.Token); err != nil {
+				t.Fatal(err)
+			}
+			if err = json.Unmarshal(call(map[string]string{"action": "state"}), &state); err != nil || len(state.Active) != 1 || state.Active[0].Role != "verification-execution" || state.Active[0].Status != "waiting" {
+				t.Fatal("native execution did not wait for fresh ownership", err)
+			}
+			execution := state.Active[0]
+			executionClaim := claim{Authority: acquired.Authority, CaseID: execution.CaseID, AttemptID: execution.AttemptID, Generation: execution.Generation, SessionID: execution.SessionID}
+			call(map[string]any{"action": "takeover-progress", "claim": executionClaim, "payload": progress})
+			if err = runner.Tick(ctx, acquired.Authority.OwnerID, acquired.Authority.Token); err != nil {
+				t.Fatal(err)
+			}
+			runner.mu.Lock()
+			native := runner.active
+			runner.mu.Unlock()
+			if native == nil {
+				t.Fatal("native execution did not launch")
+			}
+			if mode == "user-stop" {
+				for {
+					if _, err = os.Stat(filepath.Join(root, "native-check-ready")); err == nil {
+						break
+					}
+					select {
+					case <-ctx.Done():
+						t.Fatal("native check never reached its actual command")
+					case <-time.After(10 * time.Millisecond):
+					}
+				}
+				call(map[string]any{"action": "intent", "payload": map[string]string{"intent": "stopped", "request_id": "stop-native"}})
+				if err = runner.Tick(ctx, acquired.Authority.OwnerID, acquired.Authority.Token); err != nil {
+					t.Fatal(err)
+				}
+			}
+			select {
+			case <-native.done:
+			case <-ctx.Done():
+				t.Fatal("native checks did not settle")
+			}
+			if !runner.Stop(ctx) {
+				t.Fatal("native check worker or descendants still own physical execution")
+			}
+			if err = json.Unmarshal(call(map[string]string{"action": "issue", "workspace_id": workspace, "issue_id": issue}), &repairCase); err != nil {
+				t.Fatal(err)
+			}
+			receipt := call(map[string]any{"action": "verification-receipt", "authority": acquired.Authority, "attempt_id": execution.AttemptID})
+			var verdict struct {
+				Passed       bool `json:"passed"`
+				WorkerExited bool `json:"workerExitConfirmed"`
+				Checks       []struct {
+					Kind   string              `json:"kind"`
+					Result *nativeCheckReceipt `json:"result"`
+				} `json:"checks"`
+			}
+			if string(receipt) != "null" && json.Unmarshal(receipt, &verdict) != nil {
+				t.Fatal("invalid native receipt")
+			}
+			if mode == "success" {
+				if repairCase.Status != "verified" || !verdict.Passed || !verdict.WorkerExited || len(verdict.Checks) != 6 {
+					t.Fatal("actual native original checks did not pass", repairCase.Status, string(receipt))
+				}
+				for _, check := range verdict.Checks {
+					if check.Result == nil || !check.Result.ExitConfirmed || check.Result.WorkerPID == 0 {
+						t.Fatal("check lacks physical identity")
+					}
+				}
+			} else {
+				if repairCase.Status != "queued" || verdict.Passed {
+					t.Fatal("failed, stopped or changed verification passed", repairCase.Status, string(receipt))
+				}
+				if mode == "plan-metadata-corrupt" && len(verdict.Checks) != 0 {
+					t.Fatal("metadata replacement ran commands absent from the frozen witness")
+				}
+				if mode == "check-fail" && (len(verdict.Checks) != 2 || verdict.Checks[1].Result == nil || verdict.Checks[1].Result.ExitCode == nil || *verdict.Checks[1].Result.ExitCode == 0) {
+					t.Fatal("real assertion failure was lost", string(receipt))
+				}
+				if mode == "source-write" && (len(verdict.Checks) != 2 || verdict.Checks[1].Result == nil || verdict.Checks[1].Result.ScopeConfirmed) {
+					t.Fatal("source mutation was not retained as failed evidence", string(receipt))
+				}
+				if mode == "overflow" && (len(verdict.Checks) != 2 || verdict.Checks[1].Result == nil || !verdict.Checks[1].Result.Truncated) {
+					t.Fatal("actual evidence overflow was not retained as a failure")
+				}
+				if mode == "leftover" && (len(verdict.Checks) != 2 || verdict.Checks[1].Result == nil || verdict.Checks[1].Result.ExitConfirmed) {
+					t.Fatal("a surviving descendant was treated as exited", string(receipt))
+				}
+				if mode == "artifact-write" && (len(verdict.Checks) != 2 || verdict.Checks[1].Result == nil || verdict.Checks[1].Result.ArtifactsUnchanged) {
+					t.Fatal("artifact mutation was not captured", string(receipt))
+				}
+			}
+			if repairCase.Count != 1 {
+				t.Fatal("native checks altered original observations")
 			}
 		})
 	}

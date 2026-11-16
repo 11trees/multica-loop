@@ -1,3 +1,4 @@
+import { independentCheckSchema, independentCheckResultSchema, independentCheckSteps, independentCheckPassed, compileIndependentReceipt, independentReceiptSchema } from "./repair-verification-receipt";
 import { authorizeRepairPlan, preparedRepairPlanSchema } from "./repair-verification-plan";
 import { originalRepairTargets, repairContentVersionSchema, repairVerificationInputHash, repairVerificationInputSchema } from "./repair-verification-input";
 import { randomUUID, createHash } from "node:crypto";
@@ -22,7 +23,7 @@ export type AdminClaim = z.infer<typeof adminClaimSchema>;
 const takeoverInspectionSchema=z.strictObject({observation_id:text,snapshot_hash:text,source_attempt_id:text,project_id:z.uuid(),runtime_id:z.uuid(),registered_repository_path:text,execution_repository_path:text,mode:z.enum(["in_place","worktree"]),receipt_hash:text,code_version:z.string(),kernel_version:text.nullable(),host_version:text.nullable()});
 const takeoverProgressSchema=z.strictObject({phase:z.enum(["draining","owned"]),cancelled:z.number().int().nonnegative(),unfinished_controllers:z.number().int().nonnegative(),unknown_tasks:z.number().int().nonnegative(),targets_hash:text.regex(/^[a-f0-9]{64}$/),workspace_root:text.nullable(),workspace_version:repairContentVersionSchema.nullable().default(null),source_attempt_id:text,snapshot_hash:text});
 const takeoverSchema=z.strictObject({claim:adminClaimSchema,case_id:text,observation_id:text,snapshot_hash:text,workspace_id:z.uuid(),issue_id:z.uuid(),source_attempt_id:text,reason:text,phase:z.enum(["requested","source-inspected"]),inspection:takeoverInspectionSchema.nullable()});
-const attemptSchema = z.strictObject({ role:z.enum(["investigation","verification"]).default("investigation"), verification:z.strictObject({sourceRepairAttemptId:text,inputHash:text}).optional(), attemptId: text, caseId: text, ownerId: text, supervisionToken: z.number().int().positive(), generation: z.number().int().positive(), intentRevision: z.number().int().nonnegative(), sessionId: z.uuid(),
+const attemptSchema = z.strictObject({ role:z.enum(["investigation","verification","verification-execution"]).default("investigation"), verification:z.strictObject({sourceRepairAttemptId:text,inputHash:text,sourcePreparationAttemptId:text.optional(),planHash:text.optional()}).optional(), attemptId: text, caseId: text, ownerId: text, supervisionToken: z.number().int().positive(), generation: z.number().int().positive(), intentRevision: z.number().int().nonnegative(), sessionId: z.uuid(),
     status: z.enum(["waiting", "launching", "running", "completed", "failed", "interrupted"]), pid: z.number().int().positive().nullable(), startMarker: text.nullable(), processGroupId: z.number().int().positive().nullable(),
     runtime: z.strictObject({ revision: z.number().int().positive(), configuration: adminRuntimeSchema }), statusViewed: z.boolean(), submission: adminSubmissionSchema.nullable(), startedAt: z.number(), finishedAt: z.number().nullable(), lastError: z.string().nullable(), recoveryDecision: z.strictObject({ policyVersion: z.literal(1), failedAttemptIds: z.array(text), method: z.enum(["investigate", "minimal-reproduction", "independent-diagnosis", "replan", "alternate-runtime"]), switchRuntime: z.boolean(), action: z.literal("continue-repair") }), interruptionCause: z.enum(["user-stop", "host-loss"]).optional() });
 type Attempt = z.infer<typeof attemptSchema>;
@@ -35,7 +36,9 @@ export function initializeAdminExecution(db: DatabaseSync, version: number) {
     if (version < 2)
         db.exec("ALTER TABLE admin_control ADD COLUMN execution_supported INTEGER NOT NULL DEFAULT 0");
     if (version < 6) db.exec("DROP INDEX IF EXISTS admin_one_live_attempt");
-    db.exec(`CREATE TABLE IF NOT EXISTS admin_verification_plan(attempt_id TEXT PRIMARY KEY,payload TEXT NOT NULL);
+    db.exec(`CREATE TABLE IF NOT EXISTS admin_verification_check(attempt_id TEXT NOT NULL,ordinal INTEGER NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(attempt_id,ordinal));
+ CREATE TABLE IF NOT EXISTS admin_verification_receipt(attempt_id TEXT PRIMARY KEY,payload TEXT NOT NULL);
+ CREATE TABLE IF NOT EXISTS admin_verification_plan(attempt_id TEXT PRIMARY KEY,payload TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS admin_verification_input(attempt_id TEXT PRIMARY KEY,payload TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS admin_takeover_progress(attempt_id TEXT PRIMARY KEY,payload TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS admin_takeover(attempt_id TEXT PRIMARY KEY,case_id TEXT NOT NULL,payload TEXT NOT NULL);
@@ -98,7 +101,7 @@ export class AdminExecutionStore {
         const claim = adminClaimSchema.parse(input), control = this.requireAuthority(claim.authority), attempt = this.read(claim.attemptId), repair = this.db.prepare("SELECT current_attempt_id,generation FROM admin_case WHERE case_id=?").get(claim.caseId);
         if (!control.execution_supported || control.desired_intent !== "running" || control.intent_revision !== attempt.intentRevision || attempt.ownerId !== claim.authority.ownerId || attempt.supervisionToken !== claim.authority.token || attempt.caseId !== claim.caseId || attempt.generation !== claim.generation || attempt.sessionId !== claim.sessionId || repair?.current_attempt_id !== attempt.attemptId || Number(repair.generation) !== attempt.generation || !["waiting", "launching", "running"].includes(attempt.status))
             throw new DraftConflictError("Admin invocation identity, intent or generation changed");
-        if (viewed && attempt.role !== "verification" && !attempt.statusViewed)
+        if (viewed && attempt.role === "investigation" && !attempt.statusViewed)
             throw new DraftConflictError("Read Admin status before recording or submitting");
         return attempt;
     }
@@ -107,13 +110,14 @@ export class AdminExecutionStore {
             const control = this.requireAuthority(authority), runtime = this.configuration();
             if (!control.execution_supported || control.desired_intent !== "running" || !runtime || this.active().length)
                 return null;
-            const repair = this.db.prepare("SELECT root.case_id,root.generation,root.status FROM admin_case root JOIN admin_schedule queue USING(case_id) WHERE root.status IN ('queued','verifying') AND root.current_attempt_id IS NULL ORDER BY queue.ticket LIMIT 1").get();
+            const repair = this.db.prepare("SELECT root.case_id,root.generation,root.status FROM admin_case root JOIN admin_schedule queue USING(case_id) WHERE root.status IN ('queued','verifying','verification-prepared') AND root.current_attempt_id IS NULL ORDER BY queue.ticket LIMIT 1").get();
             if (!repair)
                 return null;
-            const source = repair.status === "verifying" ? this.verificationSource(String(repair.case_id)) : null;
+            const source = repair.status !== "queued" ? this.verificationSource(String(repair.case_id)) : null;
+            const preparation=repair.status==="verification-prepared" ? this.preparationSource(String(repair.case_id),source!.hash) : null;
             const failed = this.db.prepare("SELECT payload FROM admin_attempt WHERE case_id=? ORDER BY rowid").all(String(repair.case_id)).map(row => attemptSchema.parse(JSON.parse(String(row.payload)))).filter(attempt => attempt.status === "failed" || attempt.status === "interrupted" && attempt.interruptionCause === "host-loss").map(attempt => attempt.attemptId);
             const method = (["investigate", "minimal-reproduction", "independent-diagnosis", "replan", "alternate-runtime"] as const)[Math.min(Math.floor(failed.length / 2), 4)]!;
-            const attempt: Attempt = { role:source ? "verification" : "investigation", ...(source?{verification:{sourceRepairAttemptId:source.input.sourceRepairAttemptId,inputHash:source.hash}}:{}), attemptId: `ADMIN-${randomUUID()}`, caseId: String(repair.case_id), ownerId: authority.ownerId, supervisionToken: authority.token, generation: Number(repair.generation) + 1, intentRevision: control.intent_revision, sessionId: randomUUID(), status: source ? "waiting" : "launching", pid: null, startMarker: null, processGroupId: null, runtime, statusViewed: false, submission: null, recoveryDecision: { policyVersion: 1, failedAttemptIds: failed, method, switchRuntime: false, action: "continue-repair" }, startedAt: this.now(), finishedAt: null, lastError: null };
+            const attempt: Attempt = { role:preparation ? "verification-execution" : source ? "verification" : "investigation", ...(source?{verification:{sourceRepairAttemptId:source.input.sourceRepairAttemptId,inputHash:source.hash,...(preparation?{sourcePreparationAttemptId:preparation.attemptId,planHash:preparation.hash}:{})}}:{}), attemptId: `ADMIN-${randomUUID()}`, caseId: String(repair.case_id), ownerId: authority.ownerId, supervisionToken: authority.token, generation: Number(repair.generation) + 1, intentRevision: control.intent_revision, sessionId: randomUUID(), status: source ? "waiting" : "launching", pid: null, startMarker: null, processGroupId: null, runtime, statusViewed: false, submission: null, recoveryDecision: { policyVersion: 1, failedAttemptIds: failed, method, switchRuntime: false, action: "continue-repair" }, startedAt: this.now(), finishedAt: null, lastError: null };
             this.db.prepare("INSERT INTO admin_attempt VALUES(?,?,?,?)").run(attempt.attemptId, attempt.caseId, attempt.status, json(attempt));
             this.db.prepare("UPDATE admin_case SET current_attempt_id=?,generation=?,status='running',updated_at=? WHERE case_id=?").run(attempt.attemptId, attempt.generation, this.now(), attempt.caseId);
             this.db.prepare("DELETE FROM admin_schedule WHERE case_id=?").run(attempt.caseId);
@@ -140,7 +144,7 @@ export class AdminExecutionStore {
         ]).parse(input);
         return this.transaction(() => {
             const attempt = this.current(claim, value.action !== "status");
-            if(attempt.role==="verification")throw new DraftConflictError("Independent Test has no Admin command authority");
+            if(attempt.role!=="investigation")throw new DraftConflictError("Independent Test has no Admin command authority");
             if (value.action === "status") {
                 attempt.statusViewed = true;
                 this.save(attempt);
@@ -209,7 +213,7 @@ export class AdminExecutionStore {
     }
     verificationCurrent(claim:AdminClaim,requireOwned=false){
         const attempt=this.current(claim);
-        if(attempt.role!=="verification" || !attempt.verification)throw new DraftConflictError("Invocation is not an independent Test");
+        if(attempt.role==="investigation" || !attempt.verification)throw new DraftConflictError("Invocation is not an independent Test");
         const source=this.verificationInput(attempt.verification.sourceRepairAttemptId),repair=this.read(attempt.verification.sourceRepairAttemptId);
         if(!source || source.hash!==attempt.verification.inputHash || repair.caseId!==attempt.caseId || repair.role!=="investigation" || repair.status!=="completed" || repair.finishedAt===null || repair.submission?.outcome!=="verification-requested")throw new DraftConflictError("Original repair source is not physically settled");
         const ids=this.originalObservations(attempt.caseId).map(row=>String(row.observationId)).sort();
@@ -217,7 +221,8 @@ export class AdminExecutionStore {
         const progress=this.progress(attempt.attemptId),binding=source.input.workspaceBinding;
         const ready=progress?.phase==="owned" && progress.workspace_root===binding.workspaceRoot && progress.workspace_version===source.input.expectedVersion && progress.targets_hash===binding.targetsHash && progress.source_attempt_id===binding.sourceAttemptId && progress.snapshot_hash===binding.snapshotHash;
         if(requireOwned&&!ready)throw new DraftConflictError("Independent Test source is not currently owned at the frozen version");
-        return {attempt,input:source.input,input_hash:source.hash,ready,progress};
+        const execution=attempt.role==="verification-execution"?this.executionBasis(claim):null;
+        return {attempt,input:source.input,input_hash:source.hash,ready,progress,...(execution?{plan:execution.plan,plan_hash:execution.planHash}:{})};
     }
     launchVerification(claim:AdminClaim){return this.transaction(()=>{
         const {attempt}=this.verificationCurrent(claim,true);
@@ -226,23 +231,67 @@ export class AdminExecutionStore {
     });}
     cancelWaitingVerification(authority:AdminAuthority,attemptId:string){return this.transaction(()=>{
         const control=this.requireAuthority(authority),attempt=this.read(text.parse(attemptId));
-        if(attempt.role!=="verification"||attempt.status!=="waiting"||attempt.pid!==null)throw new DraftConflictError("Only a never-launched waiting Test can be cancelled without exit proof");
+        if(attempt.role==="investigation"||attempt.status!=="waiting"||attempt.pid!==null)throw new DraftConflictError("Only a never-launched waiting Test can be cancelled without exit proof");
         const repair=this.db.prepare("SELECT current_attempt_id FROM admin_case WHERE case_id=?").get(attempt.caseId);
         if(repair?.current_attempt_id!==attempt.attemptId)throw new DraftConflictError("Waiting Test generation changed");
         let unchanged=false;
         try{const source=attempt.verification?this.verificationInput(attempt.verification.sourceRepairAttemptId):null;unchanged=!!source&&json(this.originalObservations(attempt.caseId).map(row=>String(row.observationId)).sort())===json(source.input.originalObservations.map(row=>row.observationId).sort());}catch{ /* Invalid source stays in the original repair Case. */ }
         attempt.status="interrupted";attempt.finishedAt=this.now();attempt.lastError="Waiting independent Test was never launched";attempt.interruptionCause=control.desired_intent==="stopped"?"user-stop":"host-loss";this.save(attempt);
-        this.db.prepare("UPDATE admin_case SET current_attempt_id=NULL,status=?,updated_at=? WHERE case_id=?").run(unchanged?"verifying":"queued",this.now(),attempt.caseId);return {cancelled:true};
+        this.db.prepare("UPDATE admin_case SET current_attempt_id=NULL,status=?,updated_at=? WHERE case_id=?").run(unchanged?(attempt.role==="verification-execution"?"verification-prepared":"verifying"):"queued",this.now(),attempt.caseId);return {cancelled:true};
     });}
     readVerificationPlan(authority:AdminAuthority,attemptId:string){this.requireAuthority(authority);return this.verificationPlan(text.parse(attemptId));}
     verificationPlan(attemptId:string){const row=this.db.prepare("SELECT payload FROM admin_verification_plan WHERE attempt_id=?").get(attemptId);return row?preparedRepairPlanSchema.parse(JSON.parse(String(row.payload))):null;}
     recordVerificationPlan(claim:AdminClaim,raw:unknown){const payload=z.strictObject({proposed:z.unknown(),artifacts:z.unknown()}).parse(raw);return this.transaction(()=>{
         const {attempt,input,input_hash}=this.verificationCurrent(claim,true);
-        if(attempt.status!=="running"||!attempt.pid||!attempt.startMarker)throw new DraftConflictError("Independent Test must bind its actual preparation process");
+        if(attempt.role!=="verification"||attempt.status!=="running"||!attempt.pid||!attempt.startMarker)throw new DraftConflictError("Independent Test must bind its actual preparation process");
         const plan=authorizeRepairPlan(input,input_hash,payload.proposed,payload.artifacts),prior=this.verificationPlan(attempt.attemptId);
         if(prior&&json(prior)!==json(plan))throw new DraftConflictError("Independent preparation cannot be replaced");
         if(!prior)this.db.prepare("INSERT INTO admin_verification_plan VALUES(?,?)").run(attempt.attemptId,json(plan));return {prepared:true};
     });}
+    private planHash(plan:unknown){return createHash("sha256").update(json(preparedRepairPlanSchema.parse(plan))).digest("hex");}
+    private preparationSource(caseId:string,inputHash:string){
+        for(const row of this.db.prepare("SELECT payload FROM admin_attempt WHERE case_id=? ORDER BY rowid DESC").all(caseId)){
+            const attempt=attemptSchema.parse(JSON.parse(String(row.payload))),plan=this.verificationPlan(attempt.attemptId);
+            if(attempt.role==="verification"&&attempt.status==="completed"&&attempt.finishedAt!==null&&plan?.inputHash===inputHash)return {attemptId:attempt.attemptId,plan,hash:this.planHash(plan)};
+        }
+        throw new DraftConflictError("Native verification has no physically settled independent plan");
+    }
+    private executionBasis(claim:AdminClaim){
+        const attempt=this.current(claim),binding=attempt.verification;
+        if(attempt.role!=="verification-execution"||!binding?.sourcePreparationAttemptId||!binding.planHash)throw new DraftConflictError("Invocation is not native independent check execution");
+        const producer=this.read(binding.sourcePreparationAttemptId),source=this.verificationInput(binding.sourceRepairAttemptId),plan=this.verificationPlan(producer.attemptId);
+        if(!source||source.hash!==binding.inputHash||producer.role!=="verification"||producer.caseId!==attempt.caseId||producer.status!=="completed"||producer.finishedAt===null||!plan||this.planHash(plan)!==binding.planHash||plan.inputHash!==source.hash)throw new DraftConflictError("Independent plan identity or physical source changed");
+        const validated=authorizeRepairPlan(source.input,source.hash,{reproduction:plan.reproduction,acceptanceChecks:plan.acceptanceChecks},plan.artifacts);
+        if(json(validated)!==json(plan))throw new DraftConflictError("Independent plan no longer matches the original input");
+        return {attempt,source,plan,planHash:binding.planHash,sourcePreparationAttemptId:binding.sourcePreparationAttemptId};
+    }
+    private executionChecks(attemptId:string){return this.db.prepare("SELECT payload FROM admin_verification_check WHERE attempt_id=? ORDER BY ordinal").all(attemptId).map(row=>independentCheckSchema.parse(JSON.parse(String(row.payload))));}
+    startIndependentCheck(claim:AdminClaim,ordinal:number){return this.transaction(()=>{
+        const basis=this.executionBasis(claim);this.verificationCurrent(claim,true);
+        if(basis.attempt.status!=="running"||!basis.attempt.pid||!basis.attempt.startMarker)throw new DraftConflictError("Native worker identity must bind before any check");
+        const checks=this.executionChecks(claim.attemptId),step=independentCheckSteps(basis.plan)[ordinal];
+        if(!step||ordinal!==checks.length||checks.some(check=>!independentCheckPassed(check,basis.plan.expectedVersion)))throw new DraftConflictError("Independent checks cannot be skipped, replayed or continue after failure");
+        const check=independentCheckSchema.parse({ordinal,...step,result:null});
+        this.db.prepare("INSERT INTO admin_verification_check VALUES(?,?,?)").run(claim.attemptId,ordinal,json(check));return check;
+    });}
+    finishIndependentCheck(claim:AdminClaim,raw:unknown){const payload=z.strictObject({ordinal:z.number().int().nonnegative(),result:independentCheckResultSchema}).parse(raw);return this.transaction(()=>{
+        const {attempt}=this.executionBasis(claim);
+        if(attempt.status!=="running"||attempt.pid!==payload.result.workerPID||attempt.startMarker!==payload.result.workerMarker)throw new DraftConflictError("Check result belongs to another native worker");
+        const row=this.db.prepare("SELECT payload FROM admin_verification_check WHERE attempt_id=? AND ordinal=?").get(claim.attemptId,payload.ordinal);
+        if(!row)throw new DraftConflictError("Independent check was not durably started");
+        const check=independentCheckSchema.parse(JSON.parse(String(row.payload)));
+        if(check.result){if(json(check.result)!==json(payload.result))throw new DraftConflictError("Independent check result cannot be replaced");return {recorded:true};}
+        this.db.prepare("UPDATE admin_verification_check SET payload=? WHERE attempt_id=? AND ordinal=?").run(json({...check,result:payload.result}),claim.attemptId,payload.ordinal);return {recorded:true};
+    });}
+    compileIndependentVerification(claim:AdminClaim,workerExitConfirmed:boolean,nativeScopeConfirmed:boolean,reason?:string){return this.transaction(()=>{
+        const basis=this.executionBasis(claim);let scope=false;try{this.verificationCurrent(claim,true);scope=true;}catch{ /* Negative evidence must survive source changes. */ }
+        const receipt=compileIndependentReceipt({attemptId:claim.attemptId,sourcePreparationAttemptId:basis.sourcePreparationAttemptId,inputHash:basis.source.hash,planHash:basis.planHash,plan:basis.plan,checks:this.executionChecks(claim.attemptId),scopeConfirmed:scope,workerExitConfirmed,nativeScopeConfirmed,reason});
+        const prior=this.independentVerificationReceipt(claim.attemptId);
+        if(prior&&json(prior)!==json(receipt))throw new DraftConflictError("Independent verification receipt cannot be replaced");
+        if(!prior)this.db.prepare("INSERT INTO admin_verification_receipt VALUES(?,?)").run(claim.attemptId,json(receipt));return receipt;
+    });}
+    independentVerificationReceipt(attemptId:string){const row=this.db.prepare("SELECT payload FROM admin_verification_receipt WHERE attempt_id=?").get(attemptId);return row?independentReceiptSchema.parse(JSON.parse(String(row.payload))):null;}
+    readIndependentVerificationReceipt(authority:AdminAuthority,attemptId:string){this.requireAuthority(authority);return this.independentVerificationReceipt(text.parse(attemptId));}
     private originalObservations(caseId: string) {
         return this.db.prepare("SELECT payload FROM admin_observation WHERE case_id=? AND origin<>'admin' ORDER BY rowid").all(caseId).map(row => JSON.parse(String(row.payload)));
     }
@@ -324,6 +373,12 @@ export class AdminExecutionStore {
         this.save(attempt);
         return { settled: false };
     }
+        if(attempt.role==="verification-execution"){
+            let passed=false;
+            try{const basis=this.executionBasis(claim);this.verificationCurrent(claim,true);const receipt=this.independentVerificationReceipt(claim.attemptId);const compiled=compileIndependentReceipt({attemptId:claim.attemptId,sourcePreparationAttemptId:basis.sourcePreparationAttemptId,inputHash:basis.source.hash,planHash:basis.planHash,plan:basis.plan,checks:this.executionChecks(claim.attemptId),scopeConfirmed:true,workerExitConfirmed:value.exit_confirmed,nativeScopeConfirmed:true});passed=!!receipt?.passed&&compiled.passed&&json(receipt)===json(compiled);}catch{ /* A saved partial receipt cannot authorize completion. */ }
+            attempt.status=passed?"completed":"failed";attempt.finishedAt=this.now();attempt.lastError=value.reason;this.save(attempt);
+            this.db.prepare("UPDATE admin_case SET current_attempt_id=NULL,status=?,updated_at=? WHERE case_id=?").run(passed?"verified":"queued",this.now(),attempt.caseId);return {settled:true};
+        }
         if(attempt.role==="verification"){
             let prepared=false;
             try{this.verificationCurrent(claim,true);prepared=this.verificationPlan(attempt.attemptId)!==null;}catch{ /* Retain the failed plan and original input. */ }

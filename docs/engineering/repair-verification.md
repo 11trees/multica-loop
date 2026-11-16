@@ -1,11 +1,11 @@
-# Independent repair verification input
+# Independent repair verification
 
 LoopWork's `independent-verification-preparation.ts` derives targets from original
 failures. A repairer's command suggestions cannot define independent acceptance.
 This migration connects submission, private host preparation, physical handoff,
-separate independent Test allocation, fresh source authorization and check-plan
-preparation. Actual native check execution, verified repair and business handoff
-remain incomplete.
+separate independent Test allocation, fresh source authorization, frozen check
+preparation and native check execution with physical receipts. Controlled repair
+writes and verified business handoff remain incomplete.
 
 ## Request and fresh candidate binding
 
@@ -29,6 +29,8 @@ succeed only if its original candidate and authority still match.
 
 Schema 5 added `admin_verification_input`; schema 6 adds the independent plan
 store and includes never-launched waiting Tests in the single active-slot index.
+Schema 7 adds ordered `admin_verification_check` records and immutable
+`admin_verification_receipt` records for native execution.
 Upgrades retain original Cases, observations and stopped intent. The host freezes the repair attempt/generation,
 intent and supervision identity, project/runtime and both repository paths, exact
 native source/checkpoint and writer-inventory hash, expected content version,
@@ -46,7 +48,7 @@ Status exposes only its hash, expected version and target count. The private hos
 can read the complete retained input with management authority; this historical
 read is not authorization to schedule or execute a Test invocation.
 
-## Physical handoff and remaining work
+## Physical handoff
 
 An unconfirmed repair process keeps the invocation and Case running. Only a
 confirmed physical exit, a prepared input and unchanged original references and
@@ -107,9 +109,52 @@ changes. The bundled PostgreSQL/private-socket test hands the fence to the new
 Test generation and rejects a changed candidate before launch. These are controlled
 fixtures, not real-model acceptance.
 
-Still required: controlled repair writes/candidates, actual native
-version/reproduction/acceptance execution against the retained artifact manifest,
-per-check physical receipts, verified business handoff and broader recovery.
-Running-service identity, runtime repairs and shared-path ownership retain their
-separate acceptance requirements. Repair Test preparation cannot replace the
-Team's normal delivery verification or satisfy native Done.
+## Native execution and immutable receipts
+
+A prepared Case allocates a new `verification-execution` generation bound to the
+exact completed Test preparation, input hash and plan hash. It reacquires the
+original native source/cohort and current content authorization; preparation does
+not lend it an owned receipt. Before execution the host checks the complete
+artifact manifest and compares the commands with the retained independent
+`verification-plan.json` witness.
+
+The host launches its own explicit executable as a credential-free native worker
+in a separate process group. It binds the actual PID, group and birth marker
+before sending commands over private stdin. Each step is durably started before
+delivery; steps cannot be skipped, replayed or continued after failure. The order
+is a host content-version read, original reproduction, every frozen acceptance
+command, and another host content-version read. Version reads are host-owned;
+the independent Test cannot supply them or a passing verdict.
+
+The worker executes actual shell commands against the frozen registered root.
+The host rechecks native source and artifacts around each step and records actual
+stdout, stderr and exit code with worker identity, physical group quiescence,
+source validity and artifact validity. Each output stream is bounded at 2 MiB;
+truncation fails verification. Timeouts, missing exits, surviving children,
+source/artifact changes and nonzero exits cannot pass. Logs remain outside both
+the project and frozen artifacts under the host's `verification-runs` directory.
+
+After stopping the owned worker group, the host freshly revalidates native source
+authorization and compiles an immutable receipt from the ordered records and
+physical exit facts. Final settlement recompiles and compares the entire saved
+receipt. Only a complete passing result with confirmed physical exit moves the
+Case to `verified`. New original facts return it to repair while retaining old
+checks and receipts. Admin stop cancels the owned process group; uncertain exits
+keep their barrier. This does not establish immediate cancellation from every
+business UI action or control detached external processes.
+
+Controlled Runner tests use a test-created SDK provider, real temporary Git
+repositories and real shell/Node checks. They cover successful checks, assertion
+failure, changed source/artifacts, plan metadata substitution, timeout, output
+overflow, surviving children and Admin stop. Kernel tests reject reordered or
+replayed checks, replaced receipts, incomplete evidence and a failed final native
+scope gate. Separate PostgreSQL/private-socket tests cover source authorization
+and predecessor fence handover; they do not establish one complete real-provider
+production run. Linux cross-compilation is not Linux runtime acceptance.
+
+Still required: controlled repair writes/candidates, verified business handoff
+and broader recovery. Running-service identity, runtime repairs and shared-path
+ownership retain their separate acceptance requirements. A `verified` repair
+Case does not release the business fence, resume the interrupted task, replace
+the Team's normal delivery verification or satisfy native Done. Real-provider
+and packaged acceptance remain unverified.

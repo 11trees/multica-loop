@@ -73,8 +73,13 @@ type Runner struct {
 	Root                string
 	PrepareVerification func(context.Context, json.RawMessage) error
 	VerifyScope         func(context.Context, json.RawMessage) error
+	CheckTimeout        time.Duration
 	mu                  sync.Mutex
 	active              *invocation
+}
+
+func isIndependentVerification(role string) bool {
+	return role == "verification" || role == "verification-execution"
 }
 
 func (r *Runner) Tick(ctx context.Context, owner string, token int64) error {
@@ -112,7 +117,7 @@ func (r *Runner) Tick(ctx context.Context, owner string, token int64) error {
 		return nil
 	}
 	for _, old := range state.Active {
-		if old.Status == "waiting" && old.Role == "verification" {
+		if old.Status == "waiting" && isIndependentVerification(old.Role) {
 			if state.Control.Intent == "running" && old.OwnerID == current.OwnerID && old.SupervisionToken == current.Token && old.IntentRevision == state.Control.Revision {
 				return r.startVerification(ctx, current, old)
 			}
@@ -155,7 +160,7 @@ func (r *Runner) Tick(ctx context.Context, owner string, token int64) error {
 	if err = json.Unmarshal(data, &allocated); err != nil || allocated.Claim.AttemptID == "" {
 		return fmt.Errorf("invalid Admin allocation")
 	}
-	if allocated.Attempt.Role == "verification" {
+	if isIndependentVerification(allocated.Attempt.Role) {
 		return r.startVerification(ctx, current, allocated.Attempt)
 	}
 	r.launch(ctx, allocated.Claim, allocated.Attempt)
@@ -228,6 +233,10 @@ func (r *Runner) execute(ctx context.Context, run *invocation) {
 			_, _ = r.Client.Call(settle, map[string]any{"action": "retire", "authority": run.claim.Authority, "payload": map[string]any{"attempt_id": run.claim.AttemptID, "exit_confirmed": true, "pid": pid, "marker": marker, "owned_launch": true, "reason": reason}})
 		}
 	}()
+	if run.attempt.Role == "verification-execution" {
+		reason = r.executeIndependentChecks(ctx, run)
+		return
+	}
 	if run.attempt.Role == "verification" {
 		reason = r.prepareIndependentChecks(ctx, run)
 		return

@@ -81,9 +81,10 @@ A native task or an investigation invocation cannot use these management command
 
 ## Investigation and physical ownership
 
-The management database schema is version 6. It freezes one invocation generation,
+The management database schema is version 7. It freezes one invocation generation,
 session identity, runtime revision and recovery method per allocation. A durable
-fair queue rotates Cases, with at most one live investigation process globally.
+fair queue rotates Cases, with at most one active investigation, independent
+preparation or native verification invocation globally.
 There is no fallback executable discovery or unconfigured alternate runtime.
 Failures continue repair; an attempt count alone never creates a human question.
 
@@ -115,7 +116,10 @@ scoped takeover, exact host-read content and all original references. The privat
 host freezes independent input before replying; confirmed repair exit moves the
 Case to waiting verification. A separate Test generation now reauthorizes the
 original native source and prepares checks without Admin command credentials;
-its prepared plan does not execute checks or authorize business completion.
+its prepared plan does not authorize business completion. Another native
+generation executes the frozen checks, records actual exits and source/artifact
+facts, and compiles an immutable receipt after final native authorization and
+physical worker exit. A passing repair Case still holds its business fence.
 See [the verification protocol](repair-verification.md).
 Diagnosis and external-wait prerequisites remain unconnected. No investigation
 receipt closes the Case or resumes business.
@@ -171,8 +175,9 @@ that their Cases, observations, attempts and scheduling records are removed.
 controllers, original issue/chat scope, Codex birth/exit facts and project admission
 guards in PostgreSQL as prerequisites for takeover. Recorded local Codex draining,
 owned cohort progress, current content identity and separate independent Test
-preparation are connected. Repair write access, controlled workspace/build
-actions, independent diagnosis, actual repair check execution, external dependency
+preparation and native check execution with immutable physical receipts are
+connected. Repair write access, controlled workspace/build
+actions, independent diagnosis, external dependency
 probes, verified business handoff and runtime updates remain unconnected. Real-provider, Linux runtime and packaged
 acceptance remain unverified. The complete migration stays active.
 
@@ -199,7 +204,7 @@ Inspection does not acquire the project fence, cancel a native task, confirm
 physical cleanup, validate the currently installed API/kernel version, or grant
 write authority. These facts must be freshly checked by the acquiring
 coordinator. Recorded local Codex draining is connected. Controlled repair writes
-and independent Test execution remain incomplete; investigation may defer or
+and verified business handoff remain incomplete; investigation may defer or
 request host preparation through the [verification input gate](repair-verification.md).
 
 

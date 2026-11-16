@@ -157,7 +157,7 @@ it("preserves a separate Test plan against exact original targets and physical e
  expect(store.issue(workspaceId,issueId).status).toBe("running");
  store.execution.finish(claim,{exit_confirmed:true,reason:"Test preparation physically ended"});
  expect(store.issue(workspaceId,issueId)).toMatchObject({status:"verification-prepared",observation_count:2});
- expect(store.execution.claim(h.authority)).toBeNull();expect(store.execution.readVerificationPlan(h.authority,claim.attemptId)).toEqual(saved);
+ expect(store.execution.readVerificationPlan(h.authority,claim.attemptId)).toEqual(saved);
  store.observe(h.authority,observation("new-after-plan"));
  expect(store.issue(workspaceId,issueId).status).toBe("queued");
  expect(store.execution.readVerificationPlan(h.authority,claim.attemptId)).toEqual(saved);
@@ -169,4 +169,74 @@ it("returns a cancelled waiting Test to repair when new original facts invalidat
  expect(()=>store.execution.verificationCurrent(h.verifier.claim)).toThrow(/observations changed/);
  store.execution.cancelWaitingVerification(h.authority,h.verifier.claim.attemptId);
  expect(store.issue(workspaceId,issueId).status).toBe("queued");expect(store.execution.claim(h.authority)!.attempt.role).toBe("investigation");
+});
+
+async function nativeExecution(){
+ const {verificationArtifactsHash}=await import("./repair-verification-plan"),h=waitingVerification(),preparer=h.verifier.claim;
+ store.execution.recordTakeoverProgress(preparer,h.progress);store.execution.launchVerification(preparer);store.execution.bind(preparer,{pid:42,marker:"preparation-birth",group_id:42});
+ const {input}=store.execution.verificationCurrent(preparer,true),files=[{kind:"file" as const,path:"check.cjs",hash:"f".repeat(64),size:20,mode:384}],artifacts={directory:"/fixture/retained-plan",mode:448,files,hash:verificationArtifactsHash(files,448)};
+ store.execution.recordVerificationPlan(preparer,{proposed:{reproduction:{targetRef:"original-failures",command:"node check.cjs reproduce"},acceptanceChecks:input.targets.map(target=>({targetRef:target.targetRef,command:"node check.cjs actual-target"}))},artifacts});
+ store.execution.finish(preparer,{exit_confirmed:true,reason:"Independent author physically ended"});
+ const executor=store.execution.claim(h.authority)!;
+ expect(executor.attempt).toMatchObject({role:"verification-execution",status:"waiting",verification:{sourcePreparationAttemptId:preparer.attemptId}});
+ expect(()=>store.execution.command(executor.claim,{action:"status"})).toThrow(/no Admin command/);
+ store.execution.recordTakeoverProgress(executor.claim,h.progress);store.execution.launchVerification(executor.claim);store.execution.bind(executor.claim,{pid:43,marker:"native-birth",group_id:43});
+ return {...h,executor,input,result:(kind:string)=>({exitCode:0,stdout:kind.startsWith("version-")?version:"Actual assertion ran",stderr:"",exitConfirmed:true,truncated:false,scopeConfirmed:true,artifactsUnchanged:true,workerPID:43,workerMarker:"native-birth"})};
+}
+it("executes the exact ordered plan once and requires every native witness plus final worker exit",async()=>{
+ const h=await nativeExecution(),claim=h.executor.claim,total=h.input.targets.length+3;
+ expect(()=>store.execution.startIndependentCheck(claim,1)).toThrow(/skipped/);
+ for(let index=0;index<total;index++){
+  const step=store.execution.startIndependentCheck(claim,index);
+  expect(()=>store.execution.startIndependentCheck(claim,index)).toThrow(/replayed/);
+  const result=h.result(step.kind);
+  expect(()=>store.execution.finishIndependentCheck(claim,{ordinal:index,result:{...result,workerMarker:"foreign"}})).toThrow(/another native worker/);
+  expect(store.execution.finishIndependentCheck(claim,{ordinal:index,result})).toEqual({recorded:true});
+  expect(store.execution.finishIndependentCheck(claim,{ordinal:index,result})).toEqual({recorded:true});
+  expect(()=>store.execution.finishIndependentCheck(claim,{ordinal:index,result:{...result,stdout:"replace"}})).toThrow(/cannot be replaced/);
+ }
+ const receipt=store.execution.compileIndependentVerification(claim,true,true);
+ expect(receipt).toMatchObject({passed:true,exitConfirmed:true,workerExitConfirmed:true,expectedVersion:version});expect(receipt.checks).toHaveLength(total);
+ expect(store.execution.finish(claim,{exit_confirmed:false,reason:"Worker group remains"})).toEqual({settled:false});expect(store.issue(workspaceId,issueId).status).toBe("running");
+ store.execution.finish(claim,{exit_confirmed:true,reason:"Native worker group confirmed gone"});expect(store.issue(workspaceId,issueId)).toMatchObject({status:"verified",observation_count:2});
+ expect(store.execution.claim(h.authority)).toBeNull();store.close();store=new AdminStore(filename,()=>now);expect(store.execution.readIndependentVerificationReceipt(h.authority,claim.attemptId)).toEqual(receipt);
+ store.observe(h.authority,observation("new-after-verification"));expect(store.issue(workspaceId,issueId).status).toBe("queued");expect(store.execution.readIndependentVerificationReceipt(h.authority,claim.attemptId)).toEqual(receipt);
+});
+it("keeps failed native evidence after scope changes and does not continue or upgrade the receipt",async()=>{
+ const h=await nativeExecution(),claim=h.executor.claim;
+ const step=store.execution.startIndependentCheck(claim,0);
+ store.observe(h.authority,observation("new-during-check"));
+ store.execution.finishIndependentCheck(claim,{ordinal:0,result:{...h.result(step.kind),scopeConfirmed:false,stderr:"Original source changed while checking"}});
+ expect(()=>store.execution.startIndependentCheck(claim,1)).toThrow();
+ const receipt=store.execution.compileIndependentVerification(claim,true,true,"Changed original source");expect(receipt.passed).toBe(false);expect(receipt.checks[0]!.result!.stderr).toContain("source changed");
+ expect(()=>store.execution.compileIndependentVerification(claim,true,true,"Replace failure history")).toThrow(/cannot be replaced/);
+ store.execution.finish(claim,{exit_confirmed:true,reason:"Group gone"});expect(store.issue(workspaceId,issueId)).toMatchObject({status:"queued",observation_count:3});
+});
+it("cannot pass partial, truncated or physically unsettled native verification",async()=>{
+ const h=await nativeExecution(),claim=h.executor.claim,step=store.execution.startIndependentCheck(claim,0);
+ store.execution.finishIndependentCheck(claim,{ordinal:0,result:{...h.result(step.kind),truncated:true,exitConfirmed:false}});
+ expect(()=>store.execution.startIndependentCheck(claim,1)).toThrow(/continue after failure/);
+ expect(store.execution.compileIndependentVerification(claim,false,true)).toMatchObject({passed:false,exitConfirmed:false,workerExitConfirmed:false});
+ expect(()=>store.execution.compileIndependentVerification(claim,true,true)).toThrow(/cannot be replaced/);
+ store.execution.finish(claim,{exit_confirmed:true,reason:"Later physical cleanup confirmed"});expect(store.issue(workspaceId,issueId).status).toBe("queued");
+});
+
+it.each(["wrong-final-version","unconfirmed-worker","final-native-scope"])("does not pass otherwise complete checks with %s",async mode=>{
+ const h=await nativeExecution(),claim=h.executor.claim,total=h.input.targets.length+3;
+ for(let index=0;index<total;index++){
+  const step=store.execution.startIndependentCheck(claim,index),result=h.result(step.kind);
+  if(mode==="wrong-final-version"&&index===total-1)result.stdout=version.replaceAll("b","d");
+  store.execution.finishIndependentCheck(claim,{ordinal:index,result});
+ }
+ const receipt=store.execution.compileIndependentVerification(claim,mode!=="unconfirmed-worker",mode!=="final-native-scope");expect(receipt.passed).toBe(false);
+ store.execution.finish(claim,{exit_confirmed:true,reason:"Worker eventually cleaned up"});expect(store.issue(workspaceId,issueId).status).toBe("queued");
+});
+
+it("rechecks the complete saved receipt against actual journal facts before marking repair verified",async()=>{
+ const h=await nativeExecution(),claim=h.executor.claim,total=h.input.targets.length+3;
+ for(let index=0;index<total;index++){const step=store.execution.startIndependentCheck(claim,index);store.execution.finishIndependentCheck(claim,{ordinal:index,result:h.result(step.kind)});}
+ const receipt=store.execution.compileIndependentVerification(claim,true,true);expect(receipt.passed).toBe(true);
+ const changed={...receipt,checks:receipt.checks.map((check,index)=>index===0?{...check,result:{...check.result!,stdout:"fabricated retained version"}}:check)};
+ const db=new DatabaseSync(filename);db.prepare("UPDATE admin_verification_receipt SET payload=? WHERE attempt_id=?").run(JSON.stringify(changed),claim.attemptId);db.close();
+ store.execution.finish(claim,{exit_confirmed:true,reason:"Actual worker exited"});expect(store.issue(workspaceId,issueId).status).toBe("queued");
 });

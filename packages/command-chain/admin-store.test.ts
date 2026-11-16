@@ -34,7 +34,7 @@ it("isolates workspaces and prevents recursively creating an Admin Case for its 
 it("refuses business, unrelated and newer databases before management schema creation",()=>{
  const business=join(directory,"business.sqlite"),db=new DatabaseSync(business);db.exec("CREATE TABLE engineering_contract(id TEXT)");db.close();expect(()=>new AdminStore(business)).toThrow(/business or unrelated/);
  const check=new DatabaseSync(business);expect(check.prepare("SELECT name FROM sqlite_master WHERE name='admin_control'").get()).toBeUndefined();check.close();
- const newer=join(directory,"newer.sqlite"),future=new DatabaseSync(newer);future.exec("CREATE TABLE admin_control(singleton INTEGER);PRAGMA user_version=7");future.close();expect(()=>new AdminStore(newer)).toThrow(/newer/);
+ const newer=join(directory,"newer.sqlite"),future=new DatabaseSync(newer);future.exec("CREATE TABLE admin_control(singleton INTEGER);PRAGMA user_version=8");future.close();expect(()=>new AdminStore(newer)).toThrow(/newer/);
 });
 it("upgrades an existing observation database without rewriting its Case or granting execution",()=>{
  const authority=store.acquireSupervisor("existing-host")!,original=observation(),repair=store.observe(authority,original);
@@ -53,21 +53,21 @@ it("upgrades schema two with pending Cases while keeping Admin stopped and prese
  expect(store.observe(authority,original)).toEqual(repair);
  expect(store.control()).toMatchObject({desired_intent:"stopped",intent_revision:0});
  expect(store.execution.pendingTakeovers(authority)).toEqual([]);
- const check=new DatabaseSync(filename);expect(check.prepare("PRAGMA user_version").get()!.user_version).toBe(6);expect(check.prepare("SELECT count(*) AS n FROM admin_observation").get()!.n).toBe(1);check.close();
+ const check=new DatabaseSync(filename);expect(check.prepare("PRAGMA user_version").get()!.user_version).toBe(7);expect(check.prepare("SELECT count(*) AS n FROM admin_observation").get()!.n).toBe(1);check.close();
 });
 
 it("upgrades schema three with separate physical progress storage and preserves original Cases",()=>{
  const authority=store.acquireSupervisor("schema-three")!,original=observation(),repair=store.observe(authority,original);
  store.close();const prior=new DatabaseSync(filename);prior.exec("DROP TABLE admin_takeover_progress;PRAGMA user_version=3");prior.close();
  store=new AdminStore(filename,()=>now);expect(store.observe(authority,original)).toEqual(repair);expect(store.control()).toMatchObject({desired_intent:"stopped",intent_revision:0});
- const check=new DatabaseSync(filename);expect(check.prepare("PRAGMA user_version").get()!.user_version).toBe(6);expect(check.prepare("SELECT count(*) AS n FROM admin_takeover_progress").get()!.n).toBe(0);check.close();
+ const check=new DatabaseSync(filename);expect(check.prepare("PRAGMA user_version").get()!.user_version).toBe(7);expect(check.prepare("SELECT count(*) AS n FROM admin_takeover_progress").get()!.n).toBe(0);check.close();
 });
 
 it("upgrades schema four without changing original Cases or creating verification work",()=>{
  const authority=store.acquireSupervisor("schema-four")!,original=observation(),repair=store.observe(authority,original);
  store.close();const prior=new DatabaseSync(filename);prior.exec("DROP TABLE admin_verification_input;PRAGMA user_version=4");prior.close();
  store=new AdminStore(filename,()=>now);expect(store.observe(authority,original)).toEqual(repair);expect(store.control()).toMatchObject({desired_intent:"stopped",intent_revision:0});
- const check=new DatabaseSync(filename);expect(check.prepare("PRAGMA user_version").get()!.user_version).toBe(6);expect(check.prepare("SELECT count(*) AS n FROM admin_verification_input").get()!.n).toBe(0);check.close();
+ const check=new DatabaseSync(filename);expect(check.prepare("PRAGMA user_version").get()!.user_version).toBe(7);expect(check.prepare("SELECT count(*) AS n FROM admin_verification_input").get()!.n).toBe(0);check.close();
  expect(store.execution.active()).toEqual([]);expect(store.execution.configuration()).toBeNull();
 });
 
@@ -75,5 +75,12 @@ it("upgrades schema five to retain a single active slot including never-launched
  const authority=store.acquireSupervisor("schema-five")!,original=observation(),repair=store.observe(authority,original);
  store.close();const prior=new DatabaseSync(filename);prior.exec("DROP TABLE admin_verification_plan;DROP INDEX admin_one_live_attempt;CREATE UNIQUE INDEX admin_one_live_attempt ON admin_attempt((1)) WHERE status IN ('launching','running');PRAGMA user_version=5");prior.close();
  store=new AdminStore(filename,()=>now);expect(store.observe(authority,original)).toEqual(repair);expect(store.control()).toMatchObject({desired_intent:"stopped",intent_revision:0});
- const check=new DatabaseSync(filename);expect(check.prepare("PRAGMA user_version").get()!.user_version).toBe(6);expect(String(check.prepare("SELECT sql FROM sqlite_master WHERE name='admin_one_live_attempt'").get()!.sql)).toContain("waiting");check.close();expect(store.execution.active()).toEqual([]);
+ const check=new DatabaseSync(filename);expect(check.prepare("PRAGMA user_version").get()!.user_version).toBe(7);expect(String(check.prepare("SELECT sql FROM sqlite_master WHERE name='admin_one_live_attempt'").get()!.sql)).toContain("waiting");check.close();expect(store.execution.active()).toEqual([]);
+});
+
+it("upgrades schema six with empty native receipts while retaining original Cases and stopped intent",()=>{
+ const authority=store.acquireSupervisor("schema-six")!,original=observation(),repair=store.observe(authority,original);
+ store.close();const prior=new DatabaseSync(filename);prior.exec("DROP TABLE admin_verification_check;DROP TABLE admin_verification_receipt;PRAGMA user_version=6");prior.close();
+ store=new AdminStore(filename,()=>now);expect(store.observe(authority,original)).toEqual(repair);expect(store.control()).toMatchObject({desired_intent:"stopped",intent_revision:0});
+ const check=new DatabaseSync(filename);expect(check.prepare("PRAGMA user_version").get()!.user_version).toBe(7);expect(check.prepare("SELECT count(*) AS n FROM admin_verification_check").get()!.n).toBe(0);expect(check.prepare("SELECT count(*) AS n FROM admin_verification_receipt").get()!.n).toBe(0);check.close();
 });

@@ -15,9 +15,10 @@ import (
 )
 
 type verificationView struct {
-	Ready     bool            `json:"ready"`
-	InputHash string          `json:"input_hash"`
-	Input     json.RawMessage `json:"input"`
+	Ready     bool             `json:"ready"`
+	InputHash string           `json:"input_hash"`
+	Input     json.RawMessage  `json:"input"`
+	Plan      *nativeCheckPlan `json:"plan"`
 }
 
 func (r *Runner) verificationView(ctx context.Context, identity claim, owned bool) (verificationView, error) {
