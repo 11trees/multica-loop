@@ -60,8 +60,8 @@ func (h *Handler) ReconcileEngineeringRecoveryReadiness(ctx context.Context, aut
 	return errors.Join(failures...)
 }
 
-// Sampling is read-only. A due timer is not permission to surrender work or
-// cancel processes; a later takeback capability still needs fresh source proof.
+// Readiness itself is read-only. A due interval enters a separate native
+// reservation with fresh source checks; it grants no cancellation authority.
 func (h *Handler) observeEngineeringRecoveryReadiness(ctx context.Context, raw json.RawMessage) (any, error) {
 	var input engineeringPublicationRequest
 	if err := json.Unmarshal(raw, &input); err != nil {
@@ -77,6 +77,13 @@ func (h *Handler) observeEngineeringRecoveryReadiness(ctx context.Context, raw j
 	}
 	p := observed.Published.Publication
 	r := observed.Current.Reservation
+	_, marker, err := h.dispatchStallTask(ctx, p)
+	if err != nil {
+		return nil, err
+	}
+	if marker != nil {
+		return h.holdEngineeringDispatchStall(ctx, input, observed, marker)
+	}
 	value := engineeringReadinessObservation{CaseID: p.CaseID, VerificationAttemptID: p.VerificationAttemptID, TargetHash: p.TargetHash, PublicationHash: p.Hash, WorkspaceID: p.WorkspaceID, IssueID: p.IssueID, ProjectID: r.ProjectID, RuntimeID: p.RuntimeID, Readiness: "waiting", Reason: "native-inspection-pending"}
 	response, businessErr := h.EngineeringWorker.Call(ctx, map[string]any{"actor": map[string]string{"kind": "host", "workspaceId": p.WorkspaceID, "issueId": p.IssueID}, "action": "repair-dispatch-readiness", "payload": map[string]string{"target_hash": p.TargetHash, "application_hash": p.ApplicationHash, "ready_hash": p.ReadyHash}})
 	var state struct {
@@ -131,7 +138,20 @@ func (h *Handler) observeEngineeringRecoveryReadiness(ctx context.Context, raw j
 	if fresh.Current.CurrentIntentRevision != observed.Current.CurrentIntentRevision || !engineeringSameJSON(fresh.Published, observed.Published) {
 		return nil, fmt.Errorf("readiness authority changed before sampling")
 	}
-	return h.EngineeringAdminWorker.Call(ctx, map[string]any{"action": "handoff-watch", "authority": input.Authority, "case_id": input.CaseID, "payload": value})
+	result, err := h.EngineeringAdminWorker.Call(ctx, map[string]any{"action": "handoff-watch", "authority": input.Authority, "case_id": input.CaseID, "payload": value})
+	if err != nil {
+		return nil, err
+	}
+	var saved struct {
+		Due bool `json:"stall_due"`
+	}
+	if json.Unmarshal(result, &saved) != nil {
+		return nil, fmt.Errorf("invalid dispatch watch result")
+	}
+	if saved.Due {
+		return h.holdEngineeringDispatchStall(ctx, input, observed, nil)
+	}
+	return result, nil
 }
 
 func (h *Handler) classifyEngineeringRecoveryQueue(ctx context.Context, observed *engineeringObservedPublication, currentTask string, draftID *string, revision, sequence int, value *engineeringReadinessObservation) error {
@@ -236,6 +256,12 @@ func (h *Handler) classifyEngineeringRecoveryQueue(ctx context.Context, observed
 			hint, e := h.engineeringRecoveryForTask(ctx, candidate, p.WorkspaceID)
 			if e != nil || hint == nil || hint.TargetHash != p.TargetHash || engineeringOptionalText(hint.DraftID) != engineeringOptionalText(draftID) || hint.Revision != revision || hint.Sequence > sequence {
 				continue
+			}
+		}
+		for _, other := range tasks {
+			if other.ID != candidate.ID && other.Status != "completed" && other.Status != "failed" && other.Status != "cancelled" {
+				value.Reason = "native-retry-or-unlinked-work-wait"
+				return nil
 			}
 		}
 		id := uuidToString(candidate.ID)

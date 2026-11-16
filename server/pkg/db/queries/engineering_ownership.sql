@@ -136,6 +136,7 @@ SELECT * FROM agent_task_queue WHERE id = (
     WHERE atq.agent_id = @agent_id
       AND atq.runtime_id = @runtime_id
       AND atq.status = 'queued'
+      AND NOT (COALESCE(atq.context,'{}'::jsonb) ? 'engineering_dispatch_hold')
       AND (atq.context->>'wakeup_id' IS NULL OR EXISTS (SELECT 1 FROM issue_wakeup w WHERE w.id=(atq.context->>'wakeup_id')::uuid AND w.disabled_at IS NULL AND w.revision=(atq.context->>'wakeup_revision')::bigint))
       AND EXISTS (
           SELECT 1
@@ -176,3 +177,10 @@ SELECT * FROM agent_task_queue WHERE id = (
     ORDER BY atq.priority DESC, atq.created_at ASC, atq.id ASC
     LIMIT 1
 );
+
+-- name: ReserveEngineeringDispatchHold :one
+-- A queue admission barrier, not a native claim, cancellation or repair fence.
+UPDATE agent_task_queue SET context=jsonb_set(COALESCE(NULLIF(context,'null'::jsonb),'{}'::jsonb),'{engineering_dispatch_hold}',@receipt::jsonb)
+WHERE id = sqlc.arg(task_id)::uuid AND status='queued' AND dispatched_at IS NULL AND started_at IS NULL
+ AND context IS NOT DISTINCT FROM sqlc.narg(expected_context)::jsonb
+ AND NOT (COALESCE(context,'{}'::jsonb) ? 'engineering_dispatch_hold') RETURNING *;

@@ -9,10 +9,10 @@ ready business checkpoint; the Case enters observation rather than closure.
 
 ## Verified management context
 
-Management schema 15 retains preparation, reservation, application, publication
+Management schema 16 retains preparation, reservation, application, publication
 and business-progress ledgers and the separate `admin_recovery_watch` observation
-interval. Schema 15 preserves explicit retained execution provenance in takeover
-inspection, including after management restart. The host reads `handoff-pending` only
+interval. Schema 16 preserves retained execution provenance and the separate queued-task
+hold identity in takeover inspection, including after management restart. The host reads `handoff-pending` only
 under current running intent and obtains `handoff-context` with management
 authority. Agent commands expose neither action. A display status alone is
 insufficient: context recompiles the entire ordered native receipt, compares its
@@ -363,8 +363,53 @@ independently verified handoff can prepare a new version. YAML retains the exact
 prepared draft and typed owner pointers, including business upstream generations
 and requirement/Feedback facts. A new verified successor is required before a
 new native bind; ordinary workflow, result and Done/reading rules still apply.
-Partially activated binds, changed staged state and never-claimed stalled tasks
-need separate recovery work.
+Partially activated binds and changed staged state need separate recovery work.
+Never-claimed published entries have the distinct dispatch path below.
+
+## Runnable stall before any native claim
+
+For an unchanged published `ready` entry, the observer can now act on a fresh,
+continuous 20-minute runnable interval. It rereads the private management watch,
+current prepared checkpoint, frozen Team/human/resources, controller cleanup and
+actual queue selection. Existing queued/deferred/unlinked work keeps observation
+waiting. Under project admission and native task locks, the entry must still be
+queued with neither dispatch nor start timestamp; a concurrent claim refuses
+handoff rather than fabricating an execution fault.
+
+The first durable write is a native queue admission reservation in
+`agent_task_queue.context.engineering_dispatch_hold`. Its immutable witness pins
+the publication, current checkpoint, original preparation/bindings, exact native
+task creation/context and due interval/source/intent. Status stays `queued`,
+`claimed_at` and `started_at` remain null, and no cancellation or repair fence is
+created. Normal candidate queries and the inner/outer SQL claim predicates refuse
+that marker. Other queued work can still use available machine capacity.
+
+Only then does the host write a business hold and immutable outbox. A dispatch
+observation has `sourceKind: prepared-dispatch` and a separate `dispatchStall`
+witness; it is stored by observation ID in `engineering_dispatch_intervention`.
+Its `attemptId` identifies the retained real source anchor, not a claim by the
+queued task. The latter has its own UUID and explicit null claim/start facts.
+The history/pending views preserve all original receipts while superseding the
+prior hold atomically with the new outbox. Permanent draft/grant/hint guards also
+include this history. No fake Agent view, Direct RUN, claim timestamp, process or
+execution binding is inserted to fit an attempt-keyed row.
+
+The ordinary observation bridge validates the native marker/publication/context
+and retained anchor, reopens the same Case, then acknowledges the business outbox.
+A lost reply at reservation, business hold, observation or acknowledgement reuses
+the same identities. A stopped host cannot advance; a committed native reservation
+keeps its queue barrier. After a new running intent, fresh authority can complete
+that exact durable handoff without manufacturing another 20-minute interval.
+Changed checkpoint or source cannot silently remove the barrier.
+
+Source reads explicitly retain the earlier actual execution anchor and expose
+`dispatch_hold_hash` and `dispatch_task_id`. Native inspection and management schema
+16 keep both identities, refuse changed source/context or a newly claimed task,
+and permit the normal later cancellation of that never-started row. Investigation
+still needs its separate owned fence and physical-writer reconciliation before
+cancellation or repair writes. Independent verification/handoff prepares a new
+native task; the held task is never re-enqueued or treated as delivered work.
+Normal Done and reading gates remain independent.
 
 ## Remaining recovery work
 
@@ -373,8 +418,8 @@ are connected. Bound terminal executions without a result now create an
 immutable host business hold and reopen their original Case. Readonly runnable-
 dispatch sampling and durable eligible-time evidence are connected through the
 [Admin observer](admin.md#dispatch-readiness-observation). Automatic stall
-takeback for never-claimed work, partially-bound/preparation failure holds,
-source/cohort changes and recovery
+takeback for an active bound stage or its queued continuation, partially-bound
+preparation failure holds, source/cohort changes and recovery
 of completed drafts without owner settlement still require migration. Waiting
 alone does not synthesize a successful result, fault or Case closure. Broader revocation,
 runtime/service identity, external dependency and shared-path recovery retain
@@ -528,3 +573,22 @@ provenance and unchanged physical barriers. These checks use synthetic provider
 ports, temporary repositories and actual SQLite/PostgreSQL operations; they do not
 establish never-claimed stall takeback, partially-bound recovery, real-provider
 or packaged acceptance.
+
+Never-claimed dispatch takeback passed 493 existing plus 8 new command-chain
+cases (501 distinct tests across 39 files), followed by a 40-case final recovery
+focus including permanent rejection of writes to the surrendered prepared draft.
+Kernel type/lint/build, the engineering handler race suite, its final dispatch
+focus, local-control checks and Go vet passed. Business-store fixtures cover
+Direct/verification outcomes after a new verified handoff, outbox rollback,
+original receipt preservation, business-review upstream facts and Feedback
+sidecars/accepted work. A bundled-worker check captures actual kernel and supplied
+native host versions without a current claim or execution binding. Schema-fifteen
+upgrade retains prior watches and stopped intent. Shared Go/Node UTF-8 witnesses
+pin the due interval and distinct queue/source facts. PostgreSQL/native fixtures
+exercise fresh capacity, normal claim refusal after reservation, a racing claim,
+deferred retry/unknown-controller waits, stop before/after reservation, new-intent
+resume and lost business/management/acknowledgement replies. Source checks refuse
+changed context and an unpublished ledger while preserving later cancellation
+of the never-started row. Logical reservations create no repair fence. These
+controlled layers do not establish real-provider, packaged, partially-bound or
+source/cohort-change recovery acceptance.

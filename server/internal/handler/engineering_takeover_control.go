@@ -43,6 +43,8 @@ type engineeringTakeoverCurrent struct {
 			RuntimeID                string  `json:"runtime_id"`
 			RegisteredPath           string  `json:"registered_repository_path"`
 			ExecutionPath            string  `json:"execution_repository_path"`
+			DispatchHoldHash         *string `json:"dispatch_hold_hash,omitempty"`
+			DispatchTaskID           *string `json:"dispatch_task_id,omitempty"`
 			ExecutionBindingOrigin   *string `json:"execution_binding_origin,omitempty"`
 			ExecutionSourceAttemptID *string `json:"execution_source_attempt_id,omitempty"`
 			Mode                     string  `json:"mode"`
@@ -63,6 +65,8 @@ type engineeringTakeoverSource struct {
 	SnapshotHash             string  `json:"snapshot_hash"`
 	RegisteredPath           string  `json:"registered_repository_path"`
 	ExecutionPath            string  `json:"execution_repository_path"`
+	DispatchHoldHash         *string `json:"dispatch_hold_hash,omitempty"`
+	DispatchTaskID           *string `json:"dispatch_task_id,omitempty"`
 	ExecutionBindingOrigin   *string `json:"execution_binding_origin,omitempty"`
 	ExecutionSourceAttemptID *string `json:"execution_source_attempt_id,omitempty"`
 	Mode                     string  `json:"mode"`
@@ -108,7 +112,7 @@ func (h *Handler) engineeringSourceForCurrent(ctx context.Context, current engin
 	}
 	var source engineeringTakeoverSource
 	equalVersion := func(a, b *string) bool { return a != nil && b != nil && *a != "" && *a == *b }
-	if json.Unmarshal(raw, &source) != nil || source.WorkspaceID != request.WorkspaceID || source.IssueID != request.IssueID || source.CaseID != request.CaseID || source.ObservationID != request.ObservationID || source.SnapshotHash != request.SnapshotHash || source.AttemptID != request.SourceAttemptID || source.Revision < 1 || source.Sequence < 0 || source.ReceiptHash == "" || source.ReceiptHash != request.Inspection.ReceiptHash || source.RegisteredPath != request.Inspection.RegisteredPath || source.ExecutionPath != request.Inspection.ExecutionPath || source.Mode != request.Inspection.Mode || engineeringOptionalText(source.ExecutionBindingOrigin) != engineeringOptionalText(request.Inspection.ExecutionBindingOrigin) || engineeringOptionalText(source.ExecutionSourceAttemptID) != engineeringOptionalText(request.Inspection.ExecutionSourceAttemptID) || source.CodeVersion != request.Inspection.CodeVersion || !equalVersion(source.KernelVersion, request.Inspection.KernelVersion) || !equalVersion(source.HostVersion, request.Inspection.HostVersion) {
+	if json.Unmarshal(raw, &source) != nil || source.WorkspaceID != request.WorkspaceID || source.IssueID != request.IssueID || source.CaseID != request.CaseID || source.ObservationID != request.ObservationID || source.SnapshotHash != request.SnapshotHash || source.AttemptID != request.SourceAttemptID || source.Revision < 1 || source.Sequence < 0 || source.ReceiptHash == "" || source.ReceiptHash != request.Inspection.ReceiptHash || source.RegisteredPath != request.Inspection.RegisteredPath || source.ExecutionPath != request.Inspection.ExecutionPath || source.Mode != request.Inspection.Mode || engineeringOptionalText(source.DispatchHoldHash) != engineeringOptionalText(request.Inspection.DispatchHoldHash) || engineeringOptionalText(source.DispatchTaskID) != engineeringOptionalText(request.Inspection.DispatchTaskID) || engineeringOptionalText(source.ExecutionBindingOrigin) != engineeringOptionalText(request.Inspection.ExecutionBindingOrigin) || engineeringOptionalText(source.ExecutionSourceAttemptID) != engineeringOptionalText(request.Inspection.ExecutionSourceAttemptID) || source.CodeVersion != request.Inspection.CodeVersion || !equalVersion(source.KernelVersion, request.Inspection.KernelVersion) || !equalVersion(source.HostVersion, request.Inspection.HostVersion) {
 		return pin, fmt.Errorf("original repair checkpoint or source versions changed")
 	}
 	taskText, claimText, ok := strings.Cut(source.AttemptID, ":")
@@ -158,6 +162,9 @@ func (h *Handler) engineeringSourceForCurrent(ctx context.Context, current engin
 	}
 	if !filepath.IsAbs(source.RegisteredPath) || !filepath.IsAbs(source.ExecutionPath) || filepath.Clean(path) != source.RegisteredPath || mappings[0]["mode"] != source.Mode || source.Mode == "in_place" && source.ExecutionPath != source.RegisteredPath {
 		return pin, fmt.Errorf("source project directory changed")
+	}
+	if err = h.validateEngineeringDispatchSource(ctx, source); err != nil {
+		return pin, err
 	}
 	pin = db.CreateEngineeringRepairFenceParams{WorkspaceID: workspace, ProjectID: project, CaseID: request.CaseID, AttemptID: request.Claim.AttemptID, Generation: request.Claim.Generation, OwnerID: request.Claim.Authority.OwnerID, SupervisionToken: request.Claim.Authority.Token, IntentRevision: current.IntentRevision, ObservationID: source.ObservationID, IssueID: issueID, SourceAttemptID: source.AttemptID, SourceRevision: source.Revision, SnapshotHash: source.SnapshotHash, WorkspacePath: source.RegisteredPath}
 	if pin.CaseID == "" || pin.AttemptID == "" || pin.OwnerID == "" || pin.Generation < 1 || pin.SupervisionToken < 1 || pin.IntentRevision < 1 {

@@ -9,7 +9,7 @@ const sidecarSchema=z.strictObject({batchId:z.string(),before:z.string(),after:z
 const bindingsSchema=z.strictObject({physical:z.string(),execution:z.string().nullable()});
 const manifestSchema=z.strictObject({application:handoffApplicationSchema,reservation:handoffReservationSchema,source:z.record(z.string(),z.unknown()),sidecars:z.array(sidecarSchema),bindings:bindingsSchema});
 export function originalRepairBindings(db:DatabaseSync,original:InterventionRecord,kind:"direct"|"business"|"requirement"|"engineering"){
- if(original.recovery?.preparation)return retainedRepairPreparation(db,original).manifest.bindings;
+ if(original.dispatchStall||original.recovery?.preparation)return retainedRepairPreparation(db,original).manifest.bindings;
  const physical=db.prepare("SELECT payload FROM engineering_process_binding WHERE workspace_id=? AND issue_id=? AND agent_id=? AND attempt_id=?").get(original.workspaceId,original.issueId,original.agentId,original.attemptId);
  if(!physical)throw new DraftConflictError("Original physical repository binding disappeared during recovery");
  let execution:string|null=null;
@@ -71,11 +71,11 @@ export function persistStagedRepair(db:DatabaseSync,original:InterventionRecord,
 
 /** Retained lineage is a resource anchor, never a binding for the failed claim. */
 export function retainedRepairPreparation(db:DatabaseSync,original:InterventionRecord):NonNullable<ReturnType<typeof readRepairApplication>>{
- const native=original.recovery,p=native?.preparation;
+ const native=original.dispatchStall??original.recovery,p=native?.preparation;
  if(!native||!p)throw new DraftConflictError("Prepared recovery has no retained lineage");
  const row=db.prepare("SELECT observation_id,source_observation_id,payload FROM engineering_repair_prebind WHERE target_hash=?").get(native.target_hash),source=new InterventionStore(db).original(original.workspaceId,original.issueId,p.observation_id);
  if(row?.observation_id!==original.observationId||row.source_observation_id!==p.observation_id||row.payload!==JSON.stringify(native)||!source||source.receiptHash!==p.receipt_hash||source.attemptId!==p.source_attempt_id)throw new DraftConflictError("Prepared recovery retained source changed");
  const prepared=readRepairApplication(db,source);
- if(!prepared||prepared.proposal.targetHash!==native.target_hash||prepared.manifest.application.hash!==native.application_hash||prepared.proposal.continuation.task_id!==native.entry_task_id||handoffHash(prepared.manifest.bindings)!==p.bindings_hash)throw new DraftConflictError("Prepared recovery retained application changed");
+ if(!prepared||prepared.proposal.targetHash!==native.target_hash||prepared.manifest.application.hash!==native.application_hash||prepared.proposal.continuation.task_id!==("entry_task_id" in native?native.entry_task_id:native.task_id)||handoffHash(prepared.manifest.bindings)!==p.bindings_hash)throw new DraftConflictError("Prepared recovery retained application changed");
  return prepared;
 }

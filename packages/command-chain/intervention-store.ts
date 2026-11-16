@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
 import type { ApplicationRequest } from "./application";
+import {repairDispatchStallSchema,type RepairDispatchStall} from "./repair-dispatch-stall";
 import {repairRecoveryFaultSchema,type RepairRecoveryFault} from "./repair-recovery-fault";
 import { DraftConflictError, draftSchema } from "./runtime";
 
@@ -11,7 +12,7 @@ const viewedSchema = z.strictObject({ chain: text, revision: z.number().int().po
 const recordSchema = z.strictObject({ id: z.uuid(), workspaceId: z.uuid(), issueId: z.uuid(), agentId: z.uuid(), attemptId: text,
   chain: text, phase: text, draftId: text.nullable(), revision: z.number().int().positive(), sequence: z.number().int().nonnegative(),
   summary: text.max(4000), reason: text.max(8000), evidence: text.max(100000), requestedAt: z.iso.datetime(),
-  recovery:repairRecoveryFaultSchema.optional(),snapshot: z.unknown(), snapshotHash: text, requestHash: text, observationId: text, receiptHash: text, kernelVersion: text.optional(), hostVersion: text.optional(),
+  dispatchStall:repairDispatchStallSchema.optional(),sourceKind:z.literal("prepared-dispatch").optional(),recovery:repairRecoveryFaultSchema.optional(),snapshot: z.unknown(), snapshotHash: text, requestHash: text, observationId: text, receiptHash: text, kernelVersion: text.optional(), hostVersion: text.optional(),
 });
 export type InterventionRecord = z.infer<typeof recordSchema>;
 type Record = InterventionRecord;
@@ -27,10 +28,13 @@ export function initializeInterventions(db: DatabaseSync) {
     CREATE TABLE IF NOT EXISTS engineering_intervention_delivery(observation_id TEXT PRIMARY KEY,case_id TEXT NOT NULL,snapshot_hash TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS engineering_repair_dispatch(target_hash TEXT PRIMARY KEY,observation_id TEXT NOT NULL UNIQUE,workspace_id TEXT NOT NULL,issue_id TEXT NOT NULL,task_id TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN ('ready','active')),payload TEXT NOT NULL,attempt_id TEXT);
     CREATE TABLE IF NOT EXISTS engineering_repair_retired_claim(workspace_id TEXT NOT NULL,issue_id TEXT NOT NULL,attempt_id TEXT NOT NULL,target_hash TEXT NOT NULL,PRIMARY KEY(workspace_id,issue_id,attempt_id));
-    CREATE TABLE IF NOT EXISTS engineering_repair_prebind(target_hash TEXT PRIMARY KEY,observation_id TEXT NOT NULL UNIQUE,source_observation_id TEXT NOT NULL,payload TEXT NOT NULL)`);
+    CREATE TABLE IF NOT EXISTS engineering_repair_prebind(target_hash TEXT PRIMARY KEY,observation_id TEXT NOT NULL UNIQUE,source_observation_id TEXT NOT NULL,payload TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS engineering_dispatch_intervention(workspace_id TEXT NOT NULL,issue_id TEXT NOT NULL,observation_id TEXT PRIMARY KEY,attempt_id TEXT NOT NULL,draft_id TEXT,payload TEXT NOT NULL);
+    CREATE VIEW IF NOT EXISTS engineering_intervention_history AS SELECT workspace_id,issue_id,attempt_id,draft_id,payload,0 AS sort_group,rowid AS sort_id FROM engineering_intervention
+    UNION ALL SELECT workspace_id,issue_id,attempt_id,draft_id,payload,1 AS sort_group,rowid AS sort_id FROM engineering_dispatch_intervention`);
   const view=db.prepare("SELECT sql FROM sqlite_master WHERE type='view' AND name='engineering_intervention_pending'").get();
-  if(!String(view?.sql??"").includes("engineering_repair_prebind"))db.exec(`SAVEPOINT intervention_view_upgrade;DROP VIEW IF EXISTS engineering_intervention_pending;
-    CREATE VIEW engineering_intervention_pending AS SELECT original.* FROM engineering_intervention original WHERE
+  if(!String(view?.sql??"").includes("engineering_intervention_history"))db.exec(`SAVEPOINT intervention_view_upgrade;DROP VIEW IF EXISTS engineering_intervention_pending;
+    CREATE VIEW engineering_intervention_pending AS SELECT original.* FROM engineering_intervention_history original WHERE
     NOT EXISTS(SELECT 1 FROM engineering_repair_dispatch dispatch WHERE dispatch.observation_id=json_extract(original.payload,'$.observationId') AND dispatch.state='active')
     AND NOT EXISTS(SELECT 1 FROM engineering_repair_prebind prebind WHERE prebind.source_observation_id=json_extract(original.payload,'$.observationId'));
     RELEASE intervention_view_upgrade`);
@@ -47,10 +51,11 @@ export class InterventionStore {
     const row = this.db.prepare("SELECT payload FROM engineering_intervention WHERE workspace_id=? AND issue_id=? AND attempt_id=?").get(workspaceId, issueId, attemptId);
     return row ? this.parse(row.payload) : undefined;
   }
-  original(workspaceId:string,issueId:string,observationId:string){const row=this.db.prepare("SELECT payload FROM engineering_intervention WHERE workspace_id=? AND issue_id=? AND json_extract(payload,'$.observationId')=?").get(workspaceId,issueId,observationId);return row?this.parse(row.payload):undefined;}
+  original(workspaceId:string,issueId:string,observationId:string){const row=this.db.prepare("SELECT payload FROM engineering_intervention_history WHERE workspace_id=? AND issue_id=? AND json_extract(payload,'$.observationId')=?").get(workspaceId,issueId,observationId);return row?this.parse(row.payload):undefined;}
   retired(workspaceId:string,issueId:string,attemptId:string){return !!this.db.prepare("SELECT 1 FROM engineering_repair_retired_claim WHERE workspace_id=? AND issue_id=? AND attempt_id=?").get(workspaceId,issueId,attemptId);}
   private parse(payload: unknown) {
     const record = recordSchema.parse(JSON.parse(String(payload)));
+    if(record.dispatchStall&&(record.sourceKind!=="prepared-dispatch"||record.recovery||record.attemptId!==record.dispatchStall.preparation.source_attempt_id||record.agentId!==record.dispatchStall.agent_id||record.workspaceId!==record.dispatchStall.workspace_id||record.issueId!==record.dispatchStall.issue_id)||!record.dispatchStall&&record.sourceKind)throw new DraftConflictError("Dispatch observation changed its retained source");
     const { receiptHash, ...original } = record;
     if (hash(original) !== receiptHash) throw new DraftConflictError("Intervention identity or receipt changed");
     if (hash(record.snapshot) !== record.snapshotHash || hash({ summary: record.summary, reason: record.reason, evidence: record.evidence }) !== record.requestHash) {
@@ -132,7 +137,8 @@ export class InterventionStore {
         if (direct?.version !== record.sequence) throw new DraftConflictError("Direct changed before intervention handoff");
       }
       if (this.pending(record.workspaceId, record.issueId)) throw new DraftConflictError("Intervention was submitted concurrently");
-      this.db.prepare("INSERT INTO engineering_intervention VALUES(?,?,?,?,?)").run(record.workspaceId, record.issueId, record.attemptId, record.draftId, JSON.stringify(record));
+      if(record.dispatchStall)this.db.prepare("INSERT INTO engineering_dispatch_intervention VALUES(?,?,?,?,?,?)").run(record.workspaceId,record.issueId,record.observationId,record.attemptId,record.draftId,JSON.stringify(record));
+      else this.db.prepare("INSERT INTO engineering_intervention VALUES(?,?,?,?,?)").run(record.workspaceId, record.issueId, record.attemptId, record.draftId, JSON.stringify(record));
   }
   /** The host freezes actual persisted state; it never invents an Agent view or RUN. Caller holds the business transaction. */
   holdRecovery(scope:{workspaceId:string;issueId:string},checkpoint:{chain:string;draftId:string|null;phase:string;revision:number;sequence:number},snapshot:unknown,recovery:RepairRecoveryFault,hostVersion?:string){
@@ -148,10 +154,17 @@ export class InterventionStore {
     }
     this.insert(record);return record;
   }
+  /** No native execution is claimed: attemptId identifies the retained source anchor. */
+  holdDispatch(scope:{workspaceId:string;issueId:string},checkpoint:{chain:string;draftId:string|null;phase:string;revision:number;sequence:number},snapshot:unknown,raw:RepairDispatchStall,hostVersion?:string){
+    const native=repairDispatchStallSchema.parse(raw),source=this.pending(scope.workspaceId,scope.issueId),grant=this.db.prepare("SELECT observation_id,state,attempt_id FROM engineering_repair_dispatch WHERE target_hash=?").get(native.target_hash);
+    if(native.workspace_id!==scope.workspaceId||native.issue_id!==scope.issueId||!source||source.observationId!==native.preparation.observation_id||source.receiptHash!==native.preparation.receipt_hash||source.attemptId!==native.preparation.source_attempt_id||source.agentId!==native.agent_id||grant?.observation_id!==source.observationId||grant.state!=="ready"||grant.attempt_id!==null)throw new DraftConflictError("Stalled dispatch changed before surrender");
+    const body=interventionRequestSchema.parse({summary:"Published recovery remained runnable without a native claim",reason:"Retain this prepared checkpoint for independent investigation of dispatch stagnation",evidence:JSON.stringify(native)}),value={...body,...checkpoint,workspaceId:scope.workspaceId,issueId:scope.issueId,attemptId:source.attemptId,agentId:native.agent_id,sourceKind:"prepared-dispatch" as const,dispatchStall:native,...(this.kernelVersion?{kernelVersion:this.kernelVersion}:{}),...(hostVersion?{hostVersion}:{}),id:randomUUID(),requestedAt:new Date().toISOString(),snapshot,snapshotHash:hash(snapshot),requestHash:hash(body),observationId:`multica:dispatch-stall:${native.target_hash}`},record=recordSchema.parse({...value,receiptHash:hash(value)});
+    this.db.prepare("INSERT INTO engineering_repair_prebind VALUES(?,?,?,?)").run(native.target_hash,record.observationId,source.observationId,JSON.stringify(native));this.insert(record);return record;
+  }
   receipt(record: Record) { return { submitted: true, owner: "admin", agent_action: "end_execution", intervention: this.view(record) }; }
   view(record: Record) { return { id: record.id, status: "pending_admin", chain: record.chain, phase: record.phase, draft_id: record.draftId,
     revision: record.revision, sequence: record.sequence, attempt_id: record.attemptId, agent_id: record.agentId,
-    summary: record.summary, reason: record.reason, evidence: record.evidence, requested_at: record.requestedAt,
+    ...(record.dispatchStall?{source_kind:"prepared-dispatch",dispatch_task_id:record.dispatchStall.task_id}:{}),summary: record.summary, reason: record.reason, evidence: record.evidence, requested_at: record.requestedAt,
     observation_id: record.observationId, snapshot_hash: record.snapshotHash }; }
   acknowledge(workspaceId: string, issueId: string, input: unknown) {
     const value = z.strictObject({ observation_id: text, case_id: text, snapshot_hash: text }).parse(input), current = this.pending(workspaceId, issueId);
@@ -173,7 +186,7 @@ export class InterventionStore {
     }
     return record;
   }
-  observations() { return this.db.prepare("SELECT payload FROM engineering_intervention source WHERE NOT EXISTS (SELECT 1 FROM engineering_intervention_delivery delivery WHERE delivery.observation_id=json_extract(source.payload,'$.observationId')) ORDER BY rowid LIMIT 25").all().map(row => this.parse(row.payload)); }
+  observations() { return this.db.prepare("SELECT payload FROM engineering_intervention_history source WHERE NOT EXISTS (SELECT 1 FROM engineering_intervention_delivery delivery WHERE delivery.observation_id=json_extract(source.payload,'$.observationId')) ORDER BY json_extract(source.payload,'$.requestedAt'),sort_group,sort_id LIMIT 25").all().map(row => this.parse(row.payload)); }
 }
 
 export const interventionInstructions = "When unable to reconcile a blocker reliably, first read the editable checkpoint (Direct: direct-run), then use multica engineering intervention-request --summary-file <task-temp-file> --reason-file <task-temp-file> --evidence-file <task-temp-file>. An accepted request surrenders this execution to the independent Admin repair path. End execution immediately; preserve the draft and evidence. Do not declare completion, change the oracle or retry the same request with different content.";

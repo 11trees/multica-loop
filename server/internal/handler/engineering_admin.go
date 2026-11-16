@@ -42,6 +42,7 @@ type engineeringAdminAuthority struct {
 	Token   int64  `json:"token"`
 }
 type engineeringRepairObservation struct {
+	DispatchStall *engineeringDispatchStall `json:"dispatchStall"`
 	Recovery      *engineeringRecoveryFault `json:"recovery"`
 	WorkspaceID   string                    `json:"workspaceId"`
 	IssueID       string                    `json:"issueId"`
@@ -264,6 +265,23 @@ func (h *Handler) deliverEngineeringRepairObservation(ctx context.Context, autho
 			return err
 		}
 	}
+	if observation.DispatchStall != nil {
+		proof := observation.DispatchStall
+		if observation.Recovery != nil || proof.Preparation.SourceAttemptID != observation.AttemptID || proof.AgentID != observation.AgentID || proof.WorkspaceID != observation.WorkspaceID || proof.IssueID != observation.IssueID {
+			return fmt.Errorf("stalled observation changed its retained anchor")
+		}
+		id, e := util.ParseUUID(proof.TaskID)
+		if e != nil {
+			return e
+		}
+		native, e := h.Queries.GetAgentTask(ctx, id)
+		if e != nil {
+			return e
+		}
+		if e = h.validateEngineeringDispatchStall(ctx, *proof, native); e != nil {
+			return e
+		}
+	}
 	scopeKey := observation.WorkspaceID + ":" + observation.IssueID + ":" + observation.Chain
 	event := map[string]any{
 		"observationId": observation.ObservationID, "workspaceId": observation.WorkspaceID, "issueId": observation.IssueID, "scope": "work-item", "scopeKey": scopeKey,
@@ -271,6 +289,9 @@ func (h *Handler) deliverEngineeringRepairObservation(ctx context.Context, autho
 	}
 	if observation.Recovery != nil {
 		event["repairCaseId"] = observation.Recovery.CaseID
+	}
+	if observation.DispatchStall != nil {
+		event["repairCaseId"] = observation.DispatchStall.CaseID
 	}
 	result, err := h.EngineeringAdminWorker.Call(ctx, map[string]any{"action": "observe", "authority": authority, "observation": event})
 	if err != nil {

@@ -24,3 +24,9 @@ export function hostRecoveryFaultFixture(raw:unknown,actualAttemptId?:string){
  const {hash:checkpoint_hash,...scope}=c,body={...scope,attempt_id:actualAttemptId??c.attempt_id!,publication_hash:"1".repeat(64),checkpoint_hash,status:"failed" as const,completed_at:"2026-11-16T10:00:00Z",failure_reason:"Controlled native failure",context_hash:"2".repeat(64)};
  return repairRecoveryFaultSchema.parse({...body,hash:repairRecoveryFaultHash(body)});
 }
+
+/** Synthetic queue reservation for business-store tests; native queue checks are separate. */
+export async function hostDispatchStallFixture(raw:unknown){
+ const {repairDispatchStallHash,repairDispatchStallSchema}=await import("../repair-dispatch-stall"),c=z.object({case_id:z.string(),verification_attempt_id:z.string(),target_hash:z.string(),application_hash:z.string(),ready_hash:z.string(),task_id:z.string(),workspace_id:z.string(),issue_id:z.string(),project_id:z.string(),runtime_id:z.string(),agent_id:z.string(),user_id:z.string(),hash:z.string(),preparation:repairRecoveryPreparationSchema,attempt_id:z.null()}).parse(raw);
+ const {hash:checkpoint_hash,attempt_id:_attempt,...scope}=c,body={...scope,checkpoint_hash,publication_hash:"1".repeat(64),watch_hash:"2".repeat(64),source_key:"3".repeat(64),eligible_elapsed_ms:1200000,intent_revision:1,observed_at:1794825000000,reserved_at:"2026-11-16T10:30:00Z",task_created_at:"2026-11-16T10:00:00Z",context_hash:"4".repeat(64),status:"queued" as const,claimed_at:null,started_at:null};return repairDispatchStallSchema.parse({...body,hash:repairDispatchStallHash(body)});
+}

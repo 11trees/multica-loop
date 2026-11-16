@@ -65,6 +65,8 @@ func (h *Handler) ReconcileEngineeringTakeovers(ctx context.Context, authority e
 			SnapshotHash             string  `json:"snapshot_hash"`
 			RegisteredPath           string  `json:"registered_repository_path"`
 			ExecutionPath            string  `json:"execution_repository_path"`
+			DispatchHoldHash         *string `json:"dispatch_hold_hash,omitempty"`
+			DispatchTaskID           *string `json:"dispatch_task_id,omitempty"`
 			ExecutionBindingOrigin   *string `json:"execution_binding_origin,omitempty"`
 			ExecutionSourceAttemptID *string `json:"execution_source_attempt_id,omitempty"`
 			Mode                     string  `json:"mode"`
@@ -113,7 +115,16 @@ func (h *Handler) ReconcileEngineeringTakeovers(ctx context.Context, authority e
 		if !filepath.IsAbs(source.RegisteredPath) || !filepath.IsAbs(source.ExecutionPath) || filepath.Clean(path) != source.RegisteredPath || mappings[0]["mode"] != source.Mode || source.Mode == "in_place" && source.ExecutionPath != source.RegisteredPath {
 			return fmt.Errorf("repair source project directory changed")
 		}
+		if err = h.validateEngineeringDispatchSource(ctx, engineeringTakeoverSource{CaseID: source.CaseID, WorkspaceID: source.WorkspaceID, IssueID: source.IssueID, AgentID: source.AgentID, AttemptID: source.AttemptID, DispatchHoldHash: source.DispatchHoldHash, DispatchTaskID: source.DispatchTaskID}); err != nil {
+			return err
+		}
 		inspection := map[string]any{"observation_id": source.ObservationID, "snapshot_hash": source.SnapshotHash, "source_attempt_id": source.AttemptID, "project_id": uuidToString(issue.ProjectID), "runtime_id": uuidToString(task.RuntimeID), "registered_repository_path": source.RegisteredPath, "execution_repository_path": source.ExecutionPath, "mode": source.Mode, "receipt_hash": source.ReceiptHash, "code_version": source.CodeVersion, "kernel_version": source.KernelVersion, "host_version": source.HostVersion}
+		if source.DispatchHoldHash != nil {
+			inspection["dispatch_hold_hash"] = *source.DispatchHoldHash
+		}
+		if source.DispatchTaskID != nil {
+			inspection["dispatch_task_id"] = *source.DispatchTaskID
+		}
 		if source.ExecutionBindingOrigin != nil {
 			inspection["execution_binding_origin"] = *source.ExecutionBindingOrigin
 		}

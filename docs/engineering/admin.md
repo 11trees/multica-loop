@@ -81,7 +81,7 @@ A native task or an investigation invocation cannot use these management command
 
 ## Investigation and physical ownership
 
-The management database schema is version 15. It freezes one invocation generation,
+The management database schema is version 16. It freezes one invocation generation,
 session identity, runtime revision and recovery method per allocation. A durable
 fair queue rotates Cases, with at most one active investigation, independent
 preparation or native verification invocation globally.
@@ -149,8 +149,9 @@ unknown process exits retain their takeover barriers. Readonly dispatch sampling
 and durable eligible-time evidence are connected. An unchanged ready entry with
 a real terminal native claim can now surrender before business binding, retaining
 its original resource-anchor provenance without creating an execution binding.
-Automatic stall takeback, never-claimed/partially-bound failures and cohort-change
-recovery remain unconnected.
+Automatic takeback of never-claimed published ready entries is connected through
+a durable native queue reservation and business outbox. Stalls in bound stages,
+partially-bound failures and cohort-change recovery remain unconnected.
 See [the verification protocol](repair-verification.md).
 Diagnosis and external-wait prerequisites remain unconnected. No investigation
 receipt closes the Case or resumes business.
@@ -181,11 +182,16 @@ reordered or expired observations cannot update it. Restart retains the record,
 but elapsed offline time is not counted beyond the allowed sample gap.
 
 The private due flag is recalculated against current intent and freshness. It is
-observation evidence only: no consumer currently turns it into a business hold,
-native fence, cancellation, retry or Case closure. Automatic takeback still needs
-a fresh native source model for a never-claimed entry and durable outbox handoff.
-The prepared-checkpoint path now covers terminal entries with an actual native
-claim; it does not invent a claim for queued work.
+observation evidence only. A separate native gate now rechecks current authority,
+source, physical barriers and queued selection before reserving a never-claimed
+published ready entry. Its persisted task-context marker blocks ordinary claims
+without claiming, cancelling or fencing the task. A typed business dispatch hold
+then freezes the checkpoint and delivers its outbox to the same Case; interrupted
+steps replay the native reservation and original observation. Schema 16 retains
+the distinct queued-task identity alongside the earlier actual resource anchor.
+Stop preserves a committed queue barrier; current running authority is required
+to finish its durable handoff. It grants no repair write authority or closure.
+See [runnable stall handoff](repair-handoff.md#runnable-stall-before-any-native-claim).
 
 ## Native visibility
 
@@ -246,9 +252,9 @@ probes and runtime updates remain unconnected. Verified business handoff now
 connects controlled task publication, resume, ordinary-result observation and
 guarded Case closure. Bound terminal failures without applied results now
 reopen the same Case while retaining its history and physical barriers.
-Readonly runnable-stall sampling is connected. Automatic takeback from that
-evidence, never-claimed or partially-bound failure holds and cohort-change
-recovery still require implementation. Terminal ready entries with real native
+Readonly runnable-stall sampling and automatic takeback of never-claimed
+published ready entries are connected. Bound-stage/continuation stalls,
+partially-bound failures and cohort-change recovery still require implementation. Terminal ready entries with real native
 claims now retain prepared checkpoint/resource provenance through another
 independently verified handoff. Real-provider, Linux runtime and packaged
 acceptance remain unverified. The complete migration stays active.

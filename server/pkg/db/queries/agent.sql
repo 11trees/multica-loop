@@ -791,6 +791,7 @@ WHERE id = (
     WHERE atq.agent_id = @agent_id
       AND atq.runtime_id = @runtime_id
       AND atq.status = 'queued'
+      AND NOT (COALESCE(atq.context,'{}'::jsonb) ? 'engineering_dispatch_hold')
       AND (atq.context->>'wakeup_id' IS NULL OR EXISTS (SELECT 1 FROM issue_wakeup w WHERE w.id=(atq.context->>'wakeup_id')::uuid AND w.disabled_at IS NULL AND w.revision=(atq.context->>'wakeup_revision')::bigint))
       AND EXISTS (
           SELECT 1
@@ -832,6 +833,8 @@ WHERE id = (
     LIMIT 1
     FOR UPDATE SKIP LOCKED
 )
+AND status = 'queued'
+AND NOT (COALESCE(context,'{}'::jsonb) ? 'engineering_dispatch_hold')
 RETURNING *;
 
 -- name: SetTaskDeliveredCommentIDs :one
@@ -2196,6 +2199,7 @@ ORDER BY priority DESC, created_at ASC;
 SELECT atq.* FROM agent_task_queue atq
 WHERE atq.runtime_id = $1
   AND atq.status = 'queued'
+      AND NOT (COALESCE(atq.context,'{}'::jsonb) ? 'engineering_dispatch_hold')
       AND (atq.context->>'wakeup_id' IS NULL OR EXISTS (SELECT 1 FROM issue_wakeup w WHERE w.id=(atq.context->>'wakeup_id')::uuid AND w.disabled_at IS NULL AND w.revision=(atq.context->>'wakeup_revision')::bigint))
   AND EXISTS (
       -- Keep this authorization fence in sync with ClaimAgentTask.
@@ -2317,6 +2321,7 @@ RETURNING *;
 SELECT atq.* FROM agent_task_queue atq
 WHERE atq.runtime_id = ANY(@runtime_ids::uuid[])
   AND atq.status = 'queued'
+      AND NOT (COALESCE(atq.context,'{}'::jsonb) ? 'engineering_dispatch_hold')
       AND (atq.context->>'wakeup_id' IS NULL OR EXISTS (SELECT 1 FROM issue_wakeup w WHERE w.id=(atq.context->>'wakeup_id')::uuid AND w.disabled_at IS NULL AND w.revision=(atq.context->>'wakeup_revision')::bigint))
   AND EXISTS (
       -- Keep this authorization fence in sync with ClaimAgentTask.
