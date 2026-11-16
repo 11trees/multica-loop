@@ -156,5 +156,25 @@
       "role_testing": "Pruebas",
       "role_product": "Producto"
     }
+  },
+  "engineering": {
+    "title": "Forma de trabajo",
+    "edit": "Editar",
+    "setup": "Definir flujo",
+    "workflow": "Flujo de trabajo",
+    "save": "Guardar",
+    "cancel": "Cancelar",
+    "load_error": "No se pudo cargar el flujo del equipo",
+    "retry": "Reintentar",
+    "save_error": "No se pudo guardar el flujo del equipo",
+    "missing_members": "Añade agentes para cubrir todos los roles del flujo.",
+    "independent_roles": "Elige agentes independientes para cada rol.",
+    "workflows": {
+      "direct": "Ejecución directa",
+      "business_analysis": "Análisis de negocio",
+      "end_to_end": "Entrega integral",
+      "develop": "Desarrollo",
+      "bug_fix": "Corrección de errores"
+    }
   }
 }

@@ -1,3 +1,4 @@
+import { EngineeringTeamStore } from "./team-store";
 import { EngineeringProcessStore } from "./process-store";
 import { InterventionStore, interventionInstructions } from "./intervention-store";
 import { DirectApplication } from "./direct-application";
@@ -25,11 +26,12 @@ const human = z.strictObject({ kind: z.literal("human"), userId: z.uuid(), ...sc
 const task = z.strictObject({ kind: z.literal("task"), agentId: z.uuid(), attemptId: text, projectId:z.uuid().optional(), ...scope });
 const daemon = task.extend({ kind: z.literal("daemon") });
 const host = z.strictObject({ kind: z.literal("host"), ...scope });
+const teamManager = z.strictObject({kind:z.literal("team-manager"),workspaceId:z.uuid(),teamId:z.uuid(),userId:z.uuid()});
 const coordinator = z.strictObject({ kind: z.literal("coordinator") });
-const actor = z.discriminatedUnion("kind", [human, task, daemon, host, coordinator]);
+const actor = z.discriminatedUnion("kind", [human, task, daemon, host, coordinator, teamManager]);
 export const applicationRequestSchema = z.strictObject({
   actor,
-  action: z.enum(["execution-permission", "process", "process-scope", "intervention-request", "repair-source", "repair-observations", "repair-observation-ack", "configure-direct","direct-run","direct-submit","direct-scope","direct-completed","business-handoff","end-to-end-scope","business-scope","business-read","business-comment","business-comment-intent","business-comment-ack","business-comment-resolved","business-comment-protected","configure-business", "configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations", "verified-binding", "publication", "publication-ack", "delivery-policy", "activate-unit", "accept-unit", "parent-scope", "review-inputs", "configure-review", "review-ack", "begin-feedback", "cancel-feedback", "feedback-restored", "authorize-feedback-work", "prepare-feedback-verification", "prepare-feedback-report"]),
+  action: z.enum(["team-profile", "team-bind", "team-binding", "execution-permission", "process", "process-scope", "intervention-request", "repair-source", "repair-observations", "repair-observation-ack", "configure-direct","direct-run","direct-submit","direct-scope","direct-completed","business-handoff","end-to-end-scope","business-scope","business-read","business-comment","business-comment-intent","business-comment-ack","business-comment-resolved","business-comment-protected","configure-business", "configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations", "verified-binding", "publication", "publication-ack", "delivery-policy", "activate-unit", "accept-unit", "parent-scope", "review-inputs", "configure-review", "review-ack", "begin-feedback", "cancel-feedback", "feedback-restored", "authorize-feedback-work", "prepare-feedback-verification", "prepare-feedback-report"]),
   payload: z.unknown().optional(),
   host_version: z.string().optional(),
 });
@@ -472,6 +474,19 @@ export class EngineeringApplication {
 
   async invoke(input: ApplicationRequest) {
     const request = applicationRequestSchema.parse(input), { actor, action } = request;
+    if(action === "team-profile"){
+      if(actor.kind!=="team-manager")throw new Error("Only authenticated Team management can access definitions");
+      const teams=new EngineeringTeamStore(this.db);
+      return {profile:request.payload===undefined ? teams.current(actor.workspaceId,actor.teamId) : teams.configure(actor.workspaceId,actor.teamId,actor.userId,request.payload)};
+    }
+    if(actor.kind==="team-manager")throw new Error("Team management credentials cannot edit task execution");
+    if(action==="team-bind" || action==="team-binding"){
+      if(actor.kind!=="human" && actor.kind!=="host")throw new Error("Only the host can manage task Team bindings");
+      const teams=new EngineeringTeamStore(this.db);
+      if(action==="team-binding")return {binding:teams.binding(actor.workspaceId,actor.issueId)};
+      if(actor.kind!=="human")throw new Error("Task start requires its authenticated human principal");
+      return {binding:teams.bind(actor.workspaceId,actor.issueId,actor.userId,request.payload)};
+    }
     if (action === "repair-observations") {
       if (actor.kind !== "coordinator") throw new Error("Only the host can read pending Admin observations");
       return this.interventions.observations();
@@ -556,6 +571,7 @@ export class EngineeringApplication {
   private async invokeWorkflow(input: ApplicationRequest) {
     const request = applicationRequestSchema.parse(input);
     const { actor, action } = request;
+    if(actor.kind==="team-manager")throw new Error("Team management cannot invoke task workflows");
     if (actor.kind === "coordinator") {
       if (action !== "continuations") throw new Error("Coordinator credentials cannot edit engineering state");
       return [...this.direct.continuations(),...await this.business.continuations(),...await this.requirements.continuations(),...await this.managedProgress(),...await this.continuations()];

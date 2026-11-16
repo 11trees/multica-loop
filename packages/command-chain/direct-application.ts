@@ -105,7 +105,7 @@ export class DirectApplication {
   invoke(request: ApplicationRequest) {
     const { actor, action } = request;
     if (action === "configure-direct") return this.configure(request);
-    if (actor.kind === "coordinator") throw new Error("Use the Direct continuation coordinator");
+    if (actor.kind === "coordinator" || actor.kind === "team-manager") throw new Error("Use the Direct continuation coordinator");
     const record = this.current(actor.workspaceId, actor.issueId);
     if (!record) throw new Error("Direct is not configured");
     if (action === "selection") return { configured: actor.kind === "task" && actor.agentId === record.agentId && !record.result,

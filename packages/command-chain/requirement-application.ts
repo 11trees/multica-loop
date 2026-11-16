@@ -538,7 +538,7 @@ export class RequirementApplication {
     }return pending;
   }
   async invoke(request:ApplicationRequest){
-    const {actor,action}=request;if(actor.kind === "coordinator")throw new Error("Use the requirement continuation coordinator");
+    const {actor,action}=request;if(actor.kind === "coordinator" || actor.kind === "team-manager")throw new Error("Use the requirement continuation coordinator");
     let record=this.current(actor.workspaceId,actor.issueId);
     if(action === "configure"){
       if(actor.kind !== "human")throw new Error("Only a human can freeze requirement inputs");

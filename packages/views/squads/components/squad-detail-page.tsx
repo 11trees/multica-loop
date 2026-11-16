@@ -1,5 +1,7 @@
 "use client";
 
+import { TeamWorkflowSection } from "./team-workflow";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@multica/core/api";
@@ -454,6 +456,8 @@ export function SquadDetailPage() {
           onUpdateRole={async (m, role) => { await updateRoleMut.mutateAsync({ member: m, role }); }}
           setLeaderPending={setLeaderMut.isPending}
         />
+
+        <TeamWorkflowSection workspaceId={wsId} teamId={squad.id} leaderId={squad.leader_id} members={members} agents={agents} canManage={canManage && !archived} />
 
         <SquadInstructionsSection
           squad={squad}

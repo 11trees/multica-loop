@@ -213,7 +213,8 @@
     "react-i18next": "catalog:",
     "yaml": "catalog:",
     "zod": "catalog:",
-    "zustand": "catalog:"
+    "zustand": "catalog:",
+    "@multica/command-chain": "workspace:*"
   },
   "peerDependencies": {
     "react": "catalog:"

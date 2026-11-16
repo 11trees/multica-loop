@@ -1,3 +1,4 @@
+import { EngineeringTeamResponseSchema, type EngineeringTeamResponse, type TeamDefinition } from "../squads/engineering-schema";
 import { FeedbackCaptureSchema, FeedbackCancelledSchema, RequirementReviewConfiguredSchema, RequirementReviewAcknowledgedSchema, EngineeringDeliveryAuthorizationSchema, EngineeringPublicationSchema } from "../issues/engineering-schema";
 import type { ZodType } from "zod";
 import { EngineeringOverviewSchema, EngineeringWriteSchema } from "./schemas";
@@ -5179,6 +5180,18 @@ export class ApiClient {
     });
     if (!parsed) throw new Error("GET /api/squads/involved returned a malformed body");
     return parsed.squad_ids;
+  }
+
+  async getEngineeringTeam(id:string):Promise<EngineeringTeamResponse>{
+    const raw=await this.fetch<unknown>(`/api/squads/${id}/engineering`);
+    const parsed=parseWithFallback<EngineeringTeamResponse|null>(raw,EngineeringTeamResponseSchema,null,{endpoint:"GET /api/squads/:id/engineering"});
+    if(!parsed)throw new Error("Malformed Team workflow response");return parsed;
+  }
+
+  async saveEngineeringTeam(id:string,expectedRevision:number,definition:TeamDefinition):Promise<EngineeringTeamResponse>{
+    const raw=await this.fetch<unknown>(`/api/squads/${id}/engineering`,{method:"PUT",body:JSON.stringify({expected_revision:expectedRevision,definition})});
+    const parsed=parseWithFallback<EngineeringTeamResponse|null>(raw,EngineeringTeamResponseSchema,null,{endpoint:"PUT /api/squads/:id/engineering"});
+    if(!parsed?.profile)throw new Error("Malformed Team workflow save response");return parsed;
   }
 
   async getSquad(id: string): Promise<Squad> {

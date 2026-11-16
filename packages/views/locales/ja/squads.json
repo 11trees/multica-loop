@@ -154,5 +154,25 @@
       "role_testing": "テスト",
       "role_product": "プロダクト"
     }
+  },
+  "engineering": {
+    "title": "作業方法",
+    "edit": "編集",
+    "setup": "ワークフローを設定",
+    "workflow": "ワークフロー",
+    "save": "保存",
+    "cancel": "キャンセル",
+    "load_error": "チームのワークフローを読み込めません",
+    "retry": "再試行",
+    "save_error": "チームのワークフローを保存できません",
+    "missing_members": "各役割を担当する Agent メンバーを追加してください。",
+    "independent_roles": "役割ごとに独立した Agent を選択してください。",
+    "workflows": {
+      "direct": "直接実行",
+      "business_analysis": "業務分析",
+      "end_to_end": "エンドツーエンドの提供",
+      "develop": "開発",
+      "bug_fix": "不具合修正"
+    }
   }
 }

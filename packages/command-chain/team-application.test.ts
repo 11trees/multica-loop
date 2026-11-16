@@ -1,0 +1,30 @@
+// @vitest-environment node
+import {randomUUID} from "node:crypto";
+import {mkdtemp,readFile,rm} from "node:fs/promises";
+import {tmpdir} from "node:os";
+import {join} from "node:path";
+import {afterEach,beforeEach,expect,it} from "vitest";
+import {EngineeringApplication,type ApplicationRequest} from "./application";
+let directory:string,app:EngineeringApplication;
+const workspaceId=randomUUID(),issueId=randomUUID(),userId=randomUUID(),teamId=randomUUID();
+const manager={kind:"team-manager" as const,workspaceId,teamId,userId};
+const human={kind:"human" as const,workspaceId,issueId,userId};
+const task={kind:"task" as const,workspaceId,issueId,agentId:randomUUID(),attemptId:"fixture:1"};
+const invoke=(actor:ApplicationRequest["actor"],action:ApplicationRequest["action"],payload?:unknown)=>app.invoke({actor,action,payload});
+beforeEach(async()=>{directory=await mkdtemp(join(tmpdir(),"team-application-"));app=new EngineeringApplication(join(directory,"business.sqlite"),await readFile(new URL("./definitions/verification.yaml",import.meta.url),"utf8"))});
+afterEach(async()=>{app.close();await rm(directory,{recursive:true,force:true})});
+it("separates Team management from task credentials and freezes the selected Team revision",async()=>{
+ expect(await invoke(manager,"team-profile")).toEqual({profile:null});
+ const definition={workflow:"direct",roles:{executor:randomUUID()},decision_mode:"balanced",max_reworks:2};
+ expect(await invoke(manager,"team-profile",{expected_revision:0,definition})).toMatchObject({profile:{teamId,revision:1}});
+ await expect(invoke(task,"team-profile",{expected_revision:1,definition})).rejects.toThrow(/Team management/);
+ await expect(invoke(manager,"command",{})).rejects.toThrow(/cannot edit task/);
+ const payload={team_id:teamId,team_revision:1,project_id:randomUUID(),input:"One authoritative task goal"};
+ const original=await invoke(human,"team-bind",payload);
+ expect(original).toMatchObject({binding:{input:payload.input,profile:{revision:1,definition}}});
+ await invoke(manager,"team-profile",{expected_revision:1,definition:{...definition,roles:{executor:randomUUID()}}});
+ expect(await invoke({workspaceId,issueId,kind:"host"},"team-binding")).toEqual(original);
+ expect(await invoke(human,"team-bind",payload)).toEqual(original);
+ await expect(invoke(task,"team-bind",payload)).rejects.toThrow(/Only the host/);
+ await expect(invoke(human,"team-bind",{...payload,team_revision:2})).rejects.toThrow(/retains/);
+});

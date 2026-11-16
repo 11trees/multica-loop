@@ -156,5 +156,25 @@
       "role_testing": "Tests",
       "role_product": "Produit"
     }
+  },
+  "engineering": {
+    "title": "Mode de travail",
+    "edit": "Modifier",
+    "setup": "Définir le workflow",
+    "workflow": "Workflow",
+    "save": "Enregistrer",
+    "cancel": "Annuler",
+    "load_error": "Impossible de charger le workflow de l’équipe",
+    "retry": "Réessayer",
+    "save_error": "Impossible d’enregistrer le workflow de l’équipe",
+    "missing_members": "Ajoutez des agents pour couvrir chaque rôle du workflow.",
+    "independent_roles": "Choisissez des agents indépendants pour chaque rôle.",
+    "workflows": {
+      "direct": "Exécution directe",
+      "business_analysis": "Analyse métier",
+      "end_to_end": "Livraison de bout en bout",
+      "develop": "Développement",
+      "bug_fix": "Correction de bugs"
+    }
   }
 }

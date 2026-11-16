@@ -43,3 +43,6 @@ export type { FeedbackTriageContract, FeedbackVerifyContract, FeedbackGroup } fr
 
 export { businessStageSchema, businessContractSchema, businessProfiles, createBusinessHandlers, compileBusinessConclusion } from "./business";
 export type { BusinessStage, BusinessContract, BusinessConclusion } from "./business";
+
+export { teamDefinitionSchema, teamWorkflowRoles } from "./team";
+export type { TeamDefinition } from "./team";

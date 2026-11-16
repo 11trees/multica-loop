@@ -154,5 +154,25 @@
       "role_testing": "테스트",
       "role_product": "프로덕트"
     }
+  },
+  "engineering": {
+    "title": "작업 방식",
+    "edit": "편집",
+    "setup": "워크플로 설정",
+    "workflow": "워크플로",
+    "save": "저장",
+    "cancel": "취소",
+    "load_error": "팀 워크플로를 불러올 수 없습니다",
+    "retry": "다시 시도",
+    "save_error": "팀 워크플로를 저장할 수 없습니다",
+    "missing_members": "각 역할을 담당할 Agent 구성원을 추가하세요.",
+    "independent_roles": "역할마다 독립된 Agent를 선택하세요.",
+    "workflows": {
+      "direct": "직접 실행",
+      "business_analysis": "비즈니스 분석",
+      "end_to_end": "전체 과정 제공",
+      "develop": "개발",
+      "bug_fix": "버그 수정"
+    }
   }
 }

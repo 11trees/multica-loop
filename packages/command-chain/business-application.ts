@@ -152,7 +152,7 @@ export class BusinessApplication {
   async invoke(request: ApplicationRequest) {
     const { actor, action } = request;
     if (action === "configure-business") return this.configure(request);
-    if (actor.kind === "coordinator") throw new Error("Use the business continuation coordinator");
+    if (actor.kind === "coordinator" || actor.kind === "team-manager") throw new Error("Use the business continuation coordinator");
     const record = this.current(actor.workspaceId, actor.issueId); if (!record) throw new Error("Business analysis is not configured");
     const entry = this.active(record), agentId = record.roles[entry.stage]; let draft = await this.drafts.read(entry.draftId);
     if (action === "configure") throw new Error("This issue owns business analysis; reconcile its inputs before replacing the workflow");

@@ -154,5 +154,25 @@
       "role_testing": "测试",
       "role_product": "产品"
     }
+  },
+  "engineering": {
+    "title": "工作方式",
+    "edit": "编辑",
+    "setup": "设置工作流",
+    "workflow": "工作流",
+    "save": "保存",
+    "cancel": "取消",
+    "load_error": "无法加载团队工作流",
+    "retry": "重试",
+    "save_error": "无法保存团队工作流",
+    "missing_members": "请先为团队补齐工作流所需的 Agent 成员。",
+    "independent_roles": "不同角色需要独立的 Agent。",
+    "workflows": {
+      "direct": "直接执行",
+      "business_analysis": "业务分析",
+      "end_to_end": "端到端交付",
+      "develop": "开发交付",
+      "bug_fix": "问题修复"
+    }
   }
 }

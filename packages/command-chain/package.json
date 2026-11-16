@@ -3,7 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "exports": { ".": "./index.ts", "./sqlite-store": "./sqlite-store.ts", "./feedback-store": "./feedback-store.ts" },
+  "exports": {
+    ".": "./index.ts",
+    "./sqlite-store": "./sqlite-store.ts",
+    "./feedback-store": "./feedback-store.ts",
+    "./team": "./team.ts"
+  },
   "scripts": {
     "build": "node scripts/build.mjs",
     "typecheck": "tsc --noEmit",

@@ -52,6 +52,7 @@ export class TestApiClient {
   private workspaceId: string | null = null;
   private email: string | null = null;
   private createdIssueIds: string[] = [];
+  private createdTeamIds: string[] = [];
   private createdProjectIds: string[] = [];
   private seededIssueIds: string[] = [];
   private createdPropertyIds: string[] = [];
@@ -656,8 +657,26 @@ export class TestApiClient {
     return issues;
   }
 
+  async createWorkflowTeamFixture(leaderId:string){
+    if(!this.engineeringRuns.some(run=>run.agentId===leaderId))throw new Error("Team leader must be an owned fixture Agent");
+    const response=await this.authedFetch("/api/squads",{method:"POST",body:JSON.stringify({name:`Workflow Team ${randomUUID()}`,leader_id:leaderId})});
+    if(!response.ok)throw new Error(`Team fixture creation failed: ${response.status}`);
+    const team=await response.json() as {id:string;name:string};this.createdTeamIds.push(team.id);return team;
+  }
+  async readWorkflowTeamFixture(teamId:string){
+    if(!this.createdTeamIds.includes(teamId))throw new Error("Not an owned Team fixture");
+    const response=await this.authedFetch(`/api/squads/${teamId}/engineering`);if(!response.ok)throw new Error("Team workflow unavailable");return response.json();
+  }
+
   /** Clean up all issues created during this test. */
   async cleanup() {
+    if(this.createdTeamIds.length && this.workspaceId){
+      for(const teamId of this.createdTeamIds){const response=await this.authedFetch(`/api/squads/${teamId}`,{method:"DELETE"});if(!response.ok)throw new Error("Team fixture archive failed")}
+      if(process.env.MULTICA_ENGINEERING_DATABASE){const {DatabaseSync}=await import("node:sqlite");const database=new DatabaseSync(process.env.MULTICA_ENGINEERING_DATABASE);try{if(database.prepare("SELECT 1 FROM sqlite_master WHERE name='engineering_team_profile'").get())for(const teamId of this.createdTeamIds){if(database.prepare("SELECT 1 FROM engineering_team_binding WHERE json_extract(payload,'$.profile.teamId')=?").get(teamId))throw new Error("Team fixture still has a frozen task binding");database.prepare("DELETE FROM engineering_team_profile WHERE workspace_id=? AND team_id=?").run(this.workspaceId,teamId)}}finally{database.close()}}
+      const client=new pg.Client(DATABASE_URL);await client.connect();try{for(const teamId of this.createdTeamIds){await client.query("DELETE FROM squad_member WHERE squad_id=$1",[teamId]);await client.query("DELETE FROM squad WHERE id=$1 AND workspace_id=$2",[teamId,this.workspaceId])}}finally{await client.end()}
+      this.createdTeamIds=[];
+    }
+
     if (process.env.MULTICA_ENGINEERING_DATABASE && this.createdIssueIds.length && this.workspaceId) {
       const { DatabaseSync } = await import("node:sqlite");
       const { existsSync } = await import("node:fs");

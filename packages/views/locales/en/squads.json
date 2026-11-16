@@ -156,5 +156,25 @@
       "role_testing": "Testing",
       "role_product": "Product"
     }
+  },
+  "engineering": {
+    "title": "Working method",
+    "edit": "Edit",
+    "setup": "Set workflow",
+    "workflow": "Workflow",
+    "save": "Save",
+    "cancel": "Cancel",
+    "load_error": "Could not load the Team workflow",
+    "retry": "Retry",
+    "save_error": "Could not save the Team workflow",
+    "missing_members": "Add Agent members to cover every workflow role.",
+    "independent_roles": "Choose independent Agents for each role.",
+    "workflows": {
+      "direct": "Direct execution",
+      "business_analysis": "Business analysis",
+      "end_to_end": "End to End delivery",
+      "develop": "Development delivery",
+      "bug_fix": "Bug fix"
+    }
   }
 }
