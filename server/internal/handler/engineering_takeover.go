@@ -123,7 +123,54 @@ func (h *Handler) ReconcileEngineeringTakeovers(ctx context.Context, authority e
 			if _, err = h.EngineeringAdminWorker.Call(ctx, map[string]any{"action": "takeover-progress", "claim": request.Claim, "payload": progress}); err != nil {
 				return err
 			}
+			if err = h.recordEngineeringRepairWorkspaceVersion(ctx, request.Claim, request.WorkspaceID, request.IssueID, request.CaseID, request.ObservationID, request.SnapshotHash, progress); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
+}
+
+// Physical ownership and a content version are separate facts. Persist physical
+// progress first so a missing or unsupported source never fabricates a version.
+func (h *Handler) recordEngineeringRepairWorkspaceVersion(ctx context.Context, claim json.RawMessage, workspace, issue, caseID, observation, snapshot string, raw json.RawMessage) error {
+	var initial engineeringRepairProgress
+	if err := json.Unmarshal(raw, &initial); err != nil {
+		return err
+	}
+	if initial.Phase != "owned" || initial.WorkspaceRoot == nil {
+		return nil
+	}
+	data, err := h.EngineeringWorker.Call(ctx, map[string]any{"action": "repair-workspace-version", "actor": map[string]string{"kind": "host", "workspaceId": workspace, "issueId": issue}, "payload": map[string]string{"case_id": caseID, "observation_id": observation, "snapshot_hash": snapshot}})
+	if err != nil {
+		return err
+	}
+	var version struct {
+		SourceAttemptID  string `json:"source_attempt_id"`
+		SnapshotHash     string `json:"snapshot_hash"`
+		WorkspaceRoot    string `json:"workspace_root"`
+		WorkspaceVersion string `json:"workspace_version"`
+	}
+	if err = json.Unmarshal(data, &version); err != nil {
+		return err
+	}
+	if version.SourceAttemptID != initial.SourceAttemptID || version.SnapshotHash != initial.SnapshotHash || version.WorkspaceRoot != *initial.WorkspaceRoot || version.WorkspaceVersion == "" {
+		return fmt.Errorf("repair workspace version belongs to another source")
+	}
+	// Revalidate native source, ownership and the exact writer cohort after the
+	// asynchronous filesystem read; the management write also checks live intent.
+	raw, err = h.EngineeringTakeoverControl.Call(ctx, map[string]any{"claim": claim})
+	if err != nil {
+		return err
+	}
+	var current engineeringRepairProgress
+	if err = json.Unmarshal(raw, &current); err != nil {
+		return err
+	}
+	if current.Phase != "owned" || current.WorkspaceRoot == nil || *current.WorkspaceRoot != version.WorkspaceRoot || current.TargetsHash != initial.TargetsHash || current.SourceAttemptID != version.SourceAttemptID || current.SnapshotHash != version.SnapshotHash {
+		return fmt.Errorf("repair ownership changed during workspace version read")
+	}
+	current.WorkspaceVersion = &version.WorkspaceVersion
+	_, err = h.EngineeringAdminWorker.Call(ctx, map[string]any{"action": "takeover-progress", "claim": claim, "payload": current})
+	return err
 }

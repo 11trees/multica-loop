@@ -125,7 +125,12 @@ it("persists an immutable takeover request scoped to the live Case and retains i
  expect(()=>store.execution.recordTakeoverProgress(claim,{...progress,snapshot_hash:"changed"})).toThrow(/original source/);
  expect(()=>store.execution.recordTakeoverProgress(claim,{...progress,phase:"owned",workspace_root:"/invented",unknown_tasks:0,unfinished_controllers:0})).toThrow(/original source/);
  expect(()=>store.execution.recordTakeoverProgress(claim,{...progress,phase:"owned",workspace_root:"/fixture/root"})).toThrow(/original source/);
- expect(store.execution.recordTakeoverProgress(claim,{...progress,phase:"owned",workspace_root:"/fixture/root",unknown_tasks:0,unfinished_controllers:0})).toEqual({recorded:true});
+ const owned={...progress,phase:"owned",workspace_root:"/fixture/root",unknown_tasks:0,unfinished_controllers:0,workspace_version:`workspace-content-v1:${"b".repeat(40)}:${"c".repeat(64)}`};
+ expect(()=>store.execution.recordTakeoverProgress(claim,{...progress,workspace_version:owned.workspace_version})).toThrow(/original source/);
+ expect(()=>store.execution.recordTakeoverProgress(claim,{...owned,workspace_version:"Agent claims this is fixed"})).toThrow();
+ expect(store.execution.recordTakeoverProgress(claim,owned)).toEqual({recorded:true});
+ store.close();store=new AdminStore(filename,()=>now);
+ expect(store.execution.command(claim,{action:"status"})).toMatchObject({takeoverProgress:owned});
 
  store.execution.setIntent({intent:"stopped",request_id:"stop"});
  expect(()=>store.execution.inspectTakeover(claim,inspection)).toThrow(/identity, intent or generation/);

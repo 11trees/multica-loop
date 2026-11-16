@@ -205,6 +205,7 @@ type engineeringRepairProgress struct {
 	UnknownTasks          int     `json:"unknown_tasks"`
 	TargetsHash           string  `json:"targets_hash"`
 	WorkspaceRoot         *string `json:"workspace_root"`
+	WorkspaceVersion      *string `json:"workspace_version"`
 	SourceAttemptID       string  `json:"source_attempt_id"`
 	SnapshotHash          string  `json:"snapshot_hash"`
 }

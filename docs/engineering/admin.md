@@ -262,3 +262,14 @@ claims cannot update progress, and successor generations start without inheritin
 a stale permission. Schema upgrades from earlier management stores preserve
 Cases and original observations without starting execution. Investigation
 remains read-only; an owned progress receipt cannot close or resume business.
+
+After an owned receipt, the host reads the registered repository's current
+`workspace-content-v1:<HEAD>:<digest>` identity and revalidates the original
+checkpoint, native source, live management claim and exact writer cohort before
+persisting `workspace_version`. It retains the original failure's `code_version`
+separately. This is a current content reading, not an immutable repair candidate,
+running-service version, repair write capability or independent verification.
+Failed reads leave physical progress with a null content version; older progress
+without this field also reads as null. Each new reconciliation re-reads content
+instead of reusing an earlier hash. See [content identity](process-ownership.md#repair-content-identity)
+for the file coverage and remaining acceptance boundary.

@@ -152,3 +152,29 @@ workers, observes durable draining progress, submits the control-plane final
 no-spawn receipt, and observes the same inventory become owned. These fixtures
 never resolve an installed provider or inspect an account. They do not accept
 repair writes, independent repair verification or historical cutover.
+
+### Repair content identity
+
+The host-only `repair-workspace-version` operation resolves the registered anchor
+from the acknowledged immutable original source; callers cannot supply a path.
+It verifies the original checkpoint again after reading. The private takeover
+bridge then rechecks live authority, native source and the exact owned writer
+cohort before recording the current content identity in management progress.
+An absent original execution worktree is not reopened or reconstructed.
+
+The identity contains HEAD plus two matching content scans. It covers tracked
+files (including assume-unchanged files), untracked source, deletion and mode
+changes, root `.env`, `.env.*` and `.envrc`, and the full contained trees reached
+by directory aliases. Untracked `.tmp/` scratch files follow the source protocol's
+exclusion; other ignored files are outside this boundary unless reached through
+an included directory alias. Native sidecars are not normalized away. Reads do
+not update the Git index. Escaping links, link cycles, unsupported submodules,
+missing/non-Git roots, concurrent file changes and ownership cancellation cannot
+produce a successful identity. Reads yield to host timers and have a bounded
+deadline; inherited Git directory/index settings cannot redirect them.
+
+Controlled content tests and the bundled private-worker integration cover these
+reads and changed uncommitted content. Original code/kernel/host versions remain
+unchanged. This is source identity only: immutable candidate preparation, repair
+write authority, running-service identity, independent command verification and
+verified business handoff remain incomplete.

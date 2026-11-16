@@ -18,7 +18,7 @@ const authority = z.strictObject({ ownerId: text, token: z.number().int().positi
 export const adminClaimSchema = z.strictObject({ authority, caseId: text, attemptId: text, generation: z.number().int().positive(), sessionId: z.uuid() });
 export type AdminClaim = z.infer<typeof adminClaimSchema>;
 const takeoverInspectionSchema=z.strictObject({observation_id:text,snapshot_hash:text,source_attempt_id:text,project_id:z.uuid(),runtime_id:z.uuid(),registered_repository_path:text,execution_repository_path:text,mode:z.enum(["in_place","worktree"]),receipt_hash:text,code_version:z.string(),kernel_version:text.nullable(),host_version:text.nullable()});
-const takeoverProgressSchema=z.strictObject({phase:z.enum(["draining","owned"]),cancelled:z.number().int().nonnegative(),unfinished_controllers:z.number().int().nonnegative(),unknown_tasks:z.number().int().nonnegative(),targets_hash:text.regex(/^[a-f0-9]{64}$/),workspace_root:text.nullable(),source_attempt_id:text,snapshot_hash:text});
+const takeoverProgressSchema=z.strictObject({phase:z.enum(["draining","owned"]),cancelled:z.number().int().nonnegative(),unfinished_controllers:z.number().int().nonnegative(),unknown_tasks:z.number().int().nonnegative(),targets_hash:text.regex(/^[a-f0-9]{64}$/),workspace_root:text.nullable(),workspace_version:text.regex(/^workspace-content-v1:[a-f0-9]{40,64}:[a-f0-9]{64}$/).nullable().default(null),source_attempt_id:text,snapshot_hash:text});
 const takeoverSchema=z.strictObject({claim:adminClaimSchema,case_id:text,observation_id:text,snapshot_hash:text,workspace_id:z.uuid(),issue_id:z.uuid(),source_attempt_id:text,reason:text,phase:z.enum(["requested","source-inspected"]),inspection:takeoverInspectionSchema.nullable()});
 const attemptSchema = z.strictObject({ attemptId: text, caseId: text, ownerId: text, supervisionToken: z.number().int().positive(), generation: z.number().int().positive(), intentRevision: z.number().int().nonnegative(), sessionId: z.uuid(),
     status: z.enum(["launching", "running", "completed", "failed", "interrupted"]), pid: z.number().int().positive().nullable(), startMarker: text.nullable(), processGroupId: z.number().int().positive().nullable(),
@@ -196,7 +196,7 @@ export class AdminExecutionStore {
     recordTakeoverProgress(claim:AdminClaim,input:unknown){
         const progress=takeoverProgressSchema.parse(input);
         return this.transaction(()=>{const {request}=this.currentTakeover(claim);
-            if(progress.source_attempt_id!==request.source_attempt_id || progress.snapshot_hash!==request.snapshot_hash || (progress.phase==="owned" ? progress.workspace_root!==request.inspection?.registered_repository_path || progress.unknown_tasks!==0 || progress.unfinished_controllers!==0 : progress.workspace_root!==null))throw new DraftConflictError("Physical takeover progress does not match the original source");
+            if(progress.source_attempt_id!==request.source_attempt_id || progress.snapshot_hash!==request.snapshot_hash || (progress.phase==="owned" ? progress.workspace_root!==request.inspection?.registered_repository_path || progress.unknown_tasks!==0 || progress.unfinished_controllers!==0 : progress.workspace_root!==null || progress.workspace_version!==null))throw new DraftConflictError("Physical takeover progress does not match the original source");
             this.db.prepare("INSERT INTO admin_takeover_progress VALUES(?,?) ON CONFLICT(attempt_id) DO UPDATE SET payload=excluded.payload").run(claim.attemptId,json(progress));return {recorded:true};
         });
     }

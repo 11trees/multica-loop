@@ -103,10 +103,27 @@ it("validates the acknowledged original Direct source without granting ownership
   await rm(repository,{recursive:true});
   app.close();app=new EngineeringApplication(database,definition);
   expect(await invoke(host,"repair-source",pin)).toMatchObject(expected);
+  await expect(invoke(host,"repair-workspace-version",pin)).rejects.toThrow(/ENOENT/);
   expect(await invoke(host,"execution-permission")).toEqual({allowed:false});
   const db = new DatabaseSync(database),row=db.prepare("SELECT payload FROM direct_contract").get()!,record=JSON.parse(String(row.payload));
   record.version++;db.prepare("UPDATE direct_contract SET payload=?").run(JSON.stringify(record));db.close();
   await expect(invoke(host,"repair-source",pin)).rejects.toThrow(/checkpoint changed/);
+});
+
+it("reads current content only through the pinned host source without rewriting its original version", async () => {
+  await direct(); await invoke(owner,"direct-run"); await invoke(owner,"intervention-request",body);
+  const [original]=await invoke({kind:"coordinator"},"repair-observations") as Array<{observationId:string;snapshotHash:string}>;
+  const pin={observation_id:original!.observationId,snapshot_hash:original!.snapshotHash,case_id:"REPAIR-version"};
+  await invoke(host,"repair-observation-ack",pin);
+  const source=await invoke(host,"repair-source",pin);
+  for(const actor of [human,owner,{...owner,kind:"daemon" as const},{kind:"coordinator" as const}]) await expect(invoke(actor,"repair-workspace-version",pin)).rejects.toThrow(/Only the host/);
+  const first=await invoke(host,"repair-workspace-version",pin);
+  expect(first).toMatchObject({source_attempt_id:owner.attemptId,snapshot_hash:pin.snapshot_hash,workspace_root:repository,workspace_version:expect.stringMatching(/^workspace-content-v1:/)});
+  await writeFile(join(repository,"actual-change.txt"),"Uncommitted repair candidate\n");
+  expect(await invoke(host,"repair-workspace-version",pin)).not.toEqual(first);
+  expect(await invoke(host,"repair-source",pin)).toEqual(source);
+  await expect(invoke(host,"repair-workspace-version",{...pin,repository_path:"/invented"})).rejects.toThrow();
+  expect(await invoke(host,"execution-permission")).toEqual({allowed:false});
 });
 
 it("pins the exact surrendered YAML draft and the original runtime binding", async () => {
@@ -138,5 +155,6 @@ it("retains distinct registered and execution paths after the surrendered worktr
   await invoke(host,"repair-observation-ack",pin);
   await rm(execution,{recursive:true});
   expect(await invoke(host,"repair-source",pin)).toMatchObject({registered_repository_path:repository,execution_repository_path:execution,mode:"worktree"});
+  expect(await invoke(host,"repair-workspace-version",pin)).toMatchObject({workspace_root:repository,workspace_version:expect.stringMatching(/^workspace-content-v1:/)});
   expect(await invoke(host,"execution-permission")).toEqual({allowed:false});
 });

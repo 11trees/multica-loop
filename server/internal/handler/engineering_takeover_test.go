@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -328,6 +329,13 @@ func TestEngineeringTakeoverBundledWorkersAndPrivateControl(t *testing.T) {
 	if err = os.Mkdir(repository, 0700); err != nil {
 		t.Fatal(err)
 	}
+	for _, args := range [][]string{{"init", "-q"}, {"-c", "user.name=Repair fixture", "-c", "user.email=fixture@example.invalid", "commit", "--allow-empty", "-qm", "Original source"}} {
+		command := exec.Command("git", args...)
+		command.Dir = repository
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("prepare temporary source: %v: %s", err, output)
+		}
+	}
 	repository, err = filepath.EvalSymlinks(repository)
 	if err != nil {
 		t.Fatal(err)
@@ -428,5 +436,77 @@ func TestEngineeringTakeoverBundledWorkersAndPrivateControl(t *testing.T) {
 	if err = json.Unmarshal(call(management, map[string]any{"action": "command", "claim": allocated.Claim, "payload": map[string]string{"action": "status"}}), &state); err != nil || state.Progress.Phase != "owned" || state.Progress.WorkspaceRoot == nil || *state.Progress.WorkspaceRoot != repository || state.Progress.TargetsHash != targetsHash {
 		t.Fatal("final controller receipt did not produce the same owned cohort through private transport", err)
 	}
+	if state.Progress.WorkspaceVersion == nil || !strings.HasPrefix(*state.Progress.WorkspaceVersion, "workspace-content-v1:") {
+		t.Fatal("owned transport did not record the actual source version")
+	}
+	originalVersion := *state.Progress.WorkspaceVersion
+	if err = os.WriteFile(filepath.Join(repository, "uncommitted-repair.txt"), []byte("Actual candidate source"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err = f.h.ReconcileEngineeringTakeovers(ctx, acquired.Authority); err != nil {
+		t.Fatal(err)
+	}
+	if err = json.Unmarshal(call(management, map[string]any{"action": "command", "claim": allocated.Claim, "payload": map[string]string{"action": "status"}}), &state); err != nil || state.Progress.WorkspaceVersion == nil || *state.Progress.WorkspaceVersion == originalVersion || state.Progress.TargetsHash != targetsHash {
+		t.Fatal("current content version did not follow actual source changes within the same owned cohort", err)
+	}
 	cancel()
+}
+
+func TestEngineeringRepairWorkspaceVersionRechecksOwnedSourceBeforePersistence(t *testing.T) {
+	root := "/fixture/source"
+	initial := engineeringRepairProgress{Phase: "owned", WorkspaceRoot: &root, TargetsHash: strings.Repeat("a", 64), SourceAttemptID: "original:123", SnapshotHash: "original-snapshot"}
+	for _, change := range []string{"none", "cohort", "draining", "source", "revoked"} {
+		t.Run(change, func(t *testing.T) {
+			h := *testHandler
+			writes, checks := 0, 0
+			h.EngineeringWorker = engineeringAdminTestWorker{call: func(input map[string]any) (json.RawMessage, error) {
+				if input["action"] != "repair-workspace-version" {
+					t.Fatal("unexpected business action")
+				}
+				payload := input["payload"].(map[string]string)
+				if payload["case_id"] != "original-case" || payload["snapshot_hash"] != initial.SnapshotHash {
+					t.Fatal("version did not pin original source")
+				}
+				source := initial.SourceAttemptID
+				if change == "source" {
+					source = "foreign:456"
+				}
+				return json.Marshal(map[string]string{"source_attempt_id": source, "snapshot_hash": initial.SnapshotHash, "workspace_root": root, "workspace_version": "workspace-content-v1:" + strings.Repeat("b", 40) + ":" + strings.Repeat("c", 64)})
+			}}
+			h.EngineeringTakeoverControl = engineeringAdminTestWorker{call: func(input map[string]any) (json.RawMessage, error) {
+				checks++
+				if change == "revoked" {
+					return nil, fmt.Errorf("original authority revoked")
+				}
+				current := initial
+				if change == "cohort" {
+					current.TargetsHash = strings.Repeat("d", 64)
+				}
+				if change == "draining" {
+					current.Phase = "draining"
+				}
+				return json.Marshal(current)
+			}}
+			h.EngineeringAdminWorker = engineeringAdminTestWorker{call: func(input map[string]any) (json.RawMessage, error) {
+				if input["action"] != "takeover-progress" {
+					t.Fatal("unexpected management action")
+				}
+				progress := input["payload"].(engineeringRepairProgress)
+				if progress.WorkspaceVersion == nil {
+					t.Fatal("missing actual source version")
+				}
+				writes++
+				return json.RawMessage(`{}`), nil
+			}}
+			raw, _ := json.Marshal(initial)
+			err := h.recordEngineeringRepairWorkspaceVersion(context.Background(), json.RawMessage(`{}`), testWorkspaceID, "original-issue", "original-case", "original-observation", initial.SnapshotHash, raw)
+			if change == "none" {
+				if err != nil || writes != 1 || checks != 1 {
+					t.Fatal("matching version was not persisted after native revalidation", err)
+				}
+			} else if err == nil || writes != 0 {
+				t.Fatal("changed ownership or source persisted a version", err)
+			}
+		})
+	}
 }

@@ -1,3 +1,4 @@
+import { readRepairWorkspaceVersion } from "./repair-workspace-version";
 import { EngineeringTeamStore } from "./team-store";
 import { EngineeringProcessStore } from "./process-store";
 import { InterventionStore, interventionInstructions } from "./intervention-store";
@@ -31,7 +32,7 @@ const coordinator = z.strictObject({ kind: z.literal("coordinator") });
 const actor = z.discriminatedUnion("kind", [human, task, daemon, host, coordinator, teamManager]);
 export const applicationRequestSchema = z.strictObject({
   actor,
-  action: z.enum(["team-feedback-scope", "team-routing", "team-delivery-scope", "team-review", "team-lookup", "team-start", "team-profile", "team-bind", "team-binding", "execution-permission", "process", "process-scope", "intervention-request", "repair-source", "repair-observations", "repair-observation-ack", "configure-direct","direct-run","direct-submit","direct-scope","direct-completed","business-handoff","end-to-end-scope","business-scope","business-read","business-comment","business-comment-intent","business-comment-ack","business-comment-resolved","business-comment-protected","configure-business", "configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations", "verified-binding", "publication", "publication-ack", "delivery-policy", "activate-unit", "accept-unit", "parent-scope", "review-inputs", "configure-review", "review-ack", "begin-feedback", "cancel-feedback", "feedback-restored", "authorize-feedback-work", "prepare-feedback-verification", "prepare-feedback-report"]),
+  action: z.enum(["team-feedback-scope", "team-routing", "team-delivery-scope", "team-review", "team-lookup", "team-start", "team-profile", "team-bind", "team-binding", "execution-permission", "process", "process-scope", "intervention-request", "repair-workspace-version", "repair-source", "repair-observations", "repair-observation-ack", "configure-direct","direct-run","direct-submit","direct-scope","direct-completed","business-handoff","end-to-end-scope","business-scope","business-read","business-comment","business-comment-intent","business-comment-ack","business-comment-resolved","business-comment-protected","configure-business", "configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations", "verified-binding", "publication", "publication-ack", "delivery-policy", "activate-unit", "accept-unit", "parent-scope", "review-inputs", "configure-review", "review-ack", "begin-feedback", "cancel-feedback", "feedback-restored", "authorize-feedback-work", "prepare-feedback-verification", "prepare-feedback-report"]),
   payload: z.unknown().optional(),
   host_version: z.string().optional(),
 });
@@ -539,6 +540,15 @@ export class EngineeringApplication {
     if (action === "repair-observations") {
       if (actor.kind !== "coordinator") throw new Error("Only the host can read pending Admin observations");
       return this.interventions.observations();
+    }
+    if (action === "repair-workspace-version") {
+      if (actor.kind !== "host") throw new Error("Only the host can read an Admin repair workspace version");
+      const readSource = () => this.invoke({ actor, action: "repair-source", payload: request.payload });
+      const original = await readSource();
+      const source = z.object({ attempt_id: text, snapshot_hash: text, registered_repository_path: text }).parse(original);
+      const version = await readRepairWorkspaceVersion(source.registered_repository_path);
+      if (JSON.stringify(await readSource()) !== JSON.stringify(original)) throw new DraftConflictError("Original repair source changed during workspace version read");
+      return { source_attempt_id: source.attempt_id, snapshot_hash: source.snapshot_hash, workspace_root: source.registered_repository_path, workspace_version: version };
     }
     if (action === "repair-source") {
       if (actor.kind !== "host") throw new Error("Only the host can validate an Admin repair source");
