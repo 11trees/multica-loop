@@ -1,0 +1,124 @@
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import pg from "pg";
+import test from "node:test";
+import { browseArchive } from "./loopwork-history-lib.mjs";
+import { cutoverFixture } from "./loopwork-cutover-fixture.mjs";
+import { cutoverHuman, cutoverWorkspace, freezeCutover, holdCutover, planCutover, rollbackCutover, statusCutover } from "./loopwork-cutover-lib.mjs";
+import { sourceNamespace } from "./loopwork-source-fence.mjs";
+import { verifyArchive } from "./loopwork-history-lib.mjs";
+import { main } from "./loopwork-cutover.mjs";
+
+test("operator arguments reject missing scope and nonlocal database before connecting", async () => {
+  await assert.rejects(main(["freeze"]), /Usage/);
+  await assert.rejects(main(["hold", "--expected-scope", "wrong"]), /Invalid/);
+  await assert.rejects(main(["plan"], { DATABASE_URL: "postgres://example.invalid/db", MULTICA_LOOPWORK_HISTORY_ARCHIVE: "/archive", MULTICA_LOOPWORK_HISTORY_HASH: "a".repeat(64) }), /local single-user/);
+});
+
+test("native barrier, source freeze and pre-adoption rollback survive retries in isolated PostgreSQL/SQLite", { skip: !process.env.MULTICA_CUTOVER_TEST_DATABASE_URL }, async t => {
+  const f = await cutoverFixture(t), schema = "cutover_" + randomUUID().replaceAll("-", ""), client = new pg.Client({ connectionString: process.env.MULTICA_CUTOVER_TEST_DATABASE_URL });
+  await client.connect();
+  t.after(async () => { await client.query("ROLLBACK"); await client.query("SET search_path=public"); await client.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`); await client.end(); });
+  await client.query(`CREATE SCHEMA ${schema}; SET search_path=${schema}`);
+  await client.query(`CREATE TABLE project(id UUID PRIMARY KEY,workspace_id UUID,title TEXT);
+    CREATE TABLE issue(id UUID PRIMARY KEY,project_id UUID);
+    CREATE TABLE chat_session(id UUID PRIMARY KEY,project_id UUID);
+    CREATE TABLE project_resource(project_id UUID);
+    CREATE TABLE agent_task_queue(id UUID PRIMARY KEY,issue_id UUID,chat_session_id UUID,status TEXT,dispatched_at TIMESTAMPTZ,runtime_id UUID,agent_id UUID,context JSONB,priority INTEGER DEFAULT 0,created_at TIMESTAMPTZ DEFAULT now(),prepare_lease_expires_at TIMESTAMPTZ,autopilot_run_id UUID);
+    CREATE TABLE agent(id UUID PRIMARY KEY,runtime_id UUID);
+    CREATE TABLE agent_runtime(id UUID PRIMARY KEY,visibility TEXT,status TEXT,last_seen_at TIMESTAMPTZ,updated_at TIMESTAMPTZ);
+    CREATE TABLE issue_wakeup(id UUID PRIMARY KEY,disabled_at TIMESTAMPTZ,revision BIGINT);
+    CREATE TABLE engineering_run_guard(project_id UUID,phase TEXT,claim_settled BOOLEAN);
+    CREATE TABLE engineering_repair_fence(project_id UUID);
+    CREATE TABLE engineering_repair_handoff(project_id UUID,phase TEXT);
+    CREATE TABLE member(workspace_id UUID,user_id UUID,role TEXT);
+    CREATE TABLE engineering_history_preparation(id UUID,workspace_id UUID,source_namespace TEXT,source_project_id TEXT,source_task_id TEXT,revision INTEGER,archive_hash TEXT,packet_hash TEXT,project_id UUID,team_id UUID,team_revision INTEGER,payload JSONB);`);
+  for (const file of ["663_engineering_ownership_guards.up.sql", "664_engineering_chat_project_guard.up.sql", "675_engineering_history_cutover.up.sql", "676_engineering_history_cutover_id.up.sql", "677_engineering_history_cutover_scope.up.sql"]) await client.query(await readFile(new URL("../../server/migrations/" + file, import.meta.url), "utf8"));
+  await client.query("INSERT INTO member VALUES($1,$2,'owner')", [cutoverWorkspace, cutoverHuman]);
+  const project = randomUUID(), preparation = randomUUID(), team = randomUUID(), namespace = sourceNamespace(await verifyArchive(f.archive));
+  await client.query("INSERT INTO project VALUES($1,$2,'Prepared native project')", [project, cutoverWorkspace]);
+  const { packet } = await browseArchive(f.archive, f.hash, { action: "packet", task_id: "pending" });
+  assert.equal(packet.schema_complete, true);
+  await client.query("INSERT INTO engineering_history_preparation VALUES($1,$2,$3,'project','pending',1,$4,$5,$6,$7,1,$8)", [preparation, cutoverWorkspace, namespace, f.hash, packet.hash, project, team, { packet, execution_authorized: false }]);
+  const plan = await planCutover(client, f.archive, f.hash);
+  const url = new URL(process.env.MULTICA_CUTOVER_TEST_DATABASE_URL);
+  url.searchParams.set("options", `-c search_path=${schema}`);
+  const operatorEnv = { DATABASE_URL: url.href, MULTICA_LOOPWORK_HISTORY_ARCHIVE: f.archive, MULTICA_LOOPWORK_HISTORY_HASH: f.hash };
+  const cliPlan = await main(["plan"], operatorEnv);
+  assert.equal(cliPlan.scope_hash, plan.scope_hash);
+  assert.equal(JSON.stringify(cliPlan).includes("fixture-secret-must-not-export"), false);
+  assert.equal(plan.payload.preparations.length, 1);
+  assert.equal(plan.payload.preparations[0].source_task_id, "pending");
+  await assert.rejects(holdCutover(client, f.archive, f.hash, "0".repeat(64)), /plan changed/);
+  const held = await main(["hold", "--expected-scope", plan.scope_hash], operatorEnv);
+  assert.equal(held.phase, "held");
+  assert.equal((await holdCutover(client, f.archive, f.hash, plan.scope_hash)).id, held.id);
+  assert.equal((await statusCutover(client, f.archive, held.id)).source.state, "unfenced");
+  assert.equal((await main(["status", "--id", held.id], operatorEnv)).id, held.id);
+  assert.equal((await client.query("SELECT engineering_history_project_held($1) AS held", [project])).rows[0].held, true);
+  await assert.rejects(client.query("INSERT INTO engineering_run_guard VALUES($1,'waiting',false)", [project]), /cutover holds/);
+  const issue = randomUUID(); await client.query("INSERT INTO issue VALUES($1,$2)", [issue, project]);
+  await assert.rejects(client.query("INSERT INTO agent_task_queue(id,issue_id,status) VALUES($1,$2,'dispatched')", [randomUUID(), issue]), /cutover holds/);
+  await assert.rejects(client.query("INSERT INTO project_resource VALUES($1)", [project]), /cutover holds/);
+  await assert.rejects(client.query("UPDATE project SET title='Changed' WHERE id=$1", [project]), /cutover holds/);
+  await assert.rejects(client.query("UPDATE engineering_history_cutover SET phase='cancelled' WHERE id=$1", [held.id]), /invalid cutover transition/);
+  const agent = randomUUID(), runtime = randomUUID(), otherProject = randomUUID(), otherIssue = randomUUID(), heldTask = randomUUID(), readyTask = randomUUID();
+  await client.query("INSERT INTO project VALUES($1,$2,'Other project')", [otherProject, cutoverWorkspace]);
+  await client.query("INSERT INTO agent VALUES($1,$2)", [agent, runtime]);
+  await client.query("INSERT INTO agent_runtime VALUES($1,'private','online',now(),now())", [runtime]);
+  await client.query("INSERT INTO issue VALUES($1,$2)", [otherIssue, otherProject]);
+  await client.query("INSERT INTO agent_task_queue(id,issue_id,status,runtime_id,agent_id,priority) VALUES($1,$2,'queued',$3,$4,100),($5,$6,'queued',$3,$4,0)", [heldTask, issue, runtime, agent, readyTask, otherIssue]);
+  const querySource = async (file, name) => {
+    const source = await readFile(new URL("../../server/pkg/db/queries/" + file, import.meta.url), "utf8");
+    const sql = source.split(`-- name: ${name} :one\n`)[1].split(/\n-- name:/)[0];
+    const params = { agent_id: "$1", runtime_id: "$2", runtime_stale_secs: "$3", prepare_lease_secs: "$4" };
+    return sql.replace(/@(agent_id|runtime_id|runtime_stale_secs|prepare_lease_secs)\b/g, key => params[key.slice(1)]);
+  };
+  const next = await client.query(await querySource("engineering_ownership.sql", "GetEngineeringNextClaimableTask"), [agent, runtime, 60]);
+  assert.equal(next.rows[0].id, readyTask);
+  const claimed = await client.query(await querySource("agent.sql", "ClaimAgentTask"), [agent, runtime, 60, 30]);
+  assert.equal(claimed.rows[0].id, readyTask);
+  assert.equal((await client.query("SELECT status FROM agent_task_queue WHERE id=$1", [heldTask])).rows[0].status, "queued");
+  await assert.rejects(freezeCutover(client, f.archive, held.id), /empty prepared/);
+  await client.query("DELETE FROM agent_task_queue");
+  await client.query("DELETE FROM issue WHERE id=$1", [issue]);
+  const originalQuery = client.query.bind(client);
+  let interruptFreeze = true;
+  client.query = (...args) => {
+    if (interruptFreeze && typeof args[0] === "string" && args[0].startsWith("UPDATE engineering_history_cutover SET phase='source_frozen'")) { interruptFreeze = false; throw new Error("Lost native freeze acknowledgement"); }
+    return originalQuery(...args);
+  };
+  await assert.rejects(freezeCutover(client, f.archive, held.id), /Lost native/);
+  assert.equal((await statusCutover(client, f.archive, held.id)).phase, "held");
+  assert.equal((await statusCutover(client, f.archive, held.id)).source.state, "frozen");
+  assert.equal((await freezeCutover(client, f.archive, held.id)).source.state, "frozen");
+  assert.equal((await freezeCutover(client, f.archive, held.id)).id, held.id);
+  assert.throws(() => f.business.exec("UPDATE loop_lifecycle_state SET desired_intent='running'"), /frozen/);
+  const chat = randomUUID(); await client.query("INSERT INTO chat_session VALUES($1,$2)", [chat, project]);
+  await assert.rejects(client.query("UPDATE chat_session SET project_id=NULL WHERE id=$1", [chat]), /cutover holds/);
+  await assert.rejects(client.query("INSERT INTO agent_task_queue(id,chat_session_id,status) VALUES($1,$2,'running')", [randomUUID(), chat]), /cutover holds/);
+  await assert.rejects(rollbackCutover(client, f.archive, held.id), /empty prepared/);
+  assert.equal((await statusCutover(client, f.archive, held.id)).source.state, "frozen");
+  await client.query("DELETE FROM chat_session WHERE id=$1", [chat]);
+  let interruptRollback = true;
+  client.query = (...args) => {
+    if (interruptRollback && typeof args[0] === "string" && args[0].startsWith("UPDATE engineering_history_cutover SET phase='cancelled'")) { interruptRollback = false; throw new Error("Lost native rollback acknowledgement"); }
+    return originalQuery(...args);
+  };
+  await assert.rejects(rollbackCutover(client, f.archive, held.id), /Lost native/);
+  assert.equal((await statusCutover(client, f.archive, held.id)).phase, "rollback_pending");
+  assert.equal((await statusCutover(client, f.archive, held.id)).source.state, "unfenced");
+  const rollback = await rollbackCutover(client, f.archive, held.id);
+  assert.equal(rollback.phase, "cancelled"); assert.equal(rollback.source.state, "unfenced");
+  assert.equal((await rollbackCutover(client, f.archive, held.id)).id, held.id);
+  assert.equal((await client.query("SELECT engineering_history_project_held($1) AS held", [project])).rows[0].held, false);
+  f.business.exec("UPDATE loop_lifecycle_state SET desired_intent='running'");
+  const released = await statusCutover(client, f.archive, held.id);
+  assert.equal(released.phase, "cancelled"); assert.equal(released.source_inspected_now, false);
+  // The cancelled record stays auditable, but its old source-byte preimage
+  // cannot be reused for another cutover after rollback.
+  await assert.rejects(planCutover(client, f.archive, f.hash), /changed since capture/);
+  assert.equal((await client.query("SELECT count(*)::int AS n FROM engineering_history_cutover")).rows[0].n, 1);
+  for (const file of ["677_engineering_history_cutover_scope.down.sql", "676_engineering_history_cutover_id.down.sql", "675_engineering_history_cutover.down.sql"]) await client.query(await readFile(new URL("../../server/migrations/" + file, import.meta.url), "utf8"));
+});

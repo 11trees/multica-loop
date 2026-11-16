@@ -1,6 +1,9 @@
 -- name: LockEngineeringHistoryPreparation :exec
 SELECT pg_advisory_xact_lock(hashtextextended(sqlc.arg('scope')::text, 0));
 
+-- name: EngineeringHistoryProjectHeld :one
+SELECT engineering_history_project_held($1::uuid)::boolean AS held;
+
 -- name: LockEngineeringHistoryTargetProject :one
 SELECT * FROM project WHERE id = $1 AND workspace_id = $2 FOR SHARE;
 

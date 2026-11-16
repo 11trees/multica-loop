@@ -792,6 +792,9 @@ WHERE id = (
       AND atq.runtime_id = @runtime_id
       AND atq.status = 'queued'
       AND NOT (COALESCE(atq.context,'{}'::jsonb) ? 'engineering_dispatch_hold')
+      AND NOT engineering_history_project_held(COALESCE(
+          (SELECT project_id FROM issue WHERE id=atq.issue_id),
+          (SELECT project_id FROM chat_session WHERE id=atq.chat_session_id)))
       AND (atq.context->>'wakeup_id' IS NULL OR EXISTS (SELECT 1 FROM issue_wakeup w WHERE w.id=(atq.context->>'wakeup_id')::uuid AND w.disabled_at IS NULL AND w.revision=(atq.context->>'wakeup_revision')::bigint))
       AND EXISTS (
           SELECT 1

@@ -321,6 +321,13 @@ func (h *Handler) startEngineeringTeamIssue(ctx context.Context, issue db.Issue,
 	if h.EngineeringWorker == nil || !issue.ProjectID.Valid || issue.TriageState.Valid || issue.AssigneeType.String != "squad" || !issue.AssigneeID.Valid {
 		return reject("choose a Team and an accepted project before starting")
 	}
+	held, err := h.Queries.EngineeringHistoryProjectHeld(ctx, issue.ProjectID)
+	if err != nil {
+		return err
+	}
+	if held {
+		return reject("LoopWork cutover holds this project; finish or roll back the cutover before starting")
+	}
 	category, err := issuestatus.CategoryWithError(ctx, h.Queries, issue.WorkspaceID, issue.Status)
 	if err != nil {
 		return err

@@ -288,6 +288,78 @@ acceptance remain outstanding. Screenshots contain fixture data only:
 
 ![Saved preparation on a narrow screen](assets/history-preparation-narrow.png)
 
+## Pre-activation freeze and rollback
+
+The local operator tool now connects a durable native project hold to source
+database write guards. It supports the saved preparations before any native
+issue, chat, project resource or controller has been adopted. This is a
+pre-activation protocol: none of its phases can start native execution.
+
+Run from this checkout's managed environment:
+
+```sh
+make env-exec ARGS="-- node scripts/migration/loopwork-cutover.mjs plan"
+make env-exec ARGS="-- node scripts/migration/loopwork-cutover.mjs hold --expected-scope REVIEWED_PLAN_SHA256"
+make env-exec ARGS="-- node scripts/migration/loopwork-cutover.mjs status --id SAVED_CUTOVER_UUID"
+make env-exec ARGS="-- node scripts/migration/loopwork-cutover.mjs freeze --id SAVED_CUTOVER_UUID"
+make env-exec ARGS="-- node scripts/migration/loopwork-cutover.mjs rollback --id SAVED_CUTOVER_UUID"
+```
+
+`plan` only reads source bytes through private copies. It requires the pinned,
+clean source checkout, exact archive/database/WAL preimages, stopped business
+and management intents and logical process records, and a current preparation
+for every unfinished task in every non-deleted source project. Deleted-project
+tasks remain historical. The plan contains hashes and counts, including the
+application database's logical digests; it contains no application credentials.
+All source paths come from the configured verified archive. Native access uses
+the local PostgreSQL connection and the reserved local human's owner/admin
+membership; this is a host operator tool, not a task or HTTP command.
+
+`hold` requires the reviewed plan hash, freezes the preparation identities under
+their source-project locks, locks native projects and commits the hold before
+any source mutation. Identical acknowledgement retries return the same cutover
+ID. Native Team start, queue selection, direct claim/controller admission,
+project/resource mutations and issue/chat project reassignment respect the hold. Other projects remain
+eligible, even when a held task has higher queue priority. The held phases are
+`held`, `source_frozen` and `rollback_pending`.
+
+`freeze` **writes the original source databases**. It creates one private marker
+and three rejecting triggers per original non-system table in `loopwork.db`,
+`loop-ui.db` and the captured optional `admin-management.db`. Ordinary source
+INSERT/UPDATE/DELETE, including task resume, runtime edits and management start,
+are refused after reopening the database. Marker, trigger inventory, original
+schema and lossless row digests are checked against the immutable native scope.
+Each database commits separately. A partial commit, unavailable native hold,
+foreign marker, changed source or lost native acknowledgement retains the native
+hold; retry the same cutover ID. The operator holds the native record lock while
+changing source files. No source path or preimage can be substituted by a caller.
+
+`rollback` first commits `rollback_pending`, then removes only this cutover's
+verified source guards. It rechecks the unfenced cohort and empty native adoption
+before cancelling the native hold. Lost acknowledgements replay the same record.
+Keep the old application stopped until rollback finishes. If an already restored
+database resumes or changes during a partial rollback, the native hold remains
+and explicit reconciliation is required. A cancelled record retains its final
+receipt; `status` labels that receipt as a past observation rather than inspecting
+a source that may legitimately have resumed. A new cutover requires a fresh
+archive/preparation after rollback because source file fingerprints have changed.
+
+These guards protect ordinary DML in the known database cohort. They do not fence
+arbitrary DDL, filesystem writers, unclassified databases or repository processes.
+Stopped rows and frozen databases both retain
+`physical_quiescence_confirmed: false` and `execution_authorized: false`.
+Physical drain, native issue activation and application runtime migration remain
+separate prerequisites. There is intentionally no activation command or phase.
+
+Controlled validation uses temporary source repositories, real SQLite/WAL and an
+isolated PostgreSQL schema. It covers reopen/resume rejection, exact original
+blobs/64-bit integers and repair provenance, partial freeze/rollback, foreign or
+missing guards, source drift, lost native acknowledgements, native issue/chat
+admission and queue skipping. The full real-source `plan` also reads the existing
+four eligible preparations and three source databases successfully. The original
+source databases have not been frozen, and no actual cutover record or native
+issue has been created by this change.
+
 ## Remaining cutover work
 
 1. Reconcile and activate the saved source-task/project/Team preparations into
@@ -300,8 +372,9 @@ acceptance remain outstanding. Screenshots contain fixture data only:
    The source's ordinary update-silence lifecycle can clear that mode during
    restart, so it is not a durable migration-release protocol. The target's
    [local project execution barrier](process-ownership.md#local-project-execution-admission)
-   now prevents concurrent physical runs within one project; it neither freezes
-   the old source nor authorizes adoption of the prepared tasks.
+   now prevents concurrent physical runs within one project. The separate
+   pre-activation protocol above can freeze the known source databases and hold
+   native execution, but neither mechanism authorizes task adoption.
 3. Materialize external run/evidence files and attachments with their source
    references, and classify remaining historical database copies. Database
    archives alone do not include those external files.

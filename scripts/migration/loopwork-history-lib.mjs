@@ -25,7 +25,7 @@ async function fingerprint(path) {
   if (!after || stat.ino !== after.ino || stat.dev !== after.dev || stat.size !== after.size || stat.mtimeMs !== after.mtimeMs) throw new Error("Source changed during fingerprint; retry a fresh snapshot");
   return { bytes: stat.size, sha256: hash.digest("hex") };
 }
-async function sourceFiles(path) {
+export async function sourceFiles(path) {
   if (await file(`${path}-journal`)) throw new Error("Rollback journal present; finish the source transaction before capture");
   const database = await fingerprint(path); if (!database) throw new Error(`Source database is missing: ${path}`);
   return { database, wal: await fingerprint(`${path}-wal`) };

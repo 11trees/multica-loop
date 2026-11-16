@@ -101,6 +101,17 @@ func (q *Queries) CreateEngineeringHistoryProject(ctx context.Context, arg Creat
 	return i, err
 }
 
+const engineeringHistoryProjectHeld = `-- name: EngineeringHistoryProjectHeld :one
+SELECT engineering_history_project_held($1::uuid)::boolean AS held
+`
+
+func (q *Queries) EngineeringHistoryProjectHeld(ctx context.Context, dollar_1 pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, engineeringHistoryProjectHeld, dollar_1)
+	var held bool
+	err := row.Scan(&held)
+	return held, err
+}
+
 const getEngineeringHistoryProject = `-- name: GetEngineeringHistoryProject :one
 SELECT workspace_id, source_namespace, source_project_id, project_id, created_by, created_at FROM engineering_history_project
 WHERE workspace_id = $1 AND source_namespace = $2 AND source_project_id = $3

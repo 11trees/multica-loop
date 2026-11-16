@@ -69,6 +69,8 @@ Use `Makefile`, workspace `package.json` files, and `pnpm-workspace.yaml` for cu
 
 - History migration preparation is local-human-only and separate from native issue admission. Persist the exact source packet and proposed Team version in append-only native records. Serialize source-project correspondence with preparation creation; identical acknowledgement retries reuse the saved identity, and a missing mapped project must not be recreated. Deleted/terminal/unsupported source work cannot silently become active. A prepared record grants no source release, runtime configuration, task binding or completion; revalidate all of those before later exclusive-owner activation.
 
+- Pre-activation history cutover commits a native project hold before installing source database write guards. Retain that hold across partial SQLite commits, interrupted acknowledgements and rollback; never infer physical exit or execution authority from a stopped intent or frozen source. Inspect original database/WAL bytes through private copies, bind every guard to the saved source preimage and cutover identity, and never export application credentials. Only remove the native hold after verified source unfreezing and empty native adoption. Keep cancelled records and require a fresh capture after rollback; this operator protocol does not activate native issues.
+
 Run these from the repository root:
 
 | Scope | Checks |
