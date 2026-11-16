@@ -1,6 +1,8 @@
+import {readRecoveryCheckpoint} from "./repair-recovery-store";
+import {repairRecoveryFaultSchema} from "./repair-recovery-fault";
 import {assertRepairExecutionBinding,initializeRepairExecutions,prepareRepairExecutionHint,bindRepairExecutionHint,repairExecutionHintSchema} from "./repair-execution";
 import { initializeRepairHandoffs,prepareRepairHandoff } from "./repair-handoff-store";
-import { initializeRepairApplications, readStagedRepair, stagedPreparation, reservedRepairProposal, persistStagedRepair } from "./repair-stage-store";
+import {repairRootPayload, initializeRepairApplications, readStagedRepair, stagedPreparation, reservedRepairProposal, persistStagedRepair } from "./repair-stage-store";
 import {initializeRepairProgress,readRepairProgress} from "./repair-progress-store";
 import { readyRepairDispatch,repairDispatchForTask,activateRepairDispatch,refreshRepairDispatchClaim } from "./repair-dispatch-store";
 import { repairHandoffTargetSchema, handoffReservationSchema, handoffApplicationSchema,handoffHash, type HandoffYamlCheckpoint, type HandoffRootChange } from "./repair-handoff";
@@ -39,7 +41,7 @@ const actor = z.discriminatedUnion("kind", [human, task, daemon, host, coordinat
 export const applicationRequestSchema = z.strictObject({
   actor,
   recovery_execution:repairExecutionHintSchema.optional(),
-  action: z.enum(["team-feedback-scope", "team-routing", "team-delivery-scope", "team-review", "team-lookup", "team-start", "team-profile", "team-bind", "team-binding", "execution-permission", "process", "process-scope", "intervention-request", "repair-handoff-prepare", "repair-handoff-stage", "repair-handoff-ready", "repair-business-progress", "repair-workspace-version", "repair-source", "repair-observations", "repair-observation-ack", "configure-direct","direct-run","direct-submit","direct-scope","direct-completed","business-handoff","end-to-end-scope","business-scope","business-read","business-comment","business-comment-intent","business-comment-ack","business-comment-resolved","business-comment-protected","configure-business", "configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations", "verified-binding", "publication", "publication-ack", "delivery-policy", "activate-unit", "accept-unit", "parent-scope", "review-inputs", "configure-review", "review-ack", "begin-feedback", "cancel-feedback", "feedback-restored", "authorize-feedback-work", "prepare-feedback-verification", "prepare-feedback-report"]),
+  action: z.enum(["team-feedback-scope", "team-routing", "team-delivery-scope", "team-review", "team-lookup", "team-start", "team-profile", "team-bind", "team-binding", "execution-permission", "process", "process-scope", "intervention-request", "repair-handoff-prepare", "repair-handoff-stage", "repair-handoff-ready", "repair-business-progress", "repair-recovery-checkpoint", "repair-recovery-hold", "repair-workspace-version", "repair-source", "repair-observations", "repair-observation-ack", "configure-direct","direct-run","direct-submit","direct-scope","direct-completed","business-handoff","end-to-end-scope","business-scope","business-read","business-comment","business-comment-intent","business-comment-ack","business-comment-resolved","business-comment-protected","configure-business", "configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations", "verified-binding", "publication", "publication-ack", "delivery-policy", "activate-unit", "accept-unit", "parent-scope", "review-inputs", "configure-review", "review-ack", "begin-feedback", "cancel-feedback", "feedback-restored", "authorize-feedback-work", "prepare-feedback-verification", "prepare-feedback-report"]),
   payload: z.unknown().optional(),
   host_version: z.string().optional(),
 });
@@ -177,7 +179,7 @@ export class EngineeringApplication {
   private assertEngineeringRepairSuccessor(original:InterventionRecord,checkpoint:HandoffYamlCheckpoint){
     const record=this.current(original.workspaceId,original.issueId),role=record&&this.activeRole(record);
     const contract=role?.chain==="analysis"?record!.analysis!.contract:role?.chain==="development"?developmentContractSchema.parse(this.devContract(record!)):record?.contract;
-    if(role?.draftId!==checkpoint.draft.id||JSON.stringify(contract)!==JSON.stringify(checkpoint.contract))throw new DraftConflictError("Staged engineering role differs from its frozen successor");
+    if(role?.draftId!==checkpoint.draft.id||role.agentId!==original.agentId||JSON.stringify(contract)!==JSON.stringify(checkpoint.contract))throw new DraftConflictError("Staged engineering role differs from its frozen successor");
   }
 
   private async dependencyBinding(workspaceId:string,issueId:string) {
@@ -585,6 +587,26 @@ export class EngineeringApplication {
     if (action === "repair-observations") {
       if (actor.kind !== "coordinator") throw new Error("Only the host can read pending Admin observations");
       return this.interventions.observations();
+    }
+    if(action==="repair-recovery-checkpoint"||action==="repair-recovery-hold"){
+      if(actor.kind!=="host")throw new Error("Only the native host can freeze a failed recovery execution");
+      const input=z.object({target_hash:text,application_hash:text,ready_hash:text,native:repairRecoveryFaultSchema.optional()}).parse(request.payload);
+      this.db.exec("BEGIN IMMEDIATE");try{
+        const value=readRecoveryCheckpoint(this.db,actor,{target_hash:input.target_hash,application_hash:input.application_hash,ready_hash:input.ready_hash},(prepared,draft,attemptId,executionPath,original)=>{
+          const {proposal:p}=prepared;
+          if(p.checkpoint.kind==="direct")return this.direct.repairFailureSnapshot(original,attemptId);
+          if(!draft)throw new DraftConflictError("Recovery source has no YAML draft");
+          if(p.rootKind==="business"){this.business.assertRepairSuccessor(actor.workspaceId,actor.issueId,p.checkpoint);return this.business.repairFailureSnapshot(actor.workspaceId,actor.issueId,draft,p.continuation.agent_id);}
+          if(p.rootKind==="requirement"){this.requirements.assertRepairSuccessor(actor.workspaceId,actor.issueId,p.checkpoint);return this.requirements.repairFailureSnapshot(actor.workspaceId,actor.issueId,draft,p.continuation.agent_id);}this.assertEngineeringRepairSuccessor(original,p.checkpoint);
+          const root=z.object({repositoryPath:text}).parse(JSON.parse(repairRootPayload(this.db,p.rootKind,actor.workspaceId,actor.issueId)));
+          return {chain:original.chain,repositoryPath:p.rootKind==="engineering"?executionPath:root.repositoryPath,contract:p.checkpoint.contract,draft,receipts:this.db.prepare("SELECT payload FROM engineering_receipt WHERE draft_id=?").all(draft.id).map(row=>JSON.parse(String(row.payload)))};
+        });
+        if(action==="repair-recovery-checkpoint"){this.db.exec("COMMIT");return {checkpoint:value.checkpoint,reason:value.reason,...(value.held?{held:value.held}:{})};}
+        if(value.held){if(input.native?.hash!==value.held.recovery?.hash)throw new DraftConflictError("Recovery hold cannot replace its immutable native fault");this.db.exec("COMMIT");return {held:value.held};}
+        const native=repairRecoveryFaultSchema.parse(input.native),c=value.checkpoint;
+        if(!c||!value.position||!value.snapshot||native.checkpoint_hash!==c.hash||native.case_id!==c.case_id||native.target_hash!==c.target_hash||native.application_hash!==c.application_hash||native.ready_hash!==c.ready_hash||native.entry_task_id!==c.entry_task_id||native.task_id!==c.task_id||native.attempt_id!==c.attempt_id||native.workspace_id!==c.workspace_id||native.issue_id!==c.issue_id||native.execution_hint_hash!==c.execution_hint_hash||native.agent_id!==c.agent_id||native.user_id!==c.user_id||native.project_id!==c.project_id||native.runtime_id!==c.runtime_id||native.verification_attempt_id!==c.verification_attempt_id)throw new DraftConflictError("Recovery checkpoint changed before its host hold");
+        const held=this.interventions.holdRecovery(actor,value.position,value.snapshot,native,request.host_version);this.db.exec("COMMIT");return {held};
+      }catch(error){this.db.exec("ROLLBACK");throw error;}
     }
     if(action==="repair-business-progress"){
       if(actor.kind!=="host")throw new Error("Only the native host can observe applied recovery results");

@@ -58,6 +58,7 @@ export class DirectApplication {
     if(!record||record.version+1!==c.expected_sequence||record.activeAttemptId!==reservation.fence.source_attempt_id||record.result||record.nativeCompleted)throw new DraftConflictError("Direct source changed before staging recovery");
     return {payload:JSON.stringify(recordSchema.parse({...record,version:record.version+1,initialCommit:reservation.expected_version.split(":")[1],activeAttemptId:undefined}))};
   }
+  repairFailureSnapshot(original:InterventionRecord,attemptId:string){const record=this.current(original.workspaceId,original.issueId);if(!record||record.result||record.nativeCompleted||record.activeAttemptId!==attemptId||record.agentId!==original.agentId||record.contractHash!==z.object({direct:z.object({contract_hash:text})}).parse(original.snapshot).direct.contract_hash)throw new DraftConflictError("Direct recovery no longer owns this unfinished attempt");const {instructions:_,...snapshot}=this.view(record);return snapshot;}
   repairAppliedResult(original:InterventionRecord,attemptId:string){
     const record=this.current(original.workspaceId,original.issueId);if(!record?.result)return undefined;
     const result=this.result(record);if(record.contractHash!==z.object({direct:z.object({contract_hash:text})}).parse(original.snapshot).direct.contract_hash||record.agentId!==original.agentId||result.attemptId!==attemptId||record.activeAttemptId!==attemptId)throw new DraftConflictError("Recovery result belongs to another Direct execution");

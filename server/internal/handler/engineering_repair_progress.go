@@ -116,7 +116,7 @@ func (h *Handler) observeEngineeringRepairHandoff(ctx context.Context, raw json.
 		return nil, err
 	}
 	if value == nil {
-		return map[string]bool{"closed": false}, nil
+		return h.observeEngineeringRecoveryFailure(ctx, input, initial)
 	}
 	if _, err = h.EngineeringAdminWorker.Call(ctx, map[string]any{"action": "handoff-progress", "authority": input.Authority, "case_id": input.CaseID, "payload": value}); err != nil {
 		return nil, err
@@ -131,30 +131,13 @@ func (h *Handler) observeEngineeringRepairHandoff(ctx context.Context, raw json.
 	return h.EngineeringAdminWorker.Call(ctx, map[string]any{"action": "handoff-close", "authority": input.Authority, "case_id": input.CaseID, "payload": fresh})
 }
 func (h *Handler) readEngineeringRecoveryProgress(ctx context.Context, input engineeringPublicationRequest, initial engineeringHandoffContext) (*engineeringRecoveryProgress, error) {
-	current, err := h.readEngineeringPublicationContext(ctx, input)
+	observed, err := h.readEngineeringObservedPublication(ctx, input, initial)
 	if err != nil {
 		return nil, err
 	}
-	if current.CurrentIntentRevision != initial.CurrentIntentRevision || current.TargetHash != initial.TargetHash || !engineeringSameJSON(current.Application, initial.Application) || !engineeringSameJSON(current.Reservation, initial.Reservation) {
-		return nil, fmt.Errorf("recovery observation authority or proof changed")
-	}
-	if current.Reservation == nil || current.Publication == nil {
-		return nil, fmt.Errorf("recovery observation has no acknowledged native publication")
-	}
-	row, err := h.Queries.GetEngineeringRepairPublication(ctx, current.TargetHash)
-	if err != nil {
-		return nil, err
-	}
-	var published engineeringHandoffPublished
-	var application engineeringHandoffApplication
-	if json.Unmarshal([]byte(row.Payload), &published) != nil || json.Unmarshal(current.Application, &application) != nil || !engineeringSameJSON(current.Publication, &published) {
-		return nil, fmt.Errorf("native and management publication receipts differ")
-	}
+	current, published, application := observed.Current, observed.Published, observed.Application
 	p := published.Publication
 	r := current.Reservation
-	if !p.Published || engineeringHandoffPublicationHash(p) != p.Hash || validateEngineeringHandoffReady(published.Ready, current, application) != nil || p.CaseID != input.CaseID || p.TargetHash != current.TargetHash || p.VerificationAttemptID != r.VerificationAttemptID || p.TaskID != r.Continuation.TaskID || p.WorkspaceID != r.Continuation.WorkspaceID || p.IssueID != r.Continuation.IssueID || p.AgentID != r.Continuation.AgentID || p.UserID != r.Continuation.UserID || p.RuntimeID != current.Request.Inspection.RuntimeID || p.ReadyHash != published.Ready.Hash || p.ApplicationHash != application.Hash || p.ReservationHash != r.Hash || uuidToString(row.TaskID) != p.TaskID || uuidToString(row.ProjectID) != r.ProjectID || uuidToString(row.WorkspaceID) != p.WorkspaceID {
-		return nil, fmt.Errorf("invalid recovery publication identity")
-	}
 	response, err := h.EngineeringWorker.Call(ctx, map[string]any{"action": "repair-business-progress", "actor": map[string]string{"kind": "host", "workspaceId": p.WorkspaceID, "issueId": p.IssueID}, "payload": map[string]string{"target_hash": p.TargetHash, "application_hash": p.ApplicationHash, "ready_hash": p.ReadyHash}})
 	if err != nil {
 		return nil, err
@@ -304,4 +287,38 @@ func (h *Handler) readEngineeringRecoveryProgress(ctx context.Context, input eng
 		return nil, err
 	}
 	return &engineeringRecoveryProgress{Business: *b, Native: native}, nil
+}
+
+type engineeringObservedPublication struct {
+	Current     engineeringHandoffContext
+	Published   engineeringHandoffPublished
+	Application engineeringHandoffApplication
+}
+
+func (h *Handler) readEngineeringObservedPublication(ctx context.Context, input engineeringPublicationRequest, initial engineeringHandoffContext) (*engineeringObservedPublication, error) {
+	current, err := h.readEngineeringPublicationContext(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+	if current.CurrentIntentRevision != initial.CurrentIntentRevision || current.TargetHash != initial.TargetHash || !engineeringSameJSON(current.Application, initial.Application) || !engineeringSameJSON(current.Reservation, initial.Reservation) {
+		return nil, fmt.Errorf("recovery observation authority or proof changed")
+	}
+	if current.Reservation == nil || current.Publication == nil {
+		return nil, fmt.Errorf("recovery observation has no acknowledged native publication")
+	}
+	row, err := h.Queries.GetEngineeringRepairPublication(ctx, current.TargetHash)
+	if err != nil {
+		return nil, err
+	}
+	var published engineeringHandoffPublished
+	var application engineeringHandoffApplication
+	if json.Unmarshal([]byte(row.Payload), &published) != nil || json.Unmarshal(current.Application, &application) != nil || !engineeringSameJSON(current.Publication, &published) {
+		return nil, fmt.Errorf("native and management publication receipts differ")
+	}
+	p := published.Publication
+	r := current.Reservation
+	if !p.Published || engineeringHandoffPublicationHash(p) != p.Hash || validateEngineeringHandoffReady(published.Ready, current, application) != nil || p.CaseID != input.CaseID || p.TargetHash != current.TargetHash || p.VerificationAttemptID != r.VerificationAttemptID || p.TaskID != r.Continuation.TaskID || p.WorkspaceID != r.Continuation.WorkspaceID || p.IssueID != r.Continuation.IssueID || p.AgentID != r.Continuation.AgentID || p.UserID != r.Continuation.UserID || p.RuntimeID != current.Request.Inspection.RuntimeID || p.ReadyHash != published.Ready.Hash || p.ApplicationHash != application.Hash || p.ReservationHash != r.Hash || uuidToString(row.TaskID) != p.TaskID || uuidToString(row.ProjectID) != r.ProjectID || uuidToString(row.WorkspaceID) != p.WorkspaceID {
+		return nil, fmt.Errorf("invalid recovery publication identity")
+	}
+	return &engineeringObservedPublication{Current: current, Published: published, Application: application}, nil
 }

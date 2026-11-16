@@ -65,6 +65,7 @@ export class BusinessApplication {
     entry.superseded=true;record.entries.push(successor);record.activeDraftId=successor.draftId;record.codeVersion=checkpoint.draft.binding.codeVersion;record.version++;
     return {payload:JSON.stringify(recordSchema.parse(record))};
   }
+  repairFailureSnapshot(workspaceId:string,issueId:string,draft:ChainDraft,agentId:string){const record=this.current(workspaceId,issueId);if(!record)throw new DraftConflictError("Business recovery source disappeared");const entry=this.active(record);if(entry.draftId!==draft.id||entry.settledHash||record.roles[entry.stage]!==agentId)throw new DraftConflictError("Business recovery no longer owns this editable stage");const {instructions:_,...snapshot}=this.view(record,entry,draft);return snapshot;}
   assertRepairSuccessor(workspaceId:string,issueId:string,checkpoint:HandoffYamlCheckpoint){
     const record=this.current(workspaceId,issueId),entry=record&&this.active(record);
     if(!entry||entry.draftId!==checkpoint.draft.id||JSON.stringify(entry.contract)!==JSON.stringify(checkpoint.contract))throw new DraftConflictError("Staged business role differs from its frozen successor");

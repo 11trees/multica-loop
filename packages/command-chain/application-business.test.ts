@@ -1,5 +1,5 @@
 // @vitest-environment node
-import {hostHandoffTargetFixture,hostHandoffReservationFixture} from "./test-helpers/repair-handoff-fixture";
+import {hostRecoveryFaultFixture,hostHandoffTargetFixture,hostHandoffReservationFixture} from "./test-helpers/repair-handoff-fixture";
 import {repairExecutionHintSchema} from "./repair-execution";
 import {handoffReadySchema} from "./repair-handoff";
 import { execFileSync } from "node:child_process";
@@ -253,12 +253,22 @@ it("inspects End to End delivery context after business handoff while retaining 
  const targets=originalRepairTargets([{...original!,origin:"business",evidence:{original}}]);const source=targets.find(item=>item.targetRef.endsWith(":approved-business-source"));
  expect(source?.original).toMatchObject({specification,stages:expect.arrayContaining(stageOrder.map(stage=>expect.objectContaining({stage})))});
 },20000);
-it.each(stageOrder)("observes newly applied %s recovery after the business owner advances to its next checkpoint",async stage=>{
+async function recoveredBusinessStage(stage:typeof stageOrder[number]){
  await invoke(human,"configure-business",configuration());for(const previous of stageOrder.slice(0,stageOrder.indexOf(stage))){const session=await start(previous);await session.until(null);}
  const interrupted=await start(stage,actor(stage,`${randomUUID()}:123456`));await invoke(interrupted.owner,"intervention-request",{summary:"Original stage failure",reason:"Reconcile this exact stage",evidence:"Keep upstream obligations"});const [original]=z.array(z.record(z.string(),z.unknown())).parse(await invoke({kind:"coordinator"},"repair-observations"));if(!original)throw new Error("Missing original stage");
  const caseId=`REPAIR-${stage}`;await invoke(host,"repair-observation-ack",{case_id:caseId,observation_id:original.observationId,snapshot_hash:original.snapshotHash});const target=await hostHandoffTargetFixture(original,{...human,projectId,repositoryPath:await realpath(repository),caseId}),reservation=hostHandoffReservationFixture(target,await invoke(host,"repair-handoff-prepare",target)),application=await invoke(host,"repair-handoff-stage",reservation),ready=handoffReadySchema.parse(await invoke(host,"repair-handoff-ready",application)),pin={target_hash:ready.target_hash,application_hash:ready.application_hash,ready_hash:ready.hash};
- const recovered=await start(stage,actor(stage,`${ready.continuation.task_id}:999999`));expect(await invoke(host,"repair-business-progress",pin)).toEqual({progress:null});const selected=await invoke(human,"prepare-run",{expected_revision:ready.continuation.expected_revision,expected_sequence:recovered.state.draft!.sequence});expect(selected).toMatchObject({recovery_execution:{kind:"continuation",entry_task_id:ready.continuation.task_id,draft_id:recovered.state.draft!.id}});await recovered.until(null);
+ const recovered=await start(stage,actor(stage,`${ready.continuation.task_id}:999999`)); return {interrupted,recovered,ready,pin};
+}
+it.each(stageOrder)("observes newly applied %s recovery after the business owner advances to its next checkpoint",async stage=>{
+ const {interrupted,recovered,ready,pin}=await recoveredBusinessStage(stage);expect(await invoke(host,"repair-business-progress",pin)).toEqual({progress:null});const selected=await invoke(human,"prepare-run",{expected_revision:ready.continuation.expected_revision,expected_sequence:recovered.state.draft!.sequence});expect(selected).toMatchObject({recovery_execution:{kind:"continuation",entry_task_id:ready.continuation.task_id,draft_id:recovered.state.draft!.id}});await recovered.until(null);
  const observed=await invoke(host,"repair-business-progress",pin);const hint=z.object({recovery_execution:repairExecutionHintSchema}).parse(selected).recovery_execution;await expect(app.invoke({actor:{...recovered.owner,kind:"daemon",attemptId:`${randomUUID()}:1111111`},action:"bind",payload:{work_dir:repository,mode:"in_place",overlays:[]},recovery_execution:hint})).rejects.toThrow(/active stage|editable stage/);expect(observed).toMatchObject({progress:{applied:true,attempt_id:recovered.owner.attemptId,draft_id:recovered.state.draft!.id,chain:recovered.state.draft!.definition.id}});
  app.close();app=open();expect(await invoke(host,"repair-business-progress",pin)).toEqual(observed);await expect(invoke(interrupted.owner,"start")).rejects.toThrow(/surrendered/);
  if(stage==="review")await expect(invoke(host,"completion")).rejects.toThrow(/Read.*specification/);
+},60000);
+
+it.each(stageOrder)("freezes a new %s recovery fault with the current business generation and unchanged upstream facts",async stage=>{
+ const {recovered,pin}=await recoveredBusinessStage(stage),source=z.object({checkpoint:z.record(z.string(),z.unknown())}).parse(await invoke(host,"repair-recovery-checkpoint",pin)),native=hostRecoveryFaultFixture(source.checkpoint);
+ const held=z.object({held:z.object({observationId:z.string(),snapshotHash:z.string(),snapshot:z.record(z.string(),z.unknown())})}).parse(await invoke(host,"repair-recovery-hold",{...pin,native})).held;
+ expect(held.snapshot).toMatchObject({draft:recovered.state.draft,business:{stage,generation:recovered.state.business.generation,upstream:recovered.state.business.upstream,previous:recovered.state.business.previous,returnReason:recovered.state.business.returnReason}});
+ await invoke(host,"repair-observation-ack",{case_id:native.case_id,observation_id:held.observationId,snapshot_hash:held.snapshotHash});expect(await invoke(host,"repair-source",{case_id:native.case_id,observation_id:held.observationId,snapshot_hash:held.snapshotHash})).toMatchObject({attempt_id:recovered.owner.attemptId,chain:recovered.state.chain});await expect(invoke(recovered.owner,"start")).rejects.toThrow(/surrendered/);
 },60000);

@@ -268,12 +268,67 @@ These host operations do not advance a workflow phase, create more tasks or
 mark an issue Done. Business specification/report reading and all ordinary
 independent delivery/Done gates remain required.
 
+## Bound recovery failure and renewed investigation
+
+An observing Case first attempts ordinary-result observation. A separately
+applied business result retains that path even when native execution failed.
+Only when no applied result is available does private `observe-handoff` read the
+host-only `repair-recovery-checkpoint` capability.
+
+That read pins the immutable application/readiness grant and its current bound
+native task/claim. It recompiles the persisted current stage through its owner,
+without probing the execution directory or impersonating an Agent read. YAML
+requires the exact prepared draft/contract/definition, an editable phase and no
+unanswered input. Business snapshots retain the current generation and frozen
+upstream conclusions/comments. Requirement snapshots retain their complete
+native contract. Direct needs its actual bound unfinished attempt; a host can
+capture a failure before RUN without manufacturing a RUN receipt. Unbound
+preparation, completed/abandoned stages and human-question waits produce no
+editable failure checkpoint. Root, snapshot and execution/physical binding hashes
+make the eventual hold conditional on the same persisted state.
+
+Under the native project admission lock, the API verifies the actual task is
+`failed` or `completed` with a completed timestamp, exact claim and frozen
+workspace/issue/project/runtime/role/human. A later task needs its exact saved
+recovery context. Any nonterminal issue task, including deferred or queued
+retries, keeps observation waiting. Cancelled/running work, closed/Done/triaged
+issues, new fences/reservations and changed scopes cannot authorize this hold.
+Fresh management intent and the immutable publication are rechecked before the
+business write. The native fault witness binds the Case/publication, checkpoint,
+actual claim/context, completion time and native failure reason.
+
+Host-only `repair-recovery-hold` rechecks that checkpoint in one business SQLite
+transaction, inserts a new immutable intervention/outbox observation and blocks
+ordinary writes. It preserves the prior repair, draft, evidence and process
+facts. The new observation explicitly records host recovery provenance; it does
+not assert the Agent viewed its checkpoint, issued a question or executed Direct
+RUN. Old credentials and draft writes become permanently surrendered. Physical
+exit reporting remains available, and an unknown provider/controller exit stays
+unknown. A logical business hold does not acquire a native repair fence, cancel
+processes or grant write access; the existing takeover path must still commit
+its owned fence before cancellation and establish physical ownership.
+
+The ordinary business observation bridge validates the fault against the native
+publication and supplies its original `repairCaseId`. Management reopens that
+same Case as queued, preserving prior verification/publication proofs and
+requiring original plus new failure coverage. Delivery acknowledgement follows
+management persistence. A lost hold or management acknowledgement replays the
+same durable outbox. Stop before final authorization refuses a new hold; a stop
+after its durable commit retains that observation without granting execution.
+
+A surrendered recovery grant no longer owns the next Direct generation even
+though both generations have a null draft ID. New run hints and binds select the
+current recovery; old hints remain refused. Another independently verified
+repair can prepare a new successor without deleting either original failure.
+
 ## Remaining recovery work
 
 Observation of a normally applied recovery result and its guarded Case closure
-are connected. Automatic stall/failure/cohort-change observations for recovery
-that never produces such a result still require migration; waiting alone does
-not synthesize a successful result or close the Case. Broader revocation,
+are connected. Bound terminal executions without a result now create an
+immutable host business hold and reopen their original Case. Runnable-dispatch
+stall sampling, pre-bind/preparation failures, source/cohort changes and recovery
+of completed drafts without owner settlement still require migration. Waiting
+alone does not synthesize a successful result, fault or Case closure. Broader revocation,
 runtime/service identity, external dependency and shared-path recovery retain
 their separate migration requirements. Real-provider and packaged recovery
 acceptance remain outstanding.
@@ -378,3 +433,18 @@ recovery-context service tests, local-control tests and Go vet. Native handlers
 ran serially because their integration fixture shares a workspace slug. These
 checks use temporary repositories, synthetic host/provider ports and actual
 local shell/database operations; no real provider acceptance is implied.
+
+Bound failure recovery passed 455 existing plus 10 new command-chain cases
+(465 distinct tests in 36 files), type/lint/build checks, the engineering handler
+race suite and its final recovery focus, local-control tests and Go vet. Real
+business-store tests cover a second Direct/verification repair, current business
+generations and upstream facts, question waits, stale checkpoint/scope refusal
+and permanent old-hint revocation. A bundled-worker request records its actual
+kernel digest and supplied native host version without an Agent view or RUN.
+Native fault tests use real PostgreSQL task/claim/controller/publication rows
+with simulated business/management ports. They cover terminal failure and
+completed-without-result, retry waits, changed claims/hints/drafts, stop timing
+and lost hold/observation/acknowledgement replies. Unknown controller cleanup
+remains unknown and logical holds create no native fence. Management storage
+retains the same Case and prior proof across replay. These controlled layers do
+not establish provider-driven or packaged recovery acceptance.

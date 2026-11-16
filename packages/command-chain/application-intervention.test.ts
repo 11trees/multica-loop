@@ -1,5 +1,6 @@
 // @vitest-environment node
-import { randomUUID } from "node:crypto";
+import {repairRecoveryFaultHash,repairRecoveryFaultSchema} from "./repair-recovery-fault";
+import { createHash,randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -12,7 +13,7 @@ import {repairExecutionHintSchema,repairExecutionHintHash} from "./repair-execut
 import {repairBusinessProgressSchema} from "./repair-progress";
 import {draftSchema} from "./runtime";
 import { readRepairWorkspaceVersion } from "./repair-workspace-version";
-import { hostHandoffReservationFixture } from "./test-helpers/repair-handoff-fixture";
+import { hostRecoveryFaultFixture as recoveryFault,hostHandoffReservationFixture } from "./test-helpers/repair-handoff-fixture";
 import { EngineeringTeamStore } from "./team-store";
 import { EngineeringApplication, type ApplicationRequest } from "./application";
 import { SqliteDraftStore } from "./sqlite-store";
@@ -361,4 +362,46 @@ it("continues a repaired draft through an authenticated human answer and a fresh
 it("links a human-restarted Direct recovery to its actual new native task without inheriting a result",async()=>{
  const h=await recoveredProgress("direct");await invoke(h.successor,"direct-run");const overview=z.object({revision:z.number(),sequence:z.number()}).parse(await invoke(human,"overview")),hint=z.object({recovery_execution:repairExecutionHintSchema}).parse(await invoke(human,"prepare-run",{expected_revision:overview.revision,expected_sequence:overview.sequence})).recovery_execution;
  expect(hint).toMatchObject({kind:"continuation",draft_id:null,entry_task_id:h.ready.continuation.task_id});const next={...h.successor,attemptId:`${randomUUID()}:1111111`};await app.invoke({actor:{...next,kind:"daemon"},action:"bind",payload:{work_dir:repository,mode:"in_place",overlays:[]},recovery_execution:hint});await invoke(next,"direct-run");await invoke(next,"direct-submit",{summary:"Fresh Direct result"});expect(await invoke(host,"repair-business-progress",h.pin)).toMatchObject({progress:{task_id:next.attemptId.split(":")[0],entry_task_id:h.ready.continuation.task_id,execution_hint_hash:hint.hash,chain:"direct",draft_id:null}});
+});
+
+for(const kind of ["direct","verification"] as const)it(`freezes a failed ${kind} recovery before any Agent view and can prepare another repair without changing prior evidence`,async()=>{
+ const h=await recoveredProgress(kind),db=new DatabaseSync(database),before=db.prepare("SELECT payload FROM engineering_intervention").get()!.payload;
+ expect(db.prepare("SELECT count(*) AS n FROM engineering_intervention_view WHERE attempt_id=?").get(h.successor.attemptId)!.n).toBe(0);
+ const source=z.object({checkpoint:z.record(z.string(),z.unknown()),reason:z.literal("editable")}).parse(await invoke(host,"repair-recovery-checkpoint",h.pin)),native=recoveryFault(source.checkpoint),staleHint=z.object({recovery_execution:repairExecutionHintSchema}).parse(await invoke(human,"prepare-run",{expected_revision:source.checkpoint.revision,expected_sequence:source.checkpoint.sequence})).recovery_execution;
+ const allocation=randomUUID();db.prepare("INSERT INTO engineering_process VALUES(?,?,?,?,?,?)").run(allocation,human.workspaceId,human.issueId,h.successor.attemptId,"running","{}");
+ await expect(invoke(h.successor,"repair-recovery-hold",{...h.pin,native})).rejects.toThrow(/native host/);
+ const held=z.object({held:z.object({observationId:z.string(),snapshotHash:z.string(),attemptId:z.string(),draftId:z.string().nullable(),phase:z.string(),recovery:repairRecoveryFaultSchema,snapshot:z.record(z.string(),z.unknown())}).passthrough()}).parse(await app.invoke({actor:host,action:"repair-recovery-hold",payload:{...h.pin,native},host_version:"sha256:"+"a".repeat(64)})).held;
+ expect(held).toMatchObject({attemptId:h.successor.attemptId,recovery:native});expect(db.prepare("SELECT count(*) AS n FROM engineering_intervention").get()!.n).toBe(2);expect(db.prepare("SELECT payload FROM engineering_intervention WHERE attempt_id=?").get(owner.attemptId)!.payload).toBe(before);
+ expect(db.prepare("SELECT status FROM engineering_process WHERE allocation_id=?").get(allocation)!.status).toBe("running");expect(await invoke(host,"execution-permission")).toEqual({allowed:false});await expect(invoke(h.successor,kind==="direct"?"direct-run":"start")).rejects.toThrow(/surrendered/);
+ if(kind==="direct"){expect(held.phase).toBe("bound");expect(z.object({direct:z.object({attempts:z.array(z.object({id:z.string(),run_at:z.string().nullable()}))})}).parse(held.snapshot).direct.attempts.find(item=>item.id===h.successor.attemptId)!.run_at).toBeNull();}
+ else{const draft=draftSchema.parse(held.snapshot.draft);expect(draft.attemptId).not.toBe(h.successor.attemptId);expect(draft.events.at(-1)!.command).toBe("host.repair.prepare");}
+ app.close();app=new EngineeringApplication(database,definition);expect(await invoke(host,"repair-recovery-checkpoint",h.pin)).toMatchObject({reason:"held",held});expect(await app.invoke({actor:host,action:"repair-recovery-hold",payload:{...h.pin,native}})).toEqual({held});
+ expect(await invoke({kind:"coordinator"},"repair-observations")).toEqual([held]);await invoke(host,"repair-observation-ack",{case_id:native.case_id,observation_id:held.observationId,snapshot_hash:held.snapshotHash});expect(await invoke({kind:"coordinator"},"repair-observations")).toEqual([]);
+ const newPin={case_id:native.case_id,observation_id:held.observationId,snapshot_hash:held.snapshotHash};expect(await invoke(host,"repair-source",newPin)).toMatchObject({attempt_id:h.successor.attemptId,case_id:native.case_id});
+ const {hostHandoffTargetFixture}=await import("./test-helpers/repair-handoff-fixture"),target=await hostHandoffTargetFixture(held,{...human,projectId,repositoryPath:repository,caseId:native.case_id});
+ target.verificationAttemptId=`verified-again-${randomUUID()}`;target.workspaceBinding.runtimeId=native.runtime_id;target.originalObservationIds=[JSON.parse(String(before)).observationId,held.observationId];
+ db.prepare("UPDATE engineering_process SET status='exited' WHERE allocation_id=?").run(allocation);
+ const prepared=await invoke(host,"repair-handoff-prepare",target),reservation=hostHandoffReservationFixture(target,prepared),application=await invoke(host,"repair-handoff-stage",reservation),ready=handoffReadySchema.parse(await invoke(host,"repair-handoff-ready",application)),next={...owner,attemptId:`${ready.continuation.task_id}:2222222`};
+ expect(ready.continuation.task_id).not.toBe(h.ready.continuation.task_id);await invoke({...next,kind:"daemon"},"bind",{work_dir:repository,mode:"in_place",overlays:[]});
+ await expect(app.invoke({actor:{...next,kind:"daemon",attemptId:`${randomUUID()}:3333333`},action:"bind",payload:{work_dir:repository,mode:"in_place",overlays:[]},recovery_execution:staleHint})).rejects.toThrow(/surrendered.*later repair/);const current=z.object({revision:z.number(),sequence:z.number()}).parse(await invoke(human,"overview"));expect(await invoke(human,"prepare-run",{expected_revision:current.revision,expected_sequence:current.sequence})).toMatchObject({recovery_execution:{target_hash:ready.target_hash,entry_task_id:ready.continuation.task_id}});
+ if(kind==="direct"){await invoke(next,"direct-run");await invoke(next,"direct-submit",{summary:"Second independently repaired ordinary result"});}else await finishRecoveredVerification(next);
+ expect(await invoke(host,"repair-business-progress",{target_hash:ready.target_hash,application_hash:ready.application_hash,ready_hash:ready.hash})).toMatchObject({progress:{applied:true,attempt_id:next.attemptId}});expect(db.prepare("SELECT count(*) AS n FROM engineering_intervention").get()!.n).toBe(2);db.close();
+});
+it("refuses stale recovery checkpoint holds and excludes human questions and completed ordinary work",async()=>{
+ const h=await recoveredProgress("verification"),initial=z.object({checkpoint:z.record(z.string(),z.unknown())}).parse(await invoke(host,"repair-recovery-checkpoint",h.pin)),native=recoveryFault(initial.checkpoint);
+ for(const changed of [{...native,case_id:"another-case"},{...native,project_id:randomUUID()},{...native,execution_hint_hash:"c".repeat(64)}])await expect(invoke(host,"repair-recovery-hold",{...h.pin,native:{...changed,hash:repairRecoveryFaultHash(changed)}})).rejects.toThrow(/changed before/);
+ let state=z.object({draft:draftSchema}).parse(await invoke(h.successor,"start"));
+ await expect(invoke(host,"repair-recovery-hold",{...h.pin,native})).rejects.toThrow(/changed before/);const db=new DatabaseSync(database);expect(db.prepare("SELECT count(*) AS n FROM engineering_intervention").get()!.n).toBe(1);
+ const command=async(command:unknown)=>{state=z.object({draft:draftSchema}).parse(await invoke(h.successor,"command",{expected_sequence:state.draft.sequence,command}));};await command({type:"phase.complete"});await command({type:"runtime-input.put",key:"entry",title:"Entry",question:"Which entry?",why:"Need real input",recommendation:"Use isolated entry"});await command({type:"phase.complete"});
+ expect(await invoke(host,"repair-recovery-checkpoint",h.pin)).toEqual({checkpoint:null,reason:"waiting-for-answers"});await expect(invoke(host,"repair-recovery-hold",{...h.pin,native})).rejects.toThrow(/changed before/);db.close();
+});
+
+it("captures recovery provenance through the bundled private worker without recording an Agent view or RUN",async()=>{
+ const h=await recoveredProgress("direct"),worker=new URL("./dist/worker.mjs",import.meta.url).pathname;app.close();
+ try{
+  const call=(action:ApplicationRequest["action"],payload:unknown)=>JSON.parse(execFileSync(process.execPath,[worker,database],{encoding:"utf8",stdio:["pipe","pipe","ignore"],input:JSON.stringify({actor:host,action,payload,host_version:"sha256:"+"a".repeat(64)})}));
+  const source=z.object({result:z.object({checkpoint:z.record(z.string(),z.unknown())})}).parse(call("repair-recovery-checkpoint",h.pin)),native=recoveryFault(source.result.checkpoint),reply=z.object({result:z.object({held:z.object({observationId:z.string(),kernelVersion:z.string(),hostVersion:z.string(),recovery:repairRecoveryFaultSchema})})}).parse(call("repair-recovery-hold",{...h.pin,native}));
+  expect(reply.result.held.kernelVersion).toBe(`sha256:${createHash("sha256").update(await readFile(worker)).digest("hex")}`);expect(reply.result.held.hostVersion).toBe("sha256:"+"a".repeat(64));expect(reply.result.held.recovery).toEqual(native);const db=new DatabaseSync(database);expect(db.prepare("SELECT count(*) AS n FROM engineering_intervention_view WHERE attempt_id=?").get(h.successor.attemptId)!.n).toBe(0);db.close();
+ }finally{app=new EngineeringApplication(database,definition);}
+ expect(await invoke(host,"execution-permission")).toEqual({allowed:false});
 });

@@ -213,6 +213,9 @@ func TestEngineeringRecoveryProgress(t *testing.T) {
 				return nil, fmt.Errorf("unexpected recovery management action %v", input["action"])
 			}}
 			f.h.EngineeringWorker = engineeringAdminTestWorker{call: func(input map[string]any) (json.RawMessage, error) {
+				if input["action"] == "repair-recovery-checkpoint" {
+					return json.RawMessage(`{"checkpoint":null,"reason":"waiting"}`), nil
+				}
 				if input["action"] != "repair-business-progress" {
 					return nil, fmt.Errorf("observation attempted to change workflow %v", input["action"])
 				}

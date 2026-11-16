@@ -393,6 +393,7 @@ export class RequirementApplication {
     }
     throw new DraftConflictError("Recovery result has no requirement-owned application");
   }
+  repairFailureSnapshot(workspaceId:string,issueId:string,draft:ChainDraft,agentId:string){const record=this.current(workspaceId,issueId),role=record&&this.role(record);if(!record||!role||role.draftId!==draft.id||role.agentId!==agentId)throw new DraftConflictError("Requirement recovery no longer owns this editable stage");return {chain:role.chain,agentId,repositoryPath:record.repositoryPath,contract:role.contract,draft,receipts:[]};}
   assertRepairSuccessor(workspaceId:string,issueId:string,checkpoint:HandoffYamlCheckpoint){
     const record=this.current(workspaceId,issueId),role=record&&this.role(record);
     if(!role||role.draftId!==checkpoint.draft.id||JSON.stringify(role.contract)!==JSON.stringify(checkpoint.contract))throw new DraftConflictError("Staged requirement role differs from its frozen successor");

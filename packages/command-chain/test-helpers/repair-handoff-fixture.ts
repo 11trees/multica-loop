@@ -1,3 +1,4 @@
+import {repairRecoveryFaultHash,repairRecoveryFaultSchema} from "../repair-recovery-fault";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { readRepairWorkspaceVersion } from "../repair-workspace-version";
@@ -15,4 +16,11 @@ export function hostHandoffReservationFixture(raw:unknown,preparation:unknown){
  const value={reserved:true as const,case_id:target.caseId,verification_attempt_id:target.verificationAttemptId,target_hash:prepared.target_hash,preparation_hash:prepared.hash,project_id:b.projectId,expected_version:target.expectedVersion,continuation:prepared.continuation,
   fence:{attempt_id:target.verificationAttemptId,generation:3,owner_id:"host-fixture",supervision_token:1,intent_revision:1,observation_id:target.observationId,source_attempt_id:b.sourceAttemptId,source_revision:prepared.continuation.expected_revision,snapshot_hash:target.snapshotHash,workspace_path:b.workspaceRoot,targets_hash:b.targetsHash}};
  return handoffReservationSchema.parse({...value,hash:handoffReservationHash(value)});
+}
+
+/** Synthetic native terminal facts for the business-store layer only. */
+export function hostRecoveryFaultFixture(raw:unknown){
+ const c=z.object({case_id:z.string(),verification_attempt_id:z.string(),target_hash:z.string(),application_hash:z.string(),ready_hash:z.string(),entry_task_id:z.string(),task_id:z.string(),attempt_id:z.string(),execution_hint_hash:z.string().nullable(),workspace_id:z.string(),issue_id:z.string(),project_id:z.string(),runtime_id:z.string(),agent_id:z.string(),user_id:z.string(),hash:z.string()}).parse(raw);
+ const {hash:checkpoint_hash,...scope}=c,body={...scope,publication_hash:"1".repeat(64),checkpoint_hash,status:"failed" as const,completed_at:"2026-11-16T10:00:00Z",failure_reason:"Controlled native failure",context_hash:"2".repeat(64)};
+ return repairRecoveryFaultSchema.parse({...body,hash:repairRecoveryFaultHash(body)});
 }

@@ -142,7 +142,11 @@ progress and rereads it before closing. Host-prepared native task context links
 human-answer continuations and same-stage restarts to the original publication
 and actual new execution. A separately applied result can close after native
 failure while preserving that failure; a failed process without a result cannot. Ordinary workflow and Done gates remain
-independent. Recovery stall/failure/cohort-change sampling remains unconnected.
+independent. A bound terminal recovery without an applied result now freezes
+its current editable checkpoint and reopens the same Case through the durable
+business outbox. Queued/deferred retries and human questions remain waiting;
+unknown process exits retain their takeover barriers. Runnable-stall, pre-bind
+and cohort-change recovery remain unconnected.
 See [the verification protocol](repair-verification.md).
 Diagnosis and external-wait prerequisites remain unconnected. No investigation
 receipt closes the Case or resumes business.
@@ -204,8 +208,10 @@ connect repair editing to verification. Isolated workspace/build actions,
 independent diagnosis, external dependency
 probes and runtime updates remain unconnected. Verified business handoff now
 connects controlled task publication, resume, ordinary-result observation and
-guarded Case closure. Recovery stall/failure/cohort-change sampling still requires
-implementation. Real-provider, Linux runtime and packaged
+guarded Case closure. Bound terminal failures without applied results now
+reopen the same Case while retaining its history and physical barriers.
+Runnable-stall sampling, pre-bind failures and cohort-change recovery still
+require implementation. Real-provider, Linux runtime and packaged
 acceptance remain unverified. The complete migration stays active.
 
 

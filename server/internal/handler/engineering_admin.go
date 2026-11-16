@@ -42,17 +42,18 @@ type engineeringAdminAuthority struct {
 	Token   int64  `json:"token"`
 }
 type engineeringRepairObservation struct {
-	WorkspaceID   string `json:"workspaceId"`
-	IssueID       string `json:"issueId"`
-	AgentID       string `json:"agentId"`
-	AttemptID     string `json:"attemptId"`
-	Chain         string `json:"chain"`
-	ObservationID string `json:"observationId"`
-	Summary       string `json:"summary"`
-	SnapshotHash  string `json:"snapshotHash"`
-	RequestHash   string `json:"requestHash"`
-	KernelVersion string `json:"kernelVersion"`
-	HostVersion   string `json:"hostVersion"`
+	Recovery      *engineeringRecoveryFault `json:"recovery"`
+	WorkspaceID   string                    `json:"workspaceId"`
+	IssueID       string                    `json:"issueId"`
+	AgentID       string                    `json:"agentId"`
+	AttemptID     string                    `json:"attemptId"`
+	Chain         string                    `json:"chain"`
+	ObservationID string                    `json:"observationId"`
+	Summary       string                    `json:"summary"`
+	SnapshotHash  string                    `json:"snapshotHash"`
+	RequestHash   string                    `json:"requestHash"`
+	KernelVersion string                    `json:"kernelVersion"`
+	HostVersion   string                    `json:"hostVersion"`
 }
 
 // Supervision renewal does not wait behind business discovery or its worker mutex.
@@ -255,11 +256,20 @@ func (h *Handler) deliverEngineeringRepairObservation(ctx context.Context, autho
 	if source.IssueID != issueID || uuidToString(source.AgentID) != observation.AgentID {
 		return fmt.Errorf("repair observation native source changed")
 	}
+	if observation.Recovery != nil {
+		if err = h.validateEngineeringRecoveryFaultSource(ctx, observation, source, issue); err != nil {
+			return err
+		}
+	}
 	scopeKey := observation.WorkspaceID + ":" + observation.IssueID + ":" + observation.Chain
-	result, err := h.EngineeringAdminWorker.Call(ctx, map[string]any{"action": "observe", "authority": authority, "observation": map[string]any{
+	event := map[string]any{
 		"observationId": observation.ObservationID, "workspaceId": observation.WorkspaceID, "issueId": observation.IssueID, "scope": "work-item", "scopeKey": scopeKey,
 		"fingerprint": observation.RequestHash, "sourceVersion": "kernel:" + observation.KernelVersion + ";api:" + observation.HostVersion, "summary": observation.Summary, "origin": "business", "evidence": map[string]any{"original": raw},
-	}})
+	}
+	if observation.Recovery != nil {
+		event["repairCaseId"] = observation.Recovery.CaseID
+	}
+	result, err := h.EngineeringAdminWorker.Call(ctx, map[string]any{"action": "observe", "authority": authority, "observation": event})
 	if err != nil {
 		return err
 	}

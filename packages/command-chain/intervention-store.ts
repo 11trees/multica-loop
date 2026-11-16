@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
 import type { ApplicationRequest } from "./application";
+import {repairRecoveryFaultSchema,type RepairRecoveryFault} from "./repair-recovery-fault";
 import { DraftConflictError, draftSchema } from "./runtime";
 
 const text = z.string().trim().min(1);
@@ -10,7 +11,7 @@ const viewedSchema = z.strictObject({ chain: text, revision: z.number().int().po
 const recordSchema = z.strictObject({ id: z.uuid(), workspaceId: z.uuid(), issueId: z.uuid(), agentId: z.uuid(), attemptId: text,
   chain: text, phase: text, draftId: text.nullable(), revision: z.number().int().positive(), sequence: z.number().int().nonnegative(),
   summary: text.max(4000), reason: text.max(8000), evidence: text.max(100000), requestedAt: z.iso.datetime(),
-  snapshot: z.unknown(), snapshotHash: text, requestHash: text, observationId: text, receiptHash: text, kernelVersion: text.optional(), hostVersion: text.optional(),
+  recovery:repairRecoveryFaultSchema.optional(),snapshot: z.unknown(), snapshotHash: text, requestHash: text, observationId: text, receiptHash: text, kernelVersion: text.optional(), hostVersion: text.optional(),
 });
 export type InterventionRecord = z.infer<typeof recordSchema>;
 type Record = InterventionRecord;
@@ -111,6 +112,12 @@ export class InterventionStore {
     const record = recordSchema.parse({ ...original, receiptHash: hash(original) });
     this.db.exec("BEGIN IMMEDIATE");
     try {
+      this.insert(record);
+      this.db.exec("COMMIT");
+    } catch (error) { this.db.exec("ROLLBACK"); throw error; }
+    return this.receipt(record);
+  }
+  private insert(record:Record){
       if (record.draftId) {
         const draft = this.db.prepare("SELECT sequence FROM chain_drafts WHERE id=?").get(record.draftId);
         if (draft?.sequence !== record.sequence) throw new DraftConflictError("Draft changed before intervention handoff");
@@ -120,9 +127,14 @@ export class InterventionStore {
       }
       if (this.pending(record.workspaceId, record.issueId)) throw new DraftConflictError("Intervention was submitted concurrently");
       this.db.prepare("INSERT INTO engineering_intervention VALUES(?,?,?,?,?)").run(record.workspaceId, record.issueId, record.attemptId, record.draftId, JSON.stringify(record));
-      this.db.exec("COMMIT");
-    } catch (error) { this.db.exec("ROLLBACK"); throw error; }
-    return this.receipt(record);
+  }
+  /** The host freezes actual persisted state; it never invents an Agent view or RUN. Caller holds the business transaction. */
+  holdRecovery(scope:{workspaceId:string;issueId:string},checkpoint:{chain:string;draftId:string|null;phase:string;revision:number;sequence:number},snapshot:unknown,recovery:RepairRecoveryFault,hostVersion?:string){
+    const native=repairRecoveryFaultSchema.parse(recovery);
+    if(native.workspace_id!==scope.workspaceId||native.issue_id!==scope.issueId)throw new DraftConflictError("Recovery fault belongs to another business scope");
+    const body=interventionRequestSchema.parse({summary:"Recovery execution ended without an applied business result",reason:`Native execution ${native.status}${native.failure_reason?`: ${native.failure_reason}`:""}; retain the current checkpoint for independent investigation`,evidence:JSON.stringify(native)});
+    const original={...body,...checkpoint,workspaceId:scope.workspaceId,issueId:scope.issueId,attemptId:native.attempt_id,agentId:native.agent_id,recovery:native,...(this.kernelVersion?{kernelVersion:this.kernelVersion}:{}),...(hostVersion?{hostVersion}:{}),id:randomUUID(),requestedAt:new Date().toISOString(),snapshot,snapshotHash:hash(snapshot),requestHash:hash(body),observationId:`multica:recovery-fault:${native.target_hash}:${native.attempt_id}`};
+    const record=recordSchema.parse({...original,receiptHash:hash(original)});this.insert(record);return record;
   }
   receipt(record: Record) { return { submitted: true, owner: "admin", agent_action: "end_execution", intervention: this.view(record) }; }
   view(record: Record) { return { id: record.id, status: "pending_admin", chain: record.chain, phase: record.phase, draft_id: record.draftId,
