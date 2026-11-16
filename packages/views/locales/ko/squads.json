@@ -173,6 +173,8 @@
       "end_to_end": "전체 과정 제공",
       "develop": "개발",
       "bug_fix": "버그 수정"
-    }
+    },
+    "feedback": "피드백",
+    "feedback_independence": "피드백 검증은 구현, 보고서 검토, 계획 및 재현과 독립된 담당자가 수행합니다."
   }
 }

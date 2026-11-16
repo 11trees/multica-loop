@@ -175,6 +175,8 @@
       "end_to_end": "Entrega integral",
       "develop": "Desarrollo",
       "bug_fix": "Corrección de errores"
-    }
+    },
+    "feedback": "Comentarios",
+    "feedback_independence": "La verificación de comentarios es independiente de la entrega, la revisión del informe y el trabajo posterior."
   }
 }

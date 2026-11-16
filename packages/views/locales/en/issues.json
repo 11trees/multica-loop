@@ -2317,6 +2317,7 @@
     "task_materials": "Materials and context",
     "task_saved": "Task saved; retry starting the Team workflow.",
     "save_task_draft": "Save draft",
-    "create_start": "Create and start"
+    "create_start": "Create and start",
+    "team_feedback_notice": "Feedback reopens the task. Its frozen Team assigns the roles and advances the workflow."
   }
 }

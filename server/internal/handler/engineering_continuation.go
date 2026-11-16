@@ -63,6 +63,9 @@ func (h *Handler) dispatchEngineeringContinuation(ctx context.Context, item engi
 	if item.Reason == "direct_ready" || item.Reason == "direct_submitted" {
 		return h.dispatchDirect(ctx, item)
 	}
+	if item.Reason == "team_feedback_work" {
+		return h.dispatchTeamFeedbackWork(ctx, item)
+	}
 	if item.Reason == "business_handoff" || item.Reason == "end_to_end_publish" || item.Reason == "end_to_end_review" || item.Reason == "team_publish" || item.Reason == "team_review" {
 		return h.dispatchEndToEnd(ctx, item)
 	}

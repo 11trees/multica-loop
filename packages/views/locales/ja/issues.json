@@ -2236,6 +2236,7 @@
     "task_materials": "資料とコンテキスト",
     "task_saved": "タスクを保存しました。ワークフローの開始を再試行できます。",
     "save_task_draft": "下書きを保存",
-    "create_start": "作成して開始"
+    "create_start": "作成して開始",
+    "team_feedback_notice": "フィードバックでタスクが再開されます。固定済みのチーム設定に従って処理を進めます。"
   }
 }

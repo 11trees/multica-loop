@@ -667,6 +667,10 @@ export class TestApiClient {
     if(!this.createdTeamIds.includes(teamId))throw new Error("Not an owned Team fixture");
     const response=await this.authedFetch(`/api/squads/${teamId}/engineering`);if(!response.ok)throw new Error("Team workflow unavailable");return response.json();
   }
+  async addWorkflowTeamAgentFixture(teamId:string,agentId:string){
+    if(!this.createdTeamIds.includes(teamId) || !this.engineeringRuns.some(run=>run.agentId===agentId))throw new Error("Not an owned Team Agent fixture");
+    const response=await this.authedFetch(`/api/squads/${teamId}/members`,{method:"POST",body:JSON.stringify({member_type:"agent",member_id:agentId,role:"member"})});if(!response.ok)throw new Error("Team Agent fixture membership failed");
+  }
   async configureWorkflowTeamFixture(teamId:string,agentId:string){
     if(!this.createdTeamIds.includes(teamId) || !this.engineeringRuns.some(run=>run.agentId===agentId))throw new Error("Not an owned Team fixture");
     const response=await this.authedFetch(`/api/squads/${teamId}/engineering`,{method:"PUT",body:JSON.stringify({expected_revision:0,definition:{workflow:"direct",roles:{executor:agentId},decision_mode:"balanced",max_reworks:2}})});

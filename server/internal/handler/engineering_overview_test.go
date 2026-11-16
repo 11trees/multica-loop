@@ -82,3 +82,40 @@ func TestEngineeringControlsRejectTaskCredentials(t *testing.T) {
 		t.Fatal("machine credentials reached human engineering controls")
 	}
 }
+
+type engineeringTeamOverviewFixture struct {
+	profile    engineeringTeamSnapshot
+	configured bool
+	owned      bool
+}
+
+func (f engineeringTeamOverviewFixture) Call(_ context.Context, input any) (json.RawMessage, error) {
+	value := input.(map[string]any)
+	if value["action"] == "team-routing" {
+		return json.Marshal(map[string]any{"owned": f.owned, "binding": nil, "profile": f.profile})
+	}
+	return json.Marshal(map[string]any{"enabled": true, "configured": f.configured})
+}
+func TestEngineeringTeamOverviewDoesNotAdoptPreviouslyConfiguredLegacyTasks(t *testing.T) {
+	runtime := dbfx.Runtime(t, "Legacy Team overview")
+	agent := dbfx.Agent(t, "Legacy task role", runtime)
+	squad := createSquadAs(t, "", "Team configured after task", agent)
+	issueID := dbfx.Issue(t, "Existing legacy task", testutil.Cols{"assignee_type": "squad", "assignee_id": squad.ID, "status": "todo"})
+	h := *testHandler
+	fixture := engineeringTeamOverviewFixture{profile: engineeringTeamSnapshot{WorkspaceID: testWorkspaceID, TeamID: squad.ID, Revision: 1, Definition: engineeringTeamDefinition{Workflow: "develop"}}, configured: true}
+	h.EngineeringWorker = fixture
+	request := func() *http.Request {
+		return withURLParam(newRequest(http.MethodGet, "/engineering", nil), "id", issueID)
+	}
+	var overview map[string]any
+	testutil.Call(t, h.GetEngineeringOverview, request()).Want(http.StatusOK).JSON(&overview)
+	if _, present := overview["team"]; present {
+		t.Fatal("Legacy task silently adopted the current Team definition")
+	}
+	fixture.configured = false
+	h.EngineeringWorker = fixture
+	testutil.Call(t, h.GetEngineeringOverview, request()).Want(http.StatusOK).JSON(&overview)
+	if overview["team"] == nil {
+		t.Fatal("Unconfigured task lost its explicit Team start entry")
+	}
+}

@@ -38,7 +38,7 @@ const repair=z.union([
  z.object({available:z.literal(true),recorded:z.literal(true),case_id:z.string().min(1),status:z.string().min(1),original_version:z.string().min(1),observation_count:z.number().int().positive(),supervision_active:z.boolean(),desired_intent:z.string().min(1),execution_connected:z.boolean()}),
 ]);
 const state = z.object({
-  team:z.object({id:z.uuid(),revision:z.number().int().positive(),workflow:z.enum(["direct","business_analysis","end_to_end","develop","bug_fix"]),frozen:z.boolean(),aligned:z.boolean(),input:z.string()}).optional(),
+  team:z.object({id:z.uuid(),revision:z.number().int().positive(),workflow:z.enum(["direct","business_analysis","end_to_end","develop","bug_fix"]),frozen:z.boolean(),feedback_enabled:z.boolean().optional(),aligned:z.boolean(),input:z.string()}).optional(),
   repair:repair.nullable().optional().default(null),
   intervention:intervention.nullable().optional().default(null),
   direct_enabled:z.boolean().optional().default(false),direct:direct.nullable().optional().default(null),
@@ -113,12 +113,12 @@ export type RequirementReviewAcknowledgement=EngineeringCheckpoint & {reportHash
 export const RequirementReviewConfiguredSchema=z.object({configured:z.literal(true)});
 export const RequirementReviewAcknowledgedSchema=z.object({acknowledged:z.literal(true)});
 
-export type FeedbackCapture=EngineeringCheckpoint & {requestId:string;expectedBatchNumber:number;agentId:string;verifierId:string;commentIds:string[]};
+export type FeedbackCapture=EngineeringCheckpoint & {requestId:string;expectedBatchNumber:number;commentIds:string[]} & ({agentId:string;verifierId:string} | {agentId?:never;verifierId?:never});
 export type FeedbackCancellation={batchId:string;expectedVersion:number;reason:string};
 export const FeedbackCaptureSchema=z.object({configured:z.literal(true),batch_id:z.string().uuid(),reopen_required:z.boolean()});
 export const FeedbackCancelledSchema=z.object({cancelled:z.literal(true)});
 
-export type FeedbackWorkAuthorization={batchId:string;expectedVersion:number;plannerId:string;reproducerId?:string};
+export type FeedbackWorkAuthorization={batchId:string;expectedVersion:number} & ({plannerId:string;reproducerId?:string}|{plannerId?:never;reproducerId?:never});
 
 export type SpecificationReading={expectedVersion:number;draftId:string;specificationHash:string};
 export type SpecificationComment={requestId:string;draftId:string;specificationHash:string;content:string;anchorType?:"file"|"selection";quotedText?:string|null;startOffset?:number|null;endOffset?:number|null;intent?:"note"|"question"|"change_request"};

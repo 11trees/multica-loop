@@ -175,6 +175,8 @@
       "end_to_end": "Livraison de bout en bout",
       "develop": "Développement",
       "bug_fix": "Correction de bugs"
-    }
+    },
+    "feedback": "Retours",
+    "feedback_independence": "La vérification des retours reste indépendante de la livraison, de la revue du rapport et des travaux suivants."
   }
 }

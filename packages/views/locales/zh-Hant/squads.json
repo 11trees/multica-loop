@@ -173,6 +173,8 @@
       "end_to_end": "端到端交付",
       "develop": "開發交付",
       "bug_fix": "問題修復"
-    }
+    },
+    "feedback": "回饋處理",
+    "feedback_independence": "回饋驗收須獨立於交付、報告審查及回饋規劃和重現。"
   }
 }

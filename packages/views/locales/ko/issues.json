@@ -2236,6 +2236,7 @@
     "task_materials": "자료 및 맥락",
     "task_saved": "작업이 저장되었습니다. 워크플로 시작을 다시 시도하세요.",
     "save_task_draft": "초안 저장",
-    "create_start": "만들고 시작"
+    "create_start": "만들고 시작",
+    "team_feedback_notice": "피드백은 작업을 다시 엽니다. 고정된 팀 설정에 따라 역할을 배정하고 진행합니다."
   }
 }

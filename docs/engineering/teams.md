@@ -70,6 +70,38 @@ the leader. New starts reject archived Teams; existing frozen continuations
 retain their original roles and still require current Agent/human authority.
 Tasks predating a Team's first workflow definition are not automatically adopted.
 
+## Team Feedback
+
+End to End, Develop and Bug Fix Teams can explicitly enable Feedback and assign
+its triager, independent verifier, forward planner and reproducer in Team
+settings. These roles must be invocable native Team Agents. All four stay
+separate from delivery analysis/development/Test; the feedback verifier is also
+separate from report review, triage, planning and reproduction. The forward
+planner and reproducer differ. Context/planning Agents may be explicitly reused
+where those protocol boundaries allow it; no role is inferred on a task.
+
+The entire optional policy is frozen with the task's Team version. Later Team
+edits or disabling Feedback do not replace an existing task's roles. A task
+whose frozen version has no Feedback policy cannot acquire the current Team's
+policy implicitly. Existing standalone executions remain standalone even after
+their Squad later receives a Team workflow definition.
+
+Against a valid report, the task's Process feedback dialog selects only native
+comments. Its API takes comment IDs and checkpoints without Agent fields. The
+host derives both capture roles from the frozen policy, retains native comment
+versions, and reopens Done through the existing lifecycle guard. Supplying
+per-task feedback roles is rejected. The worker independently checks the frozen
+roles and original human principal.
+
+After triage, a persisted Team continuation authorizes forward work using that
+same policy. Go validates the current batch/version, original principal,
+project visibility, native children, Agent invocation rights and resources.
+Defect groups receive the frozen reproducer before planning; other forward
+groups go to planning directly. Retries reuse the saved work policy. Existing
+managed delivery, independent per-comment verification, report correction and
+fresh final review/reading gates remain in force. No per-task role picker or
+second authorization form is needed for a Team's predefined feedback workflow.
+
 ## Verification and remaining boundary
 
 Controlled browser acceptance covered Team settings save/reload, task creation
@@ -79,13 +111,20 @@ The native database/worker test verifies one non-leader queue entry, start retry
 configuration-override rejection, frozen scope update rejection, and preservation
 through Team archival. Kernel tests cover all five preset initializations,
 version freeze, legacy-task routing and Develop/Bug Fix context/reproduction/plan
-handoffs after reopening storage. Shared component regression tests and Web/
-Desktop type checks cover the changed entry points.
+handoffs after reopening storage. Added Team Feedback protocol scenarios run real
+context/planning, managed delivery and independent Test, final report, capture
+and triage gates before testing frozen-role forward authorization. Native
+adapter tests cover comment capture, role-override rejection and automatic
+planning/reproduction scope. Browser acceptance saves/reloads actual Team
+settings; its feedback dialog uses a controlled report response to verify
+layout and comment-only request shape, not a native full-lifecycle claim.
+Shared component regression tests and Web/Desktop type checks cover the changed
+entry points.
 
 These tests use controlled native fixtures, never a real provider. Full Team
 lifecycle acceptance for every preset, installed Desktop, independent Mobile,
-Team-owned Feedback role policy, explicit replanning and historical/in-flight
-work migration remain separate work. Legacy task configuration remains available
+explicit replanning and historical/in-flight work migration remain separate
+work. Legacy task configuration remains available
 for execution that has not adopted Team ownership. Independent Admin repair and
 shared-repository ownership retain their own migration requirements.
 
@@ -96,3 +135,7 @@ shared-repository ownership retain their own migration requirements.
 ![Task creation on a narrow viewport](assets/team-task-create-390.png)
 
 ![Frozen Team task progress](assets/team-task-progress-390.png)
+
+![Team Feedback roles](assets/team-feedback-settings-390.png)
+
+![Task Feedback comment selection](assets/team-feedback-capture-390.png)

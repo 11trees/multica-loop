@@ -175,6 +175,8 @@
       "end_to_end": "End to End delivery",
       "develop": "Development delivery",
       "bug_fix": "Bug fix"
-    }
+    },
+    "feedback": "Feedback",
+    "feedback_independence": "Feedback verification stays independent of delivery, report review and forward work."
   }
 }

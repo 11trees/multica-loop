@@ -25,12 +25,25 @@ type nativeFeedbackFixture struct {
 	verifyPayload map[string]any
 	report        bool
 	reportPayload map[string]any
+	teamBinding   *engineeringTeamBinding
+	teamScope     *engineeringTeamFeedbackScope
 }
 
 func (f *nativeFeedbackFixture) Call(ctx context.Context, input any) (json.RawMessage, error) {
 	value := input.(map[string]any)
 	var result any
 	switch value["action"] {
+	case "team-routing":
+		if f.teamBinding == nil {
+			return f.requirementReviewFixture.Call(ctx, input)
+		}
+		result = map[string]any{"owned": true, "binding": f.teamBinding, "profile": f.teamBinding.Profile}
+	case "team-feedback-scope":
+		actor := value["actor"].(map[string]string)
+		if actor["kind"] != "host" || f.teamScope == nil {
+			return nil, fmt.Errorf("Team work scope requires the native host")
+		}
+		result = f.teamScope
 	case "prepare-feedback-report":
 		actor := value["actor"].(map[string]string)
 		if actor["kind"] != "host" || actor["workspaceId"] == "" || actor["issueId"] == "" {
@@ -206,5 +219,64 @@ func TestEngineeringFeedbackCapturesNativeCommentsReopensAndRestoresOnlyAfterCom
 	parent, _ = h.Queries.GetIssueInWorkspace(ctx, db.GetIssueInWorkspaceParams{ID: parseUUID(parentID), WorkspaceID: parseUUID(testWorkspaceID)})
 	if parent.Status != "done" {
 		t.Fatal("retrying a completed capture reopened native Done")
+	}
+}
+
+func TestEngineeringTeamFeedbackDerivesFrozenRolesAndAutomaticallyAuthorizesNativeForwardWork(t *testing.T) {
+	for _, bug := range []bool{false, true} {
+		t.Run(fmt.Sprintf("reproduction_%t", bug), func(t *testing.T) {
+			ctx := context.Background()
+			runtimeID := dbfx.Runtime(t, "Frozen Team Feedback runtime", testutil.Cols{"runtime_mode": "local", "daemon_id": "team-feedback-test"})
+			triager := dbfx.Agent(t, "Frozen triager", runtimeID)
+			verifier := dbfx.Agent(t, "Frozen feedback verifier", runtimeID)
+			planner := dbfx.Agent(t, "Frozen feedback planner", runtimeID)
+			reproducer := dbfx.Agent(t, "Frozen feedback reproducer", runtimeID)
+			squad := createSquadAs(t, "", "Frozen Feedback Team", triager)
+			projectID := dbfx.Project(t, "Team Feedback project")
+			parentID := dbfx.Issue(t, "Frozen Team feedback", testutil.Cols{"project_id": projectID, "status": "done", "assignee_type": "squad", "assignee_id": squad.ID})
+			planID := uuidToString(dbid.NewV7())
+			metadata, _ := json.Marshal(map[string]any{"engineering.plan": planID, "engineering.unit": "unit", "engineering.revision": 1, "engineering.contract": strings.Repeat("b", 64)})
+			childID := dbfx.Issue(t, "Accepted Team child", testutil.Cols{"project_id": projectID, "parent_issue_id": parentID, "status": "done", "metadata": json.RawMessage(metadata)})
+			commentID := dbfx.Comment(t, parentID, "Actual native Team feedback")
+			dbfx.Insert(t, "project_resource", testutil.Cols{"workspace_id": testWorkspaceID, "project_id": projectID, "resource_type": "local_directory", "resource_ref": json.RawMessage(`{"local_path":"/fixture/repository","daemon_id":"team-feedback-test","execution_mode":"in_place"}`)})
+			policy := engineeringTeamFeedback{Triager: triager, Verifier: verifier, Planner: planner, Reproducer: reproducer}
+			binding := &engineeringTeamBinding{IssueID: parentID, ProjectID: projectID, StartedBy: testUserID, Input: "Frozen Team feedback", Profile: engineeringTeamSnapshot{TeamID: squad.ID, WorkspaceID: testWorkspaceID, Revision: 1, Definition: engineeringTeamDefinition{Workflow: "develop", Feedback: &policy}}}
+			worker := &nativeFeedbackFixture{requirementReviewFixture: requirementReviewFixture{units: []engineeringReviewUnit{{IssueID: childID, PlanDraftID: planID, UnitKey: "unit", ParentRevision: 1, ContractHash: strings.Repeat("b", 64)}}}, reopen: true, teamBinding: binding, teamScope: &engineeringTeamFeedbackScope{engineeringTeamFeedback: policy, UserID: testUserID, NeedsReproduction: bug, Revision: 1, Version: 3}}
+			h := *testHandler
+			h.EngineeringWorker = worker
+			request := func(body any) *http.Request {
+				return withURLParam(newRequest(http.MethodPost, "/feedback", body), "id", parentID)
+			}
+			input := map[string]any{"request_id": uuidToString(dbid.NewV7()), "expected_revision": 1, "expected_sequence": 25, "expected_batch_number": 0, "comment_ids": []string{commentID}}
+			input["agent_id"] = triager
+			testutil.Call(t, h.BeginEngineeringFeedback, request(input)).Want(http.StatusBadRequest)
+			delete(input, "agent_id")
+			testutil.Call(t, h.BeginEngineeringFeedback, request(input)).Want(http.StatusOK)
+			if worker.payload["agent_id"] != triager || worker.payload["verifier_id"] != verifier || worker.payload["comments"].([]map[string]string)[0]["content"] != "Actual native Team feedback" {
+				t.Fatal("Feedback did not retain Team roles and native comment facts")
+			}
+			batchID := "019a0000-0000-7000-8000-000000000071"
+			item := engineeringContinuation{WorkspaceID: testWorkspaceID, IssueID: parentID, UserID: testUserID, AgentID: planner, ExpectedRevision: 1, ExpectedSequence: 3, FeedbackBatchID: batchID, Reason: "team_feedback_work"}
+			if err := h.dispatchEngineeringContinuation(ctx, item); err != nil {
+				t.Fatal(err)
+			}
+			if !worker.work || worker.workPayload["planner_agent_id"] != planner {
+				t.Fatal("Team did not authorize its frozen forward planner")
+			}
+			if got, ok := worker.workPayload["reproduction_agent_id"]; ok != bug || bug && got != reproducer {
+				t.Fatal("Team reproduction did not follow authoritative group scope")
+			}
+			if ids := worker.workPayload["native_unit_ids"].([]string); len(ids) != 1 || ids[0] != childID {
+				t.Fatal("Team work lost native child scope")
+			}
+			worker.work = false
+			changed := item
+			changed.AgentID = verifier
+			if err := h.dispatchEngineeringContinuation(ctx, changed); err == nil || worker.work {
+				t.Fatal("Changed coordinator role bypassed frozen Team")
+			}
+			testutil.Call(t, h.AuthorizeEngineeringFeedbackWork, request(map[string]any{"batch_id": batchID, "expected_version": 3, "planner_agent_id": planner})).Want(http.StatusBadRequest)
+			testutil.Call(t, h.AuthorizeEngineeringFeedbackWork, request(map[string]any{"batch_id": batchID, "expected_version": 3})).Want(http.StatusOK)
+		})
 	}
 }

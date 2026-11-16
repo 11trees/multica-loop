@@ -9,6 +9,7 @@ import { z } from "zod";
 import { reviewContractSchema } from "./review";
 import { beforeEach,afterEach,it,expect } from "vitest";
 import { EngineeringApplication,type ApplicationRequest } from "./application";
+import type {TeamDefinition} from "./team";
 
 const human={kind:"human" as const,userId:"019a0000-0000-7000-8000-000000000001",workspaceId:"019a0000-0000-7000-8000-000000000002",issueId:"019a0000-0000-7000-8000-000000000003"};
 const backlog="019a0000-0000-7000-8000-000000000004",planner="019a0000-0000-7000-8000-000000000005";
@@ -159,10 +160,11 @@ it("preserves valid long acceptance keys through readonly planning projection an
 },15000);
 
 const deliveryRoles={analyst:"019a0000-0000-7000-8000-000000000011",developer:"019a0000-0000-7000-8000-000000000012",verifier:"019a0000-0000-7000-8000-000000000013"};
-async function authorizedUnits(mode:"in_place"|"worktree"){
- const session=await context();await session.command({type:"phase.complete"});const planning=await plan(),done=await planning.finish();const publication=await app.invoke({actor:human,action:"publication",payload:{expected_revision:1,expected_sequence:done.draft!.sequence}});if(!("units" in publication))throw new Error("Expected publication");
+async function authorizedUnits(mode:"in_place"|"worktree",team?:{id:string;definition:TeamDefinition}){
+ if(team){await app.invoke({actor:{kind:"team-manager",workspaceId:human.workspaceId,teamId:team.id,userId:human.userId},action:"team-profile",payload:{expected_revision:0,definition:team.definition}});await app.invoke({actor:human,action:"team-start",payload:{team_id:team.id,team_revision:1,project_id:"019a0000-0000-7000-8000-000000000030",input:"A reader sees Ready and can activate Continue",repository_path:repository,execution_resources:Object.keys(team.definition.roles).map(()=>({path:repository,mode}))}});}
+ const session=await context({configured:!!team});await session.command({type:"phase.complete"});const planning=await plan(),done=await planning.finish();const publication=await app.invoke({actor:human,action:"publication",payload:{expected_revision:1,expected_sequence:done.draft!.sequence}});if(!("units" in publication))throw new Error("Expected publication");
  for(const unit of publication.units)await app.invoke({actor:{kind:"host",workspaceId:human.workspaceId,issueId:human.issueId},action:"publication-ack",payload:{issue_id:unit.issueId,contract_hash:unit.contractHash}});
- const policy={expected_revision:1,expected_sequence:done.draft!.sequence,analyst_agent_id:deliveryRoles.analyst,developer_agent_id:deliveryRoles.developer,agent_id:deliveryRoles.verifier,max_reworks:1,execution_resources:[1,2,3].map(()=>({path:repository,mode}))};await app.invoke({actor:human,action:"delivery-policy",payload:policy});return {units:publication.units,policy};
+ const policy={expected_revision:1,expected_sequence:done.draft!.sequence,analyst_agent_id:deliveryRoles.analyst,developer_agent_id:deliveryRoles.developer,agent_id:deliveryRoles.verifier,max_reworks:1,execution_resources:[1,2,3].map(()=>({path:repository,mode}))};if(!team)await app.invoke({actor:human,action:"delivery-policy",payload:policy});return {units:publication.units,policy};
 }
 function deliveryState(result:Awaited<ReturnType<EngineeringApplication["invoke"]>>){if(!("draft" in result) || !("rework" in result))throw new Error("Expected delivery checkpoint");return result;}
 async function deliverManaged(issueId:string,root:string,mode:"in_place"|"worktree",index:number){
@@ -173,6 +175,39 @@ async function deliverManaged(issueId:string,root:string,mode:"in_place"|"worktr
  const receipt=await app.invoke({actor:{...session.owner,kind:"daemon"},action:"receipt",payload:{id:"check",sequence:1,command:"fixture-check",cwd:root,status:"completed",exit_code:0}});if(!("captured" in receipt))throw new Error("Expected receipt");await session.command({type:"check.record",key:"check",receipt_id:receipt.captured,summary:"Current fixture check"});await session.command({type:"phase.complete"});git("add",".");git("commit","-qm",`Deliver unit ${index}`);await session.command({type:"phase.complete",confirmation:"Scoped commit checked"});await session.command({type:"phase.complete",confirmation:"Evidence reviewed"});
  session=await run(deliveryRoles.verifier);await session.command({type:"phase.complete"});await session.command({type:"artifact.put",ref:"verification.scenarios",key:"s1",content:`channel: frontend\ntitle: Unit outcome\nsetup: Open fixture\nsteps: Observe the unit\nexpected: Frozen acceptance\ncoverageRefs: [${session.state.contract.sources.map(source=>source.key).join(", ")}]`});await session.command({type:"phase.complete"});await session.command({type:"artifact.put",ref:"verification.results",key:"s1",content:"status: passed\nevidence: Independent fixture observation"});await session.command({type:"phase.complete"});await session.command({type:"artifact.put",ref:"verification.evidence-review",content:"summary: Original oracles and actual observations agree"});await session.command({type:"phase.complete"});await session.command({type:"phase.complete"});return {binding:session.state.contract.binding,commit:git("rev-parse","HEAD")};
 }
+
+it.each(["scope_addition","bug"] as const)("uses frozen Team Feedback roles and automatically authorizes %s forward work after real delivery and report gates",async workType=>{
+ const mode="in_place",teamId="019a0000-0000-7000-8000-000000000031",reviewer="019a0000-0000-7000-8000-000000000032",feedbackVerifier="019a0000-0000-7000-8000-000000000033";
+ const feedback={triager:backlog,verifier:feedbackVerifier,planner,reproducer},definition:TeamDefinition={workflow:"develop",roles:{context:backlog,planner,...deliveryRoles,reviewer},feedback,decision_mode:"balanced",max_reworks:1};
+ const {units,policy}=await authorizedUnits(mode,{id:teamId,definition}),host={kind:"host" as const,workspaceId:human.workspaceId,issueId:human.issueId};
+ for(const [index,unit] of units.entries()){
+  const child={...host,issueId:unit.issueId};await app.invoke({actor:child,action:"activate-unit",payload:{expected_revision:1,expected_sequence:policy.expected_sequence,execution_mode:mode}});
+  const delivered=await deliverManaged(unit.issueId,repository,mode,index);await app.invoke({actor:child,action:"accept-unit",payload:{binding:delivered.binding}});
+ }
+ const checkpoint=z.object({revision:z.number(),sequence:z.number()}).parse(await app.invoke({actor:human,action:"overview"})),ids=units.map(unit=>unit.issueId);
+ await app.invoke({actor:host,action:"team-review",payload:{expected_revision:checkpoint.revision,expected_sequence:checkpoint.sequence,execution_resources:[{path:repository,mode}],native_unit_ids:ids}});
+ const review=await start(reviewer),contract=reviewContractSchema.parse(review.state.contract);
+ const put=(block:string,value:unknown,key?:string)=>review.command({type:"artifact.put",ref:`review.${block}`,content:stringify(value),...(key?{key}:{})});
+ await review.command({type:"phase.complete"});for(const [index,subject] of contract.subjects.entries())await put("reconciliations",{subjectRef:subject.key,result:"Frozen independent evidence supports the final fact",evidenceRefs:subject.requiredEvidenceRefs},`s${index}`);
+ await review.command({type:"phase.complete"});await put("assessment",{summary:"Original obligations are closed",evidenceBoundary:"Exact frozen independent Test evidence",residualRisk:"No external deployment coverage"});await review.command({type:"phase.complete"});
+ for(const kind of ["outcome","scope","implementation","verification","risks"])await put("report-sections",{kind,content:`Current ${kind} and frozen provenance`},kind);
+ await review.command({type:"phase.complete"});await review.command({type:"phase.complete"});
+ const overview=z.object({revision:z.number(),sequence:z.number()}).parse(await app.invoke({actor:human,action:"overview"}));
+ await app.invoke({actor:{kind:"team-manager",workspaceId:human.workspaceId,teamId,userId:human.userId},action:"team-profile",payload:{expected_revision:1,definition:{...definition,feedback:{...feedback,verifier:"019a0000-0000-7000-8000-000000000034"}}}});
+ const capture={request_id:"019a0000-0000-7000-8000-000000000035",expected_revision:overview.revision,expected_sequence:overview.sequence,expected_batch_number:0,agent_id:feedback.triager,verifier_id:feedback.verifier,comments:[{id:"native-comment",version:"native-v1",content:"A new reader action is needed",sourceRef:"COMMENT:native-comment",authorId:"member:reader"}],restore_done:false,execution_resources:[1,2].map(()=>({path:repository,mode})),native_unit_ids:ids};
+ await expect(app.invoke({actor:human,action:"begin-feedback",payload:{...capture,verifier_id:"019a0000-0000-7000-8000-000000000034"}})).rejects.toThrow(/frozen Team/);
+ await expect(app.invoke({actor:{...human,userId:"019a0000-0000-7000-8000-000000000039"},action:"begin-feedback",payload:capture})).rejects.toThrow(/human authority/);
+ await app.invoke({actor:human,action:"begin-feedback",payload:capture});
+ const triage=await start(backlog,10);for(let step=0;step<3;step++)await triage.command({type:"phase.complete"});
+ await triage.command({type:"artifact.put",ref:"feedback.answer-review",content:"Original scope and feedback facts align"});await triage.command({type:"phase.complete"});await triage.command({type:"artifact.put",ref:"feedback.summary",content:"Forward this comment under the Team policy"});
+ await triage.command({type:"artifact.put",ref:"feedback.groups",key:"forward",content:stringify({workType,reason:"Frozen native feedback",title:"Additional reader action",commentIds:["native-comment"],affectedDeliveryUnits:workType==="bug"?[1]:[],acceptance:["A new action is independently observable"]})});await triage.command({type:"phase.complete"});await triage.command({type:"phase.complete"});app.close();reopen();
+ const pending=z.array(z.object({reason:z.string(),agent_id:z.string(),user_id:z.string(),feedback_batch_id:z.string(),expected_sequence:z.number()})).parse(await app.invoke({actor:{kind:"coordinator"},action:"continuations"}));expect(pending).toEqual([expect.objectContaining({reason:"team_feedback_work",agent_id:planner,user_id:human.userId})]);
+ const item=pending[0]!,scope=await app.invoke({actor:host,action:"team-feedback-scope",payload:{batch_id:item.feedback_batch_id,expected_version:item.expected_sequence}});await expect(app.invoke({actor:task(backlog,11),action:"team-feedback-scope",payload:{batch_id:item.feedback_batch_id,expected_version:item.expected_sequence}})).rejects.toThrow(/Only the host/);expect(scope).toMatchObject({...feedback,needs_reproduction:workType==="bug",user_id:human.userId});
+ const work={batch_id:item.feedback_batch_id,expected_version:item.expected_sequence,planner_agent_id:feedback.planner,...(workType==="bug"?{reproduction_agent_id:feedback.reproducer}:{}),execution_resources:Array.from({length:workType==="bug"?2:1},()=>({path:repository,mode})),native_unit_ids:ids};
+ await expect(app.invoke({actor:human,action:"authorize-feedback-work",payload:{...work,planner_agent_id:deliveryRoles.analyst}})).rejects.toThrow(/frozen Team/);
+ await app.invoke({actor:human,action:"authorize-feedback-work",payload:work});expect(await app.invoke({actor:human,action:"authorize-feedback-work",payload:work})).toEqual({authorized:true});
+ expect(await app.invoke({actor:{kind:"coordinator"},action:"continuations"})).toEqual([expect.objectContaining({reason:"feedback_work_ready",agent_id:workType==="bug"?feedback.reproducer:feedback.planner})]);
+},90000);
 
 it.each(["in_place","worktree"] as const)("runs two managed units serially from accepted predecessor commits in %s mode",async(mode)=>{
  const {units,policy}=await authorizedUnits(mode),host=(issueId:string)=>({kind:"host" as const,workspaceId:human.workspaceId,issueId});const activate=(issueId:string)=>app.invoke({actor:host(issueId),action:"activate-unit",payload:{expected_revision:1,expected_sequence:policy.expected_sequence,execution_mode:mode}});

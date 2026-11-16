@@ -207,6 +207,16 @@ it("captures selected native comments on a closed requirement with separate role
  expect(first).toEqual({requestId:expect.any(String),expectedRevision:2,expectedSequence:7,expectedBatchNumber:0,agentId:"triager",verifierId:"feedback-verifier",commentIds:["comment"]});expect(api.beginEngineeringFeedback).toHaveBeenLastCalledWith("issue",first);
 });
 
+it("processes Team feedback by selecting comments without per-task role configuration",async()=>{
+ completedFeedbackRequirement();state.team={id:"team",workflow:"develop",revision:1,frozen:true,aligned:true,input:"Original scope",feedback_enabled:true};
+ vi.mocked(api.listComments).mockResolvedValue([{id:"comment",issue_id:"issue",author_type:"member",author_id:"human",type:"comment",content:"Explain the Continue control",parent_id:null,reactions:[],deleted_at:null,attachments:[],created_at:"2026-11-14T00:00:00Z",updated_at:"2026-11-14T00:00:00Z",resolved_at:null,resolved_by_type:null,resolved_by_id:null}]);
+ const user=userEvent.setup();renderWithI18n(<QueryClientProvider client={client}><EngineeringPanel issue={issue} closed /></QueryClientProvider>,{locale:"en"});
+ await user.click(await screen.findByRole("button",{name:"Process feedback"}));const dialog=screen.getByRole("dialog");expect(within(dialog).queryByRole("combobox")).not.toBeInTheDocument();
+ await user.click(await within(dialog).findByText("Explain the Continue control"));vi.mocked(api.beginEngineeringFeedback).mockRejectedValueOnce(new Error("Capture interrupted; retry"));await user.click(within(dialog).getByRole("button",{name:"Process feedback"}));await within(dialog).findByText("Capture interrupted; retry");
+ const first=vi.mocked(api.beginEngineeringFeedback).mock.calls[0]![1];expect(first).toEqual({requestId:expect.any(String),expectedRevision:2,expectedSequence:7,expectedBatchNumber:0,commentIds:["comment"]});
+ vi.mocked(api.beginEngineeringFeedback).mockResolvedValueOnce();await user.click(within(dialog).getByRole("button",{name:"Process feedback"}));await waitFor(()=>expect(screen.queryByRole("dialog")).not.toBeInTheDocument());expect(api.beginEngineeringFeedback).toHaveBeenLastCalledWith("issue",first);
+});
+
 it("keeps cancelled unresolved feedback visible and removes the current report closing action",async()=>{
  completedFeedbackRequirement();state.requirement!.feedback={capture_ready:true,enabled:true,active:false,unresolved_count:1,expected_batch_number:1,batches:[{id:"batch",number:1,version:3,status:"cancelled",agent_id:"triager",verifier_id:"feedback-verifier",report_started:false,forward_work:null,summary:"New reader scope",comments:[],groups:[{verifications:[],id:"group",key:"addition",workType:"scope_addition",status:"waiting_for_plan",title:"Additional reader action",reason:"New scope",response:"",commentIds:["comment"],affectedDeliveryUnits:[],acceptance:["Separate outcome verified"]}]}]};
  const user=userEvent.setup();renderPanel();await screen.findByText("Feedback has unfinished work. The requirement cannot close.");await screen.findByText("Additional reader action");expect(screen.queryByRole("button",{name:"I have read it; close requirement"})).not.toBeInTheDocument();

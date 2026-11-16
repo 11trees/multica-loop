@@ -54,6 +54,55 @@ func TestEngineeringTeamProfileRequiresNativeRosterAndManagement(t *testing.T) {
 	testutil.Call(t, h.EngineeringTeamProfile, machine).Want(http.StatusForbidden)
 }
 
+func TestEngineeringTeamFeedbackProfileUsesNativeMembersAndPreservesIndependentRoles(t *testing.T) {
+	ctx := context.Background()
+	runtimeID := dbfx.Runtime(t, "Team Feedback profile runtime")
+	roles := map[string]string{}
+	for _, role := range engineeringTeamRoles["develop"] {
+		roles[role] = dbfx.Agent(t, "Team "+role, runtimeID)
+	}
+	feedback := engineeringTeamFeedback{Triager: roles["context"], Planner: roles["planner"], Reproducer: dbfx.Agent(t, "Team feedback reproducer", runtimeID), Verifier: dbfx.Agent(t, "Team feedback verifier", runtimeID)}
+	squad := createSquadAs(t, "", "Team Feedback profile", roles["context"])
+	members := []string{}
+	for _, id := range roles {
+		members = append(members, id)
+	}
+	members = append(members, feedback.Reproducer, feedback.Verifier)
+	for _, id := range members {
+		if id != roles["context"] {
+			dbfx.Insert(t, "squad_member", testutil.Cols{"squad_id": squad.ID, "member_type": "agent", "member_id": id, "role": "member"})
+		}
+	}
+	workerPath, err := filepath.Abs("../../../packages/command-chain/dist/worker.mjs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := *testHandler
+	h.EngineeringWorker = &engineering.Client{Worker: workerPath, Database: filepath.Join(t.TempDir(), "business.sqlite")}
+	definition := map[string]any{"workflow": "develop", "roles": roles, "decision_mode": "balanced", "max_reworks": 1, "feedback": feedback}
+	request := func(body any) *http.Request {
+		return squadScopeReq("", http.MethodPut, "/engineering", body, map[string]string{"id": squad.ID})
+	}
+	body := map[string]any{"expected_revision": 0, "definition": definition}
+	testutil.Call(t, h.EngineeringTeamProfile, request(body)).Want(http.StatusOK)
+	var current struct {
+		Profile engineeringTeamSnapshot `json:"profile"`
+	}
+	raw, err := h.EngineeringWorker.Call(ctx, map[string]any{"actor": map[string]string{"kind": "coordinator"}, "action": "team-lookup", "payload": map[string]string{"workspace_id": testWorkspaceID, "team_id": squad.ID}})
+	if err != nil || json.Unmarshal(raw, &current) != nil || current.Profile.Definition.Feedback == nil || *current.Profile.Definition.Feedback != feedback {
+		t.Fatal("Team Feedback profile did not retain explicit native roles", err)
+	}
+	body["expected_revision"] = 1
+	invalid := feedback
+	invalid.Verifier = roles["reviewer"]
+	definition["feedback"] = invalid
+	testutil.Call(t, h.EngineeringTeamProfile, request(body)).Want(http.StatusBadRequest)
+	invalid = feedback
+	invalid.Verifier = dbfx.Agent(t, "Outside Team verifier", runtimeID)
+	definition["feedback"] = invalid
+	testutil.Call(t, h.EngineeringTeamProfile, request(body)).Want(http.StatusBadRequest)
+}
+
 func TestEngineeringTeamStartsNativeTaskWithFrozenDefinitionAndNoLeaderEvaluation(t *testing.T) {
 	ctx := context.Background()
 	worker, err := filepath.Abs("../../../packages/command-chain/dist/worker.mjs")

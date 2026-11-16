@@ -2317,6 +2317,7 @@
     "task_materials": "Materiales y contexto",
     "task_saved": "Tarea guardada; vuelve a intentar iniciar el flujo.",
     "save_task_draft": "Guardar borrador",
-    "create_start": "Crear e iniciar"
+    "create_start": "Crear e iniciar",
+    "team_feedback_notice": "Los comentarios reabren la tarea. El equipo fijado asigna los roles y continúa el flujo."
   }
 }

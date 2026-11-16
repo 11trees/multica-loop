@@ -2236,6 +2236,7 @@
     "task_materials": "資料與上下文",
     "task_saved": "任務已儲存，可重試啟動團隊工作流程。",
     "save_task_draft": "儲存草稿",
-    "create_start": "建立並啟動"
+    "create_start": "建立並啟動",
+    "team_feedback_notice": "回饋會重新開啟任務，由凍結的團隊設定安排角色並繼續推進。"
   }
 }

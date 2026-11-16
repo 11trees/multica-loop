@@ -79,7 +79,12 @@ func (h *Handler) GetEngineeringOverview(w http.ResponseWriter, r *http.Request)
 	if routing.Binding != nil {
 		profile = &routing.Binding.Profile
 	}
-	if profile != nil {
+	var configured bool
+	if profile != nil && json.Unmarshal(response["configured"], &configured) != nil {
+		writeError(w, http.StatusServiceUnavailable, "invalid engineering configuration state")
+		return
+	}
+	if profile != nil && (routing.Binding != nil || routing.Owned || !configured) {
 		aligned := true
 		input := ""
 		if binding := routing.Binding; binding != nil {
@@ -88,7 +93,7 @@ func (h *Handler) GetEngineeringOverview(w http.ResponseWriter, r *http.Request)
 				aligned = issue.AssigneeType.String == "squad" && uuidToString(issue.AssigneeID) == profile.TeamID && uuidToString(issue.ProjectID) == binding.ProjectID && strings.TrimSpace(issue.Title+"\n\n"+issue.Description.String) == input
 			}
 		}
-		response["team"], _ = json.Marshal(map[string]any{"id": profile.TeamID, "revision": profile.Revision, "workflow": profile.Definition.Workflow, "frozen": routing.Binding != nil, "aligned": aligned, "input": input})
+		response["team"], _ = json.Marshal(map[string]any{"id": profile.TeamID, "revision": profile.Revision, "workflow": profile.Definition.Workflow, "frozen": routing.Binding != nil, "feedback_enabled": profile.Definition.Feedback != nil, "aligned": aligned, "input": input})
 	}
 	category, err := issuestatus.CategoryWithError(r.Context(), h.Queries, issue.WorkspaceID, issue.Status)
 	if err != nil {

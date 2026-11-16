@@ -58,10 +58,11 @@ func (h *Handler) EngineeringTeamProfile(w http.ResponseWriter, r *http.Request)
 		var input struct {
 			ExpectedRevision *int `json:"expected_revision"`
 			Definition       struct {
-				Workflow     string            `json:"workflow"`
-				Roles        map[string]string `json:"roles"`
-				DecisionMode string            `json:"decision_mode"`
-				MaxReworks   *int              `json:"max_reworks"`
+				Workflow     string                   `json:"workflow"`
+				Roles        map[string]string        `json:"roles"`
+				DecisionMode string                   `json:"decision_mode"`
+				MaxReworks   *int                     `json:"max_reworks"`
+				Feedback     *engineeringTeamFeedback `json:"feedback,omitempty"`
 			} `json:"definition"`
 		}
 		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
@@ -111,7 +112,29 @@ func (h *Handler) EngineeringTeamProfile(w http.ResponseWriter, r *http.Request)
 			used[id] = true
 			resolved[role] = uuidToString(agent.ID)
 		}
-		request["payload"] = map[string]any{"expected_revision": *input.ExpectedRevision, "definition": map[string]any{"workflow": input.Definition.Workflow, "roles": resolved, "decision_mode": input.Definition.DecisionMode, "max_reworks": *input.Definition.MaxReworks}}
+		definition := map[string]any{"workflow": input.Definition.Workflow, "roles": resolved, "decision_mode": input.Definition.DecisionMode, "max_reworks": *input.Definition.MaxReworks}
+		if feedback := input.Definition.Feedback; feedback != nil {
+			if !feedback.valid(input.Definition.Workflow, resolved) {
+				writeError(w, http.StatusBadRequest, "Feedback roles must preserve independent verification and forward work")
+				return
+			}
+			for _, id := range feedback.ids() {
+				if !roster[id] {
+					writeError(w, http.StatusBadRequest, "Feedback roles must be Agent members of this Team")
+					return
+				}
+				agent, ok := h.loadAgentForUser(w, r, id)
+				if !ok {
+					return
+				}
+				if agent.ArchivedAt.Valid || !h.memberCanWireAgent(r.Context(), member, agent, workspace) {
+					writeError(w, http.StatusForbidden, "Feedback role Agent is not available")
+					return
+				}
+			}
+			definition["feedback"] = feedback
+		}
+		request["payload"] = map[string]any{"expected_revision": *input.ExpectedRevision, "definition": definition}
 	}
 	result, err := h.EngineeringWorker.Call(r.Context(), request)
 	if err != nil {
@@ -122,11 +145,37 @@ func (h *Handler) EngineeringTeamProfile(w http.ResponseWriter, r *http.Request)
 }
 
 type engineeringTeamDefinition struct {
-	Workflow     string            `json:"workflow"`
-	Roles        map[string]string `json:"roles"`
-	DecisionMode string            `json:"decision_mode"`
-	MaxReworks   int               `json:"max_reworks"`
+	Workflow     string                   `json:"workflow"`
+	Roles        map[string]string        `json:"roles"`
+	DecisionMode string                   `json:"decision_mode"`
+	MaxReworks   int                      `json:"max_reworks"`
+	Feedback     *engineeringTeamFeedback `json:"feedback,omitempty"`
 }
+type engineeringTeamFeedback struct {
+	Triager    string `json:"triager"`
+	Verifier   string `json:"verifier"`
+	Planner    string `json:"planner"`
+	Reproducer string `json:"reproducer"`
+}
+
+func (f engineeringTeamFeedback) ids() []string {
+	return []string{f.Triager, f.Verifier, f.Planner, f.Reproducer}
+}
+func (f engineeringTeamFeedback) valid(workflow string, roles map[string]string) bool {
+	if workflow != "develop" && workflow != "bug_fix" && workflow != "end_to_end" {
+		return false
+	}
+	for _, id := range f.ids() {
+		if _, err := util.ParseUUID(id); err != nil {
+			return false
+		}
+		if id == roles["analyst"] || id == roles["developer"] || id == roles["verifier"] {
+			return false
+		}
+	}
+	return f.Verifier != roles["reviewer"] && f.Triager != f.Verifier && f.Planner != f.Verifier && f.Reproducer != f.Verifier && f.Planner != f.Reproducer
+}
+
 type engineeringTeamSnapshot struct {
 	TeamID      string                    `json:"teamId"`
 	WorkspaceID string                    `json:"workspaceId"`
@@ -145,6 +194,30 @@ type engineeringTeamRouting struct {
 	Owned   bool                     `json:"owned"`
 	Binding *engineeringTeamBinding  `json:"binding"`
 	Profile *engineeringTeamSnapshot `json:"profile"`
+}
+
+func (h *Handler) frozenEngineeringTeamFeedback(ctx context.Context, issue db.Issue, user string) (*engineeringTeamFeedback, error) {
+	if issue.AssigneeType.String != "squad" {
+		return nil, nil
+	}
+	routing, err := h.engineeringTeamRouting(ctx, issue)
+	if err != nil {
+		return nil, err
+	}
+	if routing.Binding == nil {
+		if routing.Owned {
+			return nil, &engineering.Rejection{Message: "Start the task with its Team before processing feedback", Conflict: true}
+		}
+		return nil, nil
+	}
+	binding := routing.Binding
+	if binding.IssueID != uuidToString(issue.ID) || binding.StartedBy != user || binding.Profile.TeamID != uuidToString(issue.AssigneeID) || binding.ProjectID != uuidToString(issue.ProjectID) || binding.Input != strings.TrimSpace(issue.Title+"\n\n"+issue.Description.String) {
+		return nil, &engineering.Rejection{Message: "Feedback retains its frozen Team, project, goal and human authority", Conflict: true}
+	}
+	if binding.Profile.Definition.Feedback == nil {
+		return nil, &engineering.Rejection{Message: "This task's frozen Team version has no Feedback policy", Conflict: true}
+	}
+	return binding.Profile.Definition.Feedback, nil
 }
 
 func (h *Handler) rejectTeamTaskConfiguration(w http.ResponseWriter, r *http.Request, issue db.Issue) bool {
@@ -296,8 +369,16 @@ func (h *Handler) startEngineeringTeamIssue(ctx context.Context, issue db.Issue,
 	resources := []map[string]string{}
 	path := ""
 	mode := ""
-	for _, role := range engineeringTeamRoles[profile.Definition.Workflow] {
-		id, err := util.ParseUUID(profile.Definition.Roles[role])
+	baseRoles := engineeringTeamRoles[profile.Definition.Workflow]
+	roleIDs := make([]string, 0, len(baseRoles)+4)
+	for _, role := range baseRoles {
+		roleIDs = append(roleIDs, profile.Definition.Roles[role])
+	}
+	if profile.Definition.Feedback != nil {
+		roleIDs = append(roleIDs, profile.Definition.Feedback.ids()...)
+	}
+	for index, roleID := range roleIDs {
+		id, err := util.ParseUUID(roleID)
 		if err != nil {
 			return err
 		}
@@ -326,7 +407,9 @@ func (h *Handler) startEngineeringTeamIssue(ctx context.Context, issue db.Issue,
 		if path != canonical || mode != mapping[0]["mode"] {
 			return reject("Team roles must map to the same project repository and mode")
 		}
-		resources = append(resources, map[string]string{"path": canonical, "mode": mode})
+		if index < len(baseRoles) {
+			resources = append(resources, map[string]string{"path": canonical, "mode": mode})
+		}
 	}
 	active, err := h.Queries.HasUnfinishedEngineeringIssueTask(ctx, issue.ID)
 	if err != nil {

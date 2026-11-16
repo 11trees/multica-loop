@@ -32,8 +32,8 @@ func (h *Handler) BeginEngineeringFeedback(w http.ResponseWriter, r *http.Reques
 		ExpectedRevision    int      `json:"expected_revision"`
 		ExpectedSequence    int      `json:"expected_sequence"`
 		ExpectedBatchNumber int      `json:"expected_batch_number"`
-		AgentID             string   `json:"agent_id"`
-		VerifierID          string   `json:"verifier_id"`
+		AgentID             *string  `json:"agent_id"`
+		VerifierID          *string  `json:"verifier_id"`
 		CommentIDs          []string `json:"comment_ids"`
 	}
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
@@ -44,6 +44,26 @@ func (h *Handler) BeginEngineeringFeedback(w http.ResponseWriter, r *http.Reques
 	}
 	if _, ok := parseUUIDOrBadRequest(w, payload.RequestID, "request_id"); !ok {
 		return
+	}
+	triager, verifier := "", ""
+	policy, err := h.frozenEngineeringTeamFeedback(r.Context(), parent, userID)
+	if err != nil {
+		engineeringControlError(w, err)
+		return
+	}
+	if policy != nil {
+		if payload.AgentID != nil || payload.VerifierID != nil {
+			writeError(w, http.StatusBadRequest, "Feedback roles come from the frozen Team; submit only comments and checkpoints")
+			return
+		}
+		triager, verifier = policy.Triager, policy.Verifier
+	} else {
+		if payload.AgentID != nil {
+			triager = *payload.AgentID
+		}
+		if payload.VerifierID != nil {
+			verifier = *payload.VerifierID
+		}
 	}
 	category, err := issuestatus.CategoryWithError(r.Context(), h.Queries, parent.WorkspaceID, parent.Status)
 	if err != nil {
@@ -56,7 +76,7 @@ func (h *Handler) BeginEngineeringFeedback(w http.ResponseWriter, r *http.Reques
 	}
 	resources := make([]map[string]string, 0, 2)
 	agentIDs := make([]string, 0, 2)
-	for _, id := range []string{payload.AgentID, payload.VerifierID} {
+	for _, id := range []string{triager, verifier} {
 		agent, ok := h.loadAgentForUser(w, r, id)
 		if !ok {
 			return

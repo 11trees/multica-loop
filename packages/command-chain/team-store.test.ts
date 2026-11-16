@@ -24,6 +24,15 @@ it("versions Team definitions and rejects stale edits and workspace leakage",()=
  expect(store.configure(workspace,team,user,{expected_revision:1,definition:definition()}).revision).toBe(2);
  expect(db.prepare("SELECT count(*) AS count FROM engineering_team_profile").get()!.count).toBe(2);
 });
+it("freezes explicit Team Feedback roles and enforces the protocol's independent verification boundary",()=>{
+ const roles=Object.fromEntries(teamWorkflowRoles.develop.map(role=>[role,randomUUID()])),feedback={triager:roles.context!,planner:roles.planner!,reproducer:randomUUID(),verifier:randomUUID()};
+ const value={...definition(),workflow:"develop",roles,feedback};expect(teamDefinitionSchema.parse(value).feedback).toEqual(feedback);
+ for(const change of [{verifier:roles.reviewer},{triager:roles.analyst},{planner:feedback.verifier},{reproducer:feedback.planner}])expect(()=>teamDefinitionSchema.parse({...value,feedback:{...feedback,...change}})).toThrow(/independent/);
+ expect(()=>teamDefinitionSchema.parse({...definition(),feedback})).toThrow(/delivery workflow/);
+ store.configure(workspace,team,user,{expected_revision:0,definition:value});const input={team_id:team,team_revision:1,project_id:project,input:"Original task"};const frozen=store.bind(workspace,issue,user,input);
+ store.configure(workspace,team,user,{expected_revision:1,definition:{...value,feedback:{...feedback,verifier:randomUUID()}}});
+ expect(store.binding(workspace,issue)?.profile.definition.feedback).toEqual(frozen.profile.definition.feedback);
+});
 it("freezes a task's Team, project and input independently of later Team edits",()=>{
  const first=store.configure(workspace,team,user,{expected_revision:0,definition:definition()});
  const input={team_id:team,team_revision:1,project_id:project,input:"Deliver the original outcome"};

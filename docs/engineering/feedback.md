@@ -11,6 +11,25 @@ Report-expression correction uses the same native reviewer under a pinned
 baseline, independent single-comment report verification and a new reading.
 This is a partial feedback migration.
 
+## Team-owned entry
+
+For Team-owned requirements, the optional Feedback policy is configured on the
+Team and frozen at task start; see [Team-owned workflows](teams.md). The task
+selects comments only. Its capture payload omits `agent_id` and `verifier_id`;
+the host derives and revalidates them from the frozen Team. Per-task role
+fields are rejected. The private worker also enforces those exact roles and the
+original initiating human. Team edits do not retrofit an old task's version.
+
+After triage, Team forward work is authorized automatically from the saved
+planner/reproducer bindings. The host rechecks batch revision/version, current
+Agent rights, project resources and native accepted child scope. Bug groups
+require reproduction; other delivery groups enter planning directly. The
+existing role, attempt, evidence, report and completion gates are shared.
+An explicit Team work retry sends only `batch_id` and `expected_version` to the
+same work endpoint; it cannot supply replacement role IDs.
+
+The manual role-selection payloads below remain for standalone executions.
+
 ## Native capture and human controls
 
 `Process feedback` is available against a valid final requirement report,

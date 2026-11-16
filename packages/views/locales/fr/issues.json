@@ -2317,6 +2317,7 @@
     "task_materials": "Documents et contexte",
     "task_saved": "Tâche enregistrée ; réessayez de démarrer le workflow.",
     "save_task_draft": "Enregistrer le brouillon",
-    "create_start": "Créer et démarrer"
+    "create_start": "Créer et démarrer",
+    "team_feedback_notice": "Les retours rouvrent la tâche. L’équipe figée attribue les rôles et poursuit le workflow."
   }
 }

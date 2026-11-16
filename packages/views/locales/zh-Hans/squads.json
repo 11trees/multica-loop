@@ -173,6 +173,8 @@
       "end_to_end": "端到端交付",
       "develop": "开发交付",
       "bug_fix": "问题修复"
-    }
+    },
+    "feedback": "反馈处理",
+    "feedback_independence": "反馈验收须独立于交付、报告评审及反馈规划和复现。"
   }
 }

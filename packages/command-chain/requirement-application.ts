@@ -1,4 +1,4 @@
-import type { EngineeringTeamBinding } from "./team-store";
+import { EngineeringTeamStore,type EngineeringTeamBinding } from "./team-store";
 import { createHash, randomUUID } from "node:crypto";
 import {existsSync} from "node:fs";
 import type { DatabaseSync } from "node:sqlite";
@@ -382,6 +382,13 @@ export class RequirementApplication {
     }catch(error){this.db.exec("ROLLBACK");throw error;}
   }
   private activeFeedback(record:Record){return this.feedback.list(record.workspaceId,record.issueId).findLast(batch=>batch.policy && !["completed","cancelled"].includes(batch.status));}
+  feedbackWorkScope(workspaceId:string,issueId:string,input:{batch_id:string;expected_version:number}){
+    const record=this.current(workspaceId,issueId),batch=record && this.activeFeedback(record);
+    if(!record || !batch?.triage || batch.id!==input.batch_id || batch.version!==input.expected_version && !record.feedbackWork.some(work=>work.batchId===batch.id))throw new DraftConflictError("Feedback batch changed before Team work authorization");
+    const groups=batch.groups.filter(group=>["bug","behavior_change","scope_addition","technical_change"].includes(group.descriptor.workType));
+    if(!groups.length)throw new DraftConflictError("Feedback batch has no forward delivery work");
+    return {needs_reproduction:groups.some(group=>group.descriptor.workType==="bug"),revision:record.contextContract.binding.revision,version:batch.version};
+  }
   private async beginFeedback(record:Record,request:ApplicationRequest){
     if(request.actor.kind !== "human" || !this.definitions?.feedback)throw new Error("Only a human can capture native feedback");
     const input=z.strictObject({request_id:z.uuid(),expected_revision:sequence,expected_sequence:sequence,expected_batch_number:sequence,agent_id:z.uuid(),verifier_id:z.uuid(),comments:z.array(feedbackCommentSchema).min(1).max(100),restore_done:z.boolean(),execution_resources:z.array(z.strictObject({path:text,mode:z.enum(["in_place","worktree"])})).length(2),native_unit_ids:z.array(z.uuid()).min(1)}).parse(request.payload);
@@ -532,6 +539,10 @@ export class RequirementApplication {
       if(feedback){const candidate=record.reviews.at(-1),saved=candidate?.contract.correction?.batchId === feedback.id && !candidate.settled ? await this.drafts.read(candidate.draftId) : undefined;if(candidate && saved?.status === "completed")await this.settleReview(record,saved);}
       if(feedback){const next=this.nextFeedbackCorrection(record,feedback),baseline=record.reviews.at(-1);if(next && baseline){pending.push({workspace_id:record.workspaceId,issue_id:record.issueId,agent_id:baseline.agentId,user_id:feedback.createdBy,task_id:stableId(`multica:feedback:report:${feedback.id}:${next.id}`),expected_revision:record.contextContract.binding.revision,expected_sequence:feedback.version,feedback_batch_id:feedback.id,feedback_group_id:next.id,reason:"feedback_report_next"});continue;}}
       if(feedback){const next=this.nextFeedbackVerification(record,feedback);if(next){pending.push({workspace_id:record.workspaceId,issue_id:record.issueId,agent_id:feedback.policy!.verifierId,user_id:feedback.createdBy,task_id:stableId(`multica:feedback:verify:${next.group.id}:${next.commentId}`),expected_revision:record.contextContract.binding.revision,expected_sequence:feedback.version,feedback_batch_id:feedback.id,feedback_group_id:next.group.id,feedback_comment_id:next.commentId,reason:"feedback_verify_next"});continue;}}
+      if(feedback?.triage && !record.feedbackWork.some(work=>work.batchId===feedback.id) && feedback.groups.some(group=>["bug","behavior_change","scope_addition","technical_change"].includes(group.descriptor.workType))){
+        const binding=new EngineeringTeamStore(this.db).binding(record.workspaceId,record.issueId),policy=binding?.profile.definition.feedback;
+        if(policy){pending.push({workspace_id:record.workspaceId,issue_id:record.issueId,agent_id:policy.planner,user_id:binding!.startedBy,task_id:stableId(`multica:team:feedback-work:${feedback.id}`),expected_revision:record.contextContract.binding.revision,expected_sequence:feedback.version,feedback_batch_id:feedback.id,reason:"team_feedback_work"});continue;}
+      }
       const latestFeedback=this.feedback.list(record.workspaceId,record.issueId).at(-1);
       if(!feedback && !this.feedback.unresolved(record.workspaceId,record.issueId).length && this.needsFeedbackReview(record)){const review=record.reviews.at(-1)!,draft=await this.drafts.read(review.draftId);pending.push({workspace_id:record.workspaceId,issue_id:record.issueId,agent_id:review.agentId,user_id:review.userId,task_id:stableId(`multica:feedback:review:${latestFeedback!.id}`),expected_revision:record.contextContract.binding.revision,expected_sequence:draft?.sequence ?? 0,reason:"feedback_review_next"});continue;}
       if(latestFeedback?.status === "completed" && !latestFeedback.nativeRestored && latestFeedback.policy?.restoreDone && !this.feedback.unresolved(record.workspaceId,record.issueId).length && latestFeedback.groups.every(group=>["reply","historical_correction","learning_only"].includes(group.descriptor.workType)))pending.push({workspace_id:record.workspaceId,issue_id:record.issueId,agent_id:latestFeedback.policy.agentId,user_id:latestFeedback.createdBy,task_id:stableId(`multica:feedback:restore:${latestFeedback.id}`),expected_revision:record.contextContract.binding.revision,expected_sequence:latestFeedback.version,feedback_batch_id:latestFeedback.id,reason:"feedback_restore"});

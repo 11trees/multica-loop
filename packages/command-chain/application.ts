@@ -31,7 +31,7 @@ const coordinator = z.strictObject({ kind: z.literal("coordinator") });
 const actor = z.discriminatedUnion("kind", [human, task, daemon, host, coordinator, teamManager]);
 export const applicationRequestSchema = z.strictObject({
   actor,
-  action: z.enum(["team-routing", "team-delivery-scope", "team-review", "team-lookup", "team-start", "team-profile", "team-bind", "team-binding", "execution-permission", "process", "process-scope", "intervention-request", "repair-source", "repair-observations", "repair-observation-ack", "configure-direct","direct-run","direct-submit","direct-scope","direct-completed","business-handoff","end-to-end-scope","business-scope","business-read","business-comment","business-comment-intent","business-comment-ack","business-comment-resolved","business-comment-protected","configure-business", "configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations", "verified-binding", "publication", "publication-ack", "delivery-policy", "activate-unit", "accept-unit", "parent-scope", "review-inputs", "configure-review", "review-ack", "begin-feedback", "cancel-feedback", "feedback-restored", "authorize-feedback-work", "prepare-feedback-verification", "prepare-feedback-report"]),
+  action: z.enum(["team-feedback-scope", "team-routing", "team-delivery-scope", "team-review", "team-lookup", "team-start", "team-profile", "team-bind", "team-binding", "execution-permission", "process", "process-scope", "intervention-request", "repair-source", "repair-observations", "repair-observation-ack", "configure-direct","direct-run","direct-submit","direct-scope","direct-completed","business-handoff","end-to-end-scope","business-scope","business-read","business-comment","business-comment-intent","business-comment-ack","business-comment-resolved","business-comment-protected","configure-business", "configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations", "verified-binding", "publication", "publication-ack", "delivery-policy", "activate-unit", "accept-unit", "parent-scope", "review-inputs", "configure-review", "review-ack", "begin-feedback", "cancel-feedback", "feedback-restored", "authorize-feedback-work", "prepare-feedback-verification", "prepare-feedback-report"]),
   payload: z.unknown().optional(),
   host_version: z.string().optional(),
 });
@@ -509,6 +509,13 @@ export class EngineeringApplication {
       const input=z.strictObject({execution_resources:z.array(z.strictObject({path:text,mode:z.enum(["in_place","worktree"])})).length(6)}).optional().parse(request.payload);
       return this.requirements.teamDeliveryScope(actor.workspaceId,actor.issueId,input?.execution_resources);
     }
+    if(action==="team-feedback-scope"){
+      if(actor.kind!=="host")throw new Error("Only the host can inspect Team Feedback authority");
+      const binding=new EngineeringTeamStore(this.db).binding(actor.workspaceId,actor.issueId),policy=binding?.profile.definition.feedback;
+      if(!binding || !policy)throw new DraftConflictError("This task's frozen Team has no Feedback policy");
+      const payload=z.strictObject({batch_id:z.uuid(),expected_version:sequence}).parse(request.payload);
+      return {...policy,user_id:binding.startedBy,...this.requirements.feedbackWorkScope(actor.workspaceId,actor.issueId,payload)};
+    }
     if(action==="team-review"){
       if(actor.kind!=="host")throw new Error("Only the host can schedule the Team's frozen reviewer");
       const binding=new EngineeringTeamStore(this.db).binding(actor.workspaceId,actor.issueId);if(!binding)throw new DraftConflictError("Team task binding unavailable");
@@ -574,6 +581,19 @@ export class EngineeringApplication {
     if(["configure-direct","configure-business","configure","delivery-policy"].includes(action) && new EngineeringTeamStore(this.db).binding(actor.workspaceId,actor.issueId))throw new DraftConflictError("Task execution settings belong to its frozen Team");
     if(action==="configure-review" && actor.kind==="human"){
       const binding=new EngineeringTeamStore(this.db).binding(actor.workspaceId,actor.issueId);if(binding && binding.startedBy!==actor.userId)throw new DraftConflictError("Team review retains its original human authorization");
+    }
+    if(action==="begin-feedback" || action==="authorize-feedback-work"){
+      const binding=new EngineeringTeamStore(this.db).binding(actor.workspaceId,actor.issueId);
+      if(binding){
+        const policy=binding.profile.definition.feedback;if(actor.kind!=="human" || actor.userId!==binding.startedBy || !policy)throw new DraftConflictError("Feedback retains its frozen Team policy and human authority");
+        if(action==="begin-feedback"){
+          const input=z.object({agent_id:z.uuid(),verifier_id:z.uuid()}).parse(request.payload);
+          if(input.agent_id!==policy.triager || input.verifier_id!==policy.verifier)throw new DraftConflictError("Feedback roles belong to the frozen Team");
+        }else{
+          const input=z.object({planner_agent_id:z.uuid(),reproduction_agent_id:z.uuid().optional()}).parse(request.payload);
+          if(input.planner_agent_id!==policy.planner || input.reproduction_agent_id && input.reproduction_agent_id!==policy.reproducer)throw new DraftConflictError("Feedback work roles belong to the frozen Team");
+        }
+      }
     }
     const pending = this.interventions.pending(actor.workspaceId, actor.issueId);
     if(action==="process"){

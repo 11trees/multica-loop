@@ -2236,6 +2236,7 @@
     "task_materials": "材料与上下文",
     "task_saved": "任务已保存，可重试启动团队工作流。",
     "save_task_draft": "保存草稿",
-    "create_start": "创建并启动"
+    "create_start": "创建并启动",
+    "team_feedback_notice": "反馈会重新打开任务，由冻结的团队配置安排角色并继续推进。"
   }
 }

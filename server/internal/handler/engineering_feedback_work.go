@@ -15,10 +15,10 @@ func (h *Handler) AuthorizeEngineeringFeedbackWork(w http.ResponseWriter, r *htt
 		return
 	}
 	var payload struct {
-		BatchID         string `json:"batch_id"`
-		ExpectedVersion int    `json:"expected_version"`
-		PlannerID       string `json:"planner_agent_id"`
-		ReproducerID    string `json:"reproduction_agent_id,omitempty"`
+		BatchID         string  `json:"batch_id"`
+		ExpectedVersion int     `json:"expected_version"`
+		PlannerID       *string `json:"planner_agent_id"`
+		ReproducerID    *string `json:"reproduction_agent_id,omitempty"`
 	}
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
 	decoder.DisallowUnknownFields()
@@ -30,14 +30,36 @@ func (h *Handler) AuthorizeEngineeringFeedbackWork(w http.ResponseWriter, r *htt
 	if !ok {
 		return
 	}
+	policy, err := h.frozenEngineeringTeamFeedback(r.Context(), parent, userID)
+	if err != nil {
+		engineeringControlError(w, err)
+		return
+	}
+	if policy != nil {
+		if payload.PlannerID != nil || payload.ReproducerID != nil {
+			writeError(w, http.StatusBadRequest, "Feedback work roles come from the frozen Team")
+			return
+		}
+		result, err := h.authorizeEngineeringTeamFeedbackWork(r.Context(), parent, userID, uuidToString(batchID), payload.ExpectedVersion)
+		if err != nil {
+			engineeringControlError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+		return
+	}
 	units, err := h.loadReviewUnits(r.Context(), parent, true)
 	if err != nil {
 		engineeringControlError(w, err)
 		return
 	}
-	ids := []string{payload.PlannerID}
-	if payload.ReproducerID != "" {
-		ids = append(ids, payload.ReproducerID)
+	planner := ""
+	if payload.PlannerID != nil {
+		planner = *payload.PlannerID
+	}
+	ids := []string{planner}
+	if payload.ReproducerID != nil && *payload.ReproducerID != "" {
+		ids = append(ids, *payload.ReproducerID)
 	}
 	resources := make([]map[string]string, 0, len(ids))
 	roles := make([]string, 0, len(ids))
