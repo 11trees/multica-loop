@@ -16,11 +16,13 @@ three-assistance-attempt loop would therefore route current faults incorrectly.
 
 The target implements the terminal handoff and immutable pending observation.
 [Independent Admin observation, supervision and investigation](admin.md) now retain it
-in a separate management Case. Investigation/diagnosis, repair workspaces,
-separate verification, resource takeover, business recovery and runtime update
-are not yet connected. Pending handoffs intentionally remain blocked until that
-path is implemented. No text resolution or ordinary Continue action substitutes
-for verified repair or arbitration.
+in a separate management Case. Controlled investigation, physical resource
+takeover, [scoped repair writes and candidate capture](repair-workspace.md), and
+[separate independent verification](repair-verification.md) are connected.
+Independent diagnosis, isolated repair builds, verified business recovery and
+runtime update remain incomplete. Pending business handoffs remain blocked until
+verified recovery is connected. No text resolution or ordinary Continue action
+substitutes for verified repair or arbitration.
 
 ## Agent protocol
 
