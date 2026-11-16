@@ -98,5 +98,7 @@ separate check found no remaining drill database and confirmed the source
 PostgreSQL inventory and both native SQLite/WAL preimages unchanged. The saved
 source cutover remains `source_frozen`, without activation. No restored service,
 configuration or provider ran. This accepts this local isolated data-restore
-exercise; live recovery, host portability, source repository retention and
-post-activation rollback remain unaccepted.
+exercise; live recovery, host portability, other source repository/ignored-data retention and
+post-activation rollback remain unaccepted. The active acknowledged source
+workspace now has its own [retention and restore exercise](workspace-retention.md);
+it is separate from this native database backup.

@@ -806,7 +806,10 @@ recorded separately from controlled parser/capture tests.
    checks pass. The [local target backup and isolated restore](target-backup.md)
    exercise now preserves the stopped target cohort and verifies all 196 native
    PostgreSQL tables, both SQLite stores, selected history and retained files.
-   This does not authorize a live restore, repository ownership or provider launch.
+   This does not authorize a live restore, repository ownership or provider launch. The
+   [acknowledged active workspace](workspace-retention.md) also has retained file/
+   staging/Git bytes and a matching isolated restore. Ignored/external material
+   and other repository roots remain separate acceptance work.
 
 Controlled tests cover committed WAL capture, unchanged source bytes,
 application-credential exclusion, original IDs and lossless integers, stale
