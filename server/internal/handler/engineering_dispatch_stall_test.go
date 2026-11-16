@@ -11,13 +11,24 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/multica-ai/multica/server/internal/testutil"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
 // PostgreSQL and normal queue selection are real; SQLite and management proof
 // compilation have their own canonical tests behind these host-only ports.
 func TestEngineeringDispatchStallTakeback(t *testing.T) {
-	for _, mode := range []string{"held", "stop-before-native", "retry-deferred", "unknown-controller", "not-due", "capacity-wait", "claim-raced", "hold-reply-lost", "observe-reply-lost", "ack-reply-lost", "stop-after-native"} {
+	for _, kind := range []string{"prepared", "bound-entry", "bound-continuation", "bound-failed", "bound-answered"} {
+		t.Run(kind, func(t *testing.T) { testEngineeringDispatchStallTakeback(t, kind) })
+	}
+}
+func testEngineeringDispatchStallTakeback(t *testing.T, kind string) {
+	bound := kind != "prepared"
+	modes := []string{"held", "stop-before-native", "retry-deferred", "unknown-controller", "not-due", "capacity-wait", "claim-raced", "hold-reply-lost", "observe-reply-lost", "ack-reply-lost", "stop-after-native"}
+	if bound {
+		modes = append(modes, "source-context-raced", "source-claim-raced", "queued-hint-raced")
+	}
+	for _, mode := range modes {
 		t.Run(mode, func(t *testing.T) {
 			ctx := context.Background()
 			f := newRecoveryWatchFixture(t)
@@ -39,6 +50,48 @@ func TestEngineeringDispatchStallTakeback(t *testing.T) {
 				dbfx.Exec(t, "UPDATE engineering_run_guard SET phase='preparing',no_provider_started=false WHERE task_id=$1", f.controllerFixture.task)
 			}
 			c := engineeringRecoveryCheckpoint{Hash: strings.Repeat("b", 64), CaseID: p.CaseID, VerificationAttemptID: p.VerificationAttemptID, TargetHash: p.TargetHash, ApplicationHash: p.ApplicationHash, ReadyHash: p.ReadyHash, EntryTaskID: p.TaskID, TaskID: p.TaskID, WorkspaceID: p.WorkspaceID, IssueID: p.IssueID, AgentID: p.AgentID, UserID: p.UserID, RuntimeID: p.RuntimeID, ProjectID: f.project, DraftID: f.application.DraftID, Revision: 1, Sequence: 5, Preparation: &engineeringRecoveryPreparation{ObservationID: "retained-original", ReceiptHash: strings.Repeat("d", 64), SourceAttemptID: anchor, BindingsHash: strings.Repeat("e", 64)}}
+			queuedTaskID := p.TaskID
+			sourceKind := "prepared-dispatch"
+			if bound {
+				dbfx.Exec(t, "UPDATE agent_task_queue SET status='completed',dispatched_at=now()-interval '1 minute',started_at=now()-interval '1 minute',completed_at=now() WHERE id=$1", p.TaskID)
+				actual, e := f.h.Queries.GetAgentTask(ctx, parseUUID(p.TaskID))
+				if e != nil {
+					t.Fatal(e)
+				}
+				if kind == "bound-failed" {
+					dbfx.Exec(t, "UPDATE agent_task_queue SET status='failed',failure_reason='fixture predecessor failure' WHERE id=$1", p.TaskID)
+				}
+				if kind == "bound-answered" {
+					c.AwaitingResume = true
+				}
+				c.AttemptID = p.TaskID + ":" + strconv.FormatInt(actual.DispatchedAt.Time.UnixMicro(), 10)
+				c.Preparation = nil
+				c.Sequence = 6
+				anchor = c.AttemptID
+				sourceKind = "bound-dispatch"
+				if kind == "bound-continuation" {
+					sourceHint := engineeringEntryRecoveryHint(f.published.Ready, f.application.DraftID)
+					sourceHint.Kind = "continuation"
+					sourceHint.Sequence = 6
+					sourceHint.Hash = sourceHint.Digest()
+					raw, _ := json.Marshal(map[string]any{"engineering_recovery": sourceHint})
+					c.TaskID = dbfx.Task(t, p.AgentID, map[string]any{"issue_id": p.IssueID, "runtime_id": p.RuntimeID, "originator_user_id": p.UserID, "accountable_user_id": p.UserID, "status": "completed", "dispatched_at": testutil.Raw("now()-interval '1 minute'"), "started_at": testutil.Raw("now()-interval '1 minute'"), "completed_at": testutil.Raw("now()"), "context": json.RawMessage(raw)})
+					current, e := f.h.Queries.GetAgentTask(ctx, parseUUID(c.TaskID))
+					if e != nil {
+						t.Fatal(e)
+					}
+					c.AttemptID = c.TaskID + ":" + strconv.FormatInt(current.DispatchedAt.Time.UnixMicro(), 10)
+					c.Sequence = 7
+					c.ExecutionHintHash = &sourceHint.Hash
+					anchor = c.AttemptID
+				}
+				hint := engineeringEntryRecoveryHint(f.published.Ready, f.application.DraftID)
+				hint.Kind = "continuation"
+				hint.Sequence = c.Sequence
+				hint.Hash = hint.Digest()
+				contextJSON, _ := json.Marshal(map[string]any{"engineering_recovery": hint})
+				queuedTaskID = dbfx.Task(t, p.AgentID, map[string]any{"issue_id": p.IssueID, "runtime_id": p.RuntimeID, "originator_user_id": p.UserID, "accountable_user_id": p.UserID, "status": "queued", "priority": 50, "context": json.RawMessage(contextJSON)})
+			}
 			var sample engineeringReadinessObservation
 			var held json.RawMessage
 			var proof *engineeringDispatchStall
@@ -49,13 +102,22 @@ func TestEngineeringDispatchStallTakeback(t *testing.T) {
 				case "team-routing":
 					return json.RawMessage(`{"owned":false,"binding":null,"profile":null}`), nil
 				case "repair-dispatch-readiness":
-					return json.Marshal(map[string]any{"workspaceId": p.WorkspaceID, "issueId": p.IssueID, "target_hash": p.TargetHash, "application_hash": p.ApplicationHash, "ready_hash": p.ReadyHash, "entry_task_id": p.TaskID, "agent_id": p.AgentID, "user_id": p.UserID, "hash": strings.Repeat("a", 64), "state": "eligible", "reason": "prepared-entry", "task_id": p.TaskID, "draft_id": f.application.DraftID, "revision": 1, "sequence": 5})
+					return json.Marshal(map[string]any{"workspaceId": p.WorkspaceID, "issueId": p.IssueID, "target_hash": p.TargetHash, "application_hash": p.ApplicationHash, "ready_hash": p.ReadyHash, "entry_task_id": p.TaskID, "agent_id": p.AgentID, "user_id": p.UserID, "hash": strings.Repeat("a", 64), "state": "eligible", "reason": "prepared-entry", "task_id": c.TaskID, "attempt_id": c.AttemptID, "draft_id": f.application.DraftID, "revision": 1, "sequence": c.Sequence})
 				case "repair-recovery-checkpoint":
 					if held != nil {
 						return json.Marshal(map[string]any{"held": held})
 					}
+					if mode == "source-context-raced" {
+						dbfx.Exec(t, `UPDATE agent_task_queue SET context=COALESCE(context,'{}'::jsonb)||'{"changed":true}'::jsonb WHERE id=$1`, c.TaskID)
+					}
+					if mode == "source-claim-raced" {
+						dbfx.Exec(t, "UPDATE agent_task_queue SET dispatched_at=dispatched_at+interval '1 second' WHERE id=$1", c.TaskID)
+					}
+					if mode == "queued-hint-raced" {
+						dbfx.Exec(t, "UPDATE agent_task_queue SET context='{}'::jsonb WHERE id=$1", queuedTaskID)
+					}
 					if mode == "claim-raced" {
-						dbfx.Exec(t, "UPDATE agent_task_queue SET status='running',dispatched_at=now() WHERE id=$1", f.task.ID)
+						dbfx.Exec(t, "UPDATE agent_task_queue SET status='running',dispatched_at=now() WHERE id=$1", queuedTaskID)
 					}
 					return json.Marshal(map[string]any{"checkpoint": c})
 				case "repair-dispatch-hold":
@@ -82,10 +144,10 @@ func TestEngineeringDispatchStallTakeback(t *testing.T) {
 					var value struct {
 						Native engineeringDispatchStall `json:"native"`
 					}
-					if json.Unmarshal(body, &value) != nil || value.Native.Hash != marker.Hash || value.Native.Preparation.SourceAttemptID != anchor {
+					if json.Unmarshal(body, &value) != nil || value.Native.Hash != marker.Hash || engineeringDispatchAnchor(value.Native) != anchor {
 						t.Fatal("dispatch hold changed its actual source")
 					}
-					held, _ = json.Marshal(map[string]any{"workspaceId": p.WorkspaceID, "issueId": p.IssueID, "agentId": p.AgentID, "attemptId": anchor, "sourceKind": "prepared-dispatch", "chain": "verification", "observationId": "dispatch-stall:" + p.TargetHash, "summary": "Queue remained runnable without a native claim", "snapshotHash": strings.Repeat("3", 64), "requestHash": strings.Repeat("4", 64), "kernelVersion": "sha256:" + strings.Repeat("5", 64), "hostVersion": f.h.EngineeringHostVersion, "dispatchStall": marker})
+					held, _ = json.Marshal(map[string]any{"workspaceId": p.WorkspaceID, "issueId": p.IssueID, "agentId": p.AgentID, "attemptId": anchor, "sourceKind": sourceKind, "chain": "verification", "observationId": "dispatch-stall:" + p.TargetHash, "summary": "Queue remained runnable without a native claim", "snapshotHash": strings.Repeat("3", 64), "requestHash": strings.Repeat("4", 64), "kernelVersion": "sha256:" + strings.Repeat("5", 64), "hostVersion": f.h.EngineeringHostVersion, "dispatchStall": marker})
 					if mode == "hold-reply-lost" && !lost {
 						lost = true
 						return nil, fmt.Errorf("hold reply lost")
@@ -171,10 +233,16 @@ func TestEngineeringDispatchStallTakeback(t *testing.T) {
 				}
 				err = nil
 			}
+			if mode == "source-claim-raced" {
+				if err == nil {
+					t.Fatal("changed bound claim reserved a continuation")
+				}
+				err = nil
+			}
 			if err != nil {
 				t.Fatal(err)
 			}
-			success := mode != "stop-before-native" && mode != "retry-deferred" && mode != "unknown-controller" && mode != "not-due" && mode != "capacity-wait" && mode != "claim-raced"
+			success := mode != "stop-before-native" && mode != "retry-deferred" && mode != "unknown-controller" && mode != "not-due" && mode != "capacity-wait" && mode != "claim-raced" && mode != "source-context-raced" && mode != "source-claim-raced" && mode != "queued-hint-raced"
 			if acked != success || (observations > 0) != success {
 				t.Fatal("dispatch takeback ignored eligibility or lost Case linkage", mode, acked, observations)
 			}
@@ -192,6 +260,26 @@ func TestEngineeringDispatchStallTakeback(t *testing.T) {
 				source := engineeringTakeoverSource{CaseID: p.CaseID, WorkspaceID: p.WorkspaceID, IssueID: p.IssueID, AgentID: p.AgentID, AttemptID: anchor, DispatchHoldHash: &marker.Hash, DispatchTaskID: &marker.TaskID}
 				if e = f.h.validateEngineeringDispatchSource(ctx, source); e != nil {
 					t.Fatal(e)
+				}
+				if bound {
+					b := marker.BoundSource
+					if b == nil || b.AttemptID != anchor || b.TaskID == marker.TaskID {
+						t.Fatal("bound continuation lost its distinct actual predecessor")
+					}
+					originalSource, e := f.h.Queries.GetAgentTask(ctx, parseUUID(b.TaskID))
+					if e != nil {
+						t.Fatal(e)
+					}
+					dbfx.Exec(t, "UPDATE agent_task_queue SET dispatched_at=dispatched_at+interval '1 second' WHERE id=$1", b.TaskID)
+					if e = f.h.validateEngineeringDispatchSource(ctx, source); e == nil {
+						t.Fatal("changed predecessor claim retained dispatch authority")
+					}
+					dbfx.Exec(t, "UPDATE agent_task_queue SET dispatched_at=$2 WHERE id=$1", b.TaskID, originalSource.DispatchedAt)
+					dbfx.Exec(t, `UPDATE agent_task_queue SET context=COALESCE(context,'{}'::jsonb)||'{"changed":true}'::jsonb WHERE id=$1`, b.TaskID)
+					if e = f.h.validateEngineeringDispatchSource(ctx, source); e == nil {
+						t.Fatal("changed predecessor context retained dispatch authority")
+					}
+					dbfx.Exec(t, "UPDATE agent_task_queue SET context=$2 WHERE id=$1", b.TaskID, originalSource.Context)
 				}
 				dbfx.Exec(t, "UPDATE engineering_repair_publication SET payload=jsonb_set(payload::jsonb,'{publication,published}','false'::jsonb)::text WHERE target_hash=$1", p.TargetHash)
 				if e = f.h.validateEngineeringDispatchSource(ctx, source); e == nil {
@@ -231,5 +319,20 @@ func TestEngineeringDispatchStallHashMatchesKernel(t *testing.T) {
 	value.Preparation.SourceAttemptID = "changed"
 	if engineeringDispatchStallHash(value) == value.Hash {
 		t.Fatal("dispatch hold lost retained binding provenance")
+	}
+}
+
+func TestEngineeringBoundDispatchStallHashMatchesKernel(t *testing.T) {
+	raw, err := os.ReadFile("../../../packages/command-chain/test-helpers/repair-bound-dispatch-stall.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var proof engineeringDispatchStall
+	if json.Unmarshal(raw, &proof) != nil || proof.BoundSource == nil || proof.Preparation != nil || engineeringDispatchStallHash(proof) != proof.Hash {
+		t.Fatal("native and kernel bound dispatch witnesses differ")
+	}
+	proof.BoundSource.AttemptID += "changed"
+	if engineeringDispatchStallHash(proof) == proof.Hash {
+		t.Fatal("bound dispatch lost its actual claim")
 	}
 }

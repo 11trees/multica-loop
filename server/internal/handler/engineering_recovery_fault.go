@@ -23,6 +23,7 @@ type engineeringRecoveryPreparation struct {
 	BindingsHash    string `json:"bindings_hash"`
 }
 type engineeringRecoveryCheckpoint struct {
+	AwaitingResume        bool                            `json:"awaiting_resume,omitempty"`
 	Preparation           *engineeringRecoveryPreparation `json:"preparation,omitempty"`
 	Hash                  string                          `json:"hash"`
 	CaseID                string                          `json:"case_id"`
@@ -114,7 +115,7 @@ func (h *Handler) observeEngineeringRecoveryFailure(ctx context.Context, input e
 		return map[string]bool{"closed": false, "held": true}, nil
 	}
 	c := state.Checkpoint
-	if c == nil {
+	if c == nil || c.AwaitingResume {
 		return map[string]bool{"closed": false}, nil
 	}
 	if len(c.Hash) != 64 || c.CaseID != p.CaseID || c.VerificationAttemptID != p.VerificationAttemptID || c.TargetHash != p.TargetHash || c.ApplicationHash != p.ApplicationHash || c.ReadyHash != p.ReadyHash || c.EntryTaskID != p.TaskID || c.WorkspaceID != p.WorkspaceID || c.IssueID != p.IssueID || c.AgentID != p.AgentID || c.UserID != p.UserID || c.RuntimeID != p.RuntimeID || c.ProjectID != r.ProjectID || c.Sequence < r.Continuation.ExpectedSequence || c.Revision != r.Continuation.ExpectedRevision || engineeringOptionalText(c.DraftID) != engineeringOptionalText(observed.Application.DraftID) {

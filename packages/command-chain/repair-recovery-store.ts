@@ -44,8 +44,8 @@ export function readRecoveryCheckpoint(db:DatabaseSync,scope:{workspaceId:string
  let draft:ChainDraft|null=null,execution:string|null=null;
  if(p.checkpoint.kind==="yaml"){
   const row=db.prepare("SELECT payload FROM chain_drafts WHERE id=?").get(p.checkpoint.draft.id);if(!row)throw new DraftConflictError("Recovery draft disappeared");draft=draftSchema.parse(JSON.parse(String(row.payload)));
-  if(draft.status==="waiting_for_answers")return {checkpoint:null,reason:"waiting-for-answers"};
-  if(draft.status!=="editing"||!draft.phase)return {checkpoint:null,reason:"stage-ended"};
+  if(draft.status==="waiting_for_answers"&&draft.runtimeInputs.some(input=>input.active&&!input.answer))return {checkpoint:null,reason:"waiting-for-answers"};
+  if(!["editing","waiting_for_answers"].includes(draft.status)||!draft.phase)return {checkpoint:null,reason:"stage-ended"};
   if(draft.runtimeInputs.some(input=>input.active&&!input.answer))return {checkpoint:null,reason:"waiting-for-answers"};
   if(JSON.stringify(draft.binding)!==JSON.stringify(p.checkpoint.draft.binding)||JSON.stringify(draft.definition)!==JSON.stringify(p.checkpoint.draft.definition))throw new DraftConflictError("Recovery draft changed its frozen contract or definition");
   if(p.rootKind==="direct")throw new DraftConflictError("A YAML recovery needs its native workflow owner");
@@ -55,7 +55,7 @@ export function readRecoveryCheckpoint(db:DatabaseSync,scope:{workspaceId:string
   if(actual.repositoryPath!==binding.repositoryPath||actual.draftId&&actual.draftId!==draft.id||actual.feedbackCheckpoint&&actual.feedbackCheckpoint.draftId!==draft.id)throw new DraftConflictError("Recovery observation changed its execution stage");
  }
  const captured=snapshot(prepared,draft,attemptId,binding.repositoryPath,original),position={chain:original.chain,draftId:draft?.id??null,phase:draft?.phase??"bound",revision:c.expected_revision,sequence:draft?.sequence??z.object({version:z.number().int()}).parse(JSON.parse(root)).version};
- const body={...input,case_id:p.target.caseId,verification_attempt_id:p.target.verificationAttemptId,project_id:p.target.workspaceBinding.projectId,runtime_id:p.target.workspaceBinding.runtimeId,user_id:c.user_id,entry_task_id:c.task_id,task_id:taskId,attempt_id:attemptId,execution_hint_hash:hint?.hash??null,workspace_id:scope.workspaceId,issue_id:scope.issueId,agent_id:c.agent_id,revision:position.revision,sequence:position.sequence,chain:position.chain,draft_id:position.draftId,root_hash:handoffHash(root),snapshot_hash:handoffHash(captured),physical_hash:handoffHash(String(physical.payload)),execution_hash:handoffHash(execution)};
+ const body={...input,...(draft?.status==="waiting_for_answers"?{awaiting_resume:true}:{}),case_id:p.target.caseId,verification_attempt_id:p.target.verificationAttemptId,project_id:p.target.workspaceBinding.projectId,runtime_id:p.target.workspaceBinding.runtimeId,user_id:c.user_id,entry_task_id:c.task_id,task_id:taskId,attempt_id:attemptId,execution_hint_hash:hint?.hash??null,workspace_id:scope.workspaceId,issue_id:scope.issueId,agent_id:c.agent_id,revision:position.revision,sequence:position.sequence,chain:position.chain,draft_id:position.draftId,root_hash:handoffHash(root),snapshot_hash:handoffHash(captured),physical_hash:handoffHash(String(physical.payload)),execution_hash:handoffHash(execution)};
  return {checkpoint:{...body,hash:handoffHash(body)},reason:"editable",held:undefined,snapshot:captured,position};
 }
 

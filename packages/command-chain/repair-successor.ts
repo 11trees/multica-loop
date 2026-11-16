@@ -37,7 +37,7 @@ export function prepareRepairSuccessor(previous: ChainDraft, rawContract: Record
   }
   const contract = z.record(z.string(), z.unknown()).parse(schema.parse({ ...rawContract, binding }));
   const phase = Object.keys(previous.definition.phases)[0];
-  if (!phase || previous.status !== "editing" || previous.runtimeInputs.some(input => input.active && !input.answer)) {
+  if (!phase || !["editing", "waiting_for_answers"].includes(previous.status) || previous.runtimeInputs.some(input => input.active && !input.answer)) {
     throw new DraftConflictError("Repair successor requires an editable checkpoint without unanswered input");
   }
   // Scenarios describe Expected. Results and reviews describe the old Actual.

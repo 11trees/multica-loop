@@ -18,7 +18,7 @@ import (
 // Native claims/queue/controllers/publications are real. Node tests own the
 // checkpoint and immutable business outbox; management tests own Case storage.
 func TestEngineeringRecoveryFault(t *testing.T) {
-	for _, mode := range []string{"prebind-failed", "prebind-no-claim", "prebind-bound-claim", "failed", "completed-no-result", "unknown-exit", "continuation", "running", "cancelled", "human-wait", "retry-queued", "retry-deferred", "retry-running", "changed-claim", "changed-draft", "changed-sequence", "changed-context-hint", "stop-before-hold", "stop-after-hold", "hold-ack-lost", "observe-ack-lost", "business-ack-lost", "changed-held-case"} {
+	for _, mode := range []string{"prebind-failed", "prebind-no-claim", "prebind-bound-claim", "failed", "completed-no-result", "unknown-exit", "continuation", "running", "cancelled", "human-wait", "answered-continuation", "retry-queued", "retry-deferred", "retry-running", "changed-claim", "changed-draft", "changed-sequence", "changed-context-hint", "stop-before-hold", "stop-after-hold", "hold-ack-lost", "observe-ack-lost", "business-ack-lost", "changed-held-case"} {
 		t.Run(mode, func(t *testing.T) {
 			ctx := context.Background()
 			f := newTakeoverControlFixture(t)
@@ -99,6 +99,9 @@ func TestEngineeringRecoveryFault(t *testing.T) {
 					wrong := strings.Repeat("9", 64)
 					checkpoint.ExecutionHintHash = &wrong
 				}
+			}
+			if mode == "answered-continuation" {
+				checkpoint.AwaitingResume = true
 			}
 			if mode == "completed-no-result" {
 				dbfx.Exec(t, "UPDATE agent_task_queue SET status='completed' WHERE id=$1", taskID)
@@ -242,7 +245,7 @@ func TestEngineeringRecoveryFault(t *testing.T) {
 				}
 			}
 			refused := mode == "prebind-no-claim" || mode == "prebind-bound-claim" || mode == "changed-sequence" || mode == "changed-context-hint" || mode == "changed-claim" || mode == "changed-draft" || mode == "stop-before-hold" || mode == "changed-held-case"
-			waiting := mode == "running" || mode == "cancelled" || mode == "human-wait" || strings.HasPrefix(mode, "retry-")
+			waiting := mode == "running" || mode == "cancelled" || mode == "human-wait" || mode == "answered-continuation" || strings.HasPrefix(mode, "retry-")
 			if refused {
 				if err == nil {
 					t.Fatal("changed recovery source was accepted")

@@ -150,7 +150,10 @@ and durable eligible-time evidence are connected. An unchanged ready entry with
 a real terminal native claim can now surrender before business binding, retaining
 its original resource-anchor provenance without creating an execution binding.
 Automatic takeback of never-claimed published ready entries is connected through
-a durable native queue reservation and business outbox. Stalls in bound stages,
+a durable native queue reservation and business outbox. Bound same-stage queued
+continuations now retain an actual predecessor witness and current checkpoint
+through that handoff; answer-complete waits preserve their human facts. Stalls
+in actively executing bound stages,
 partially-bound failures and cohort-change recovery remain unconnected.
 See [the verification protocol](repair-verification.md).
 Diagnosis and external-wait prerequisites remain unconnected. No investigation
@@ -192,6 +195,10 @@ the distinct queued-task identity alongside the earlier actual resource anchor.
 Stop preserves a committed queue barrier; current running authority is required
 to finish its durable handoff. It grants no repair write authority or closure.
 See [runnable stall handoff](repair-handoff.md#runnable-stall-before-any-native-claim).
+A [bound-stage queued continuation](repair-handoff.md#runnable-stall-in-a-bound-stages-queued-continuation)
+uses a distinct witness for its actual predecessor and linked queued task.
+Fully answered waiting drafts use this dispatch path without becoming execution
+faults; source claim/context changes cannot inherit an older runnable interval.
 
 ## Native visibility
 
@@ -253,7 +260,8 @@ connects controlled task publication, resume, ordinary-result observation and
 guarded Case closure. Bound terminal failures without applied results now
 reopen the same Case while retaining its history and physical barriers.
 Readonly runnable-stall sampling and automatic takeback of never-claimed
-published ready entries are connected. Bound-stage/continuation stalls,
+published ready entries and bound same-stage queued continuations are connected.
+Actively executing bound-stage stalls,
 partially-bound failures and cohort-change recovery still require implementation. Terminal ready entries with real native
 claims now retain prepared checkpoint/resource provenance through another
 independently verified handoff. Real-provider, Linux runtime and packaged

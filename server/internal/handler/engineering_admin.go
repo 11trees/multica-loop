@@ -267,7 +267,7 @@ func (h *Handler) deliverEngineeringRepairObservation(ctx context.Context, autho
 	}
 	if observation.DispatchStall != nil {
 		proof := observation.DispatchStall
-		if observation.Recovery != nil || proof.Preparation.SourceAttemptID != observation.AttemptID || proof.AgentID != observation.AgentID || proof.WorkspaceID != observation.WorkspaceID || proof.IssueID != observation.IssueID {
+		if observation.Recovery != nil || engineeringDispatchAnchor(*proof) != observation.AttemptID || proof.AgentID != observation.AgentID || proof.WorkspaceID != observation.WorkspaceID || proof.IssueID != observation.IssueID {
 			return fmt.Errorf("stalled observation changed its retained anchor")
 		}
 		id, e := util.ParseUUID(proof.TaskID)

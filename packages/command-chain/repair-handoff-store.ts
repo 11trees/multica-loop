@@ -21,7 +21,7 @@ export function prepareRepairHandoff(db:DatabaseSync,original:InterventionRecord
     return {kind:"direct" as const,originalVersion:version,nextVersion:version+1};
   })():(()=>{
     const frozen=z.object({draft:draftSchema,contract:z.record(z.string(),z.unknown())}).parse(original.snapshot);
-    if(frozen.draft.status!=="editing"||frozen.draft.runtimeInputs.some(input=>input.active&&input.answer===null))throw new DraftConflictError("Handoff cannot bypass unresolved input or a terminal checkpoint");
+    if((frozen.draft.status!=="editing"&&!(original.dispatchStall?.bound_source&&frozen.draft.status==="waiting_for_answers"))||frozen.draft.runtimeInputs.some(input=>input.active&&input.answer===null))throw new DraftConflictError("Handoff cannot bypass unresolved input or a terminal checkpoint");
     const binding={...frozen.draft.binding,codeVersion:target.expectedVersion.split(":")[1]!,contractVersion:handoffHash({original:frozen.draft.binding.contractVersion,repair:targetHash})};
     const successor=prepareRepairSuccessor(frozen.draft,frozen.contract,binding,draftId,`repair-handoff:${targetHash}`);
     return {kind:"yaml" as const,originalDraftId:frozen.draft.id,...successor};

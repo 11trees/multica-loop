@@ -411,6 +411,55 @@ cancellation or repair writes. Independent verification/handoff prepares a new
 native task; the held task is never re-enqueued or treated as delivered work.
 Normal Done and reading gates remain independent.
 
+## Runnable stall in a bound stage's queued continuation
+
+A same-stage queued continuation can now use the same continuous runnable
+threshold after the repair entry has bound a real native claim. The source must
+still own its editable draft/Direct attempt and exact contract, with no applied
+ordinary result. The predecessor must be terminal at its actual claim; the
+separate queued task must have no claim/start and retain its host-prepared
+recovery hint for that publication, human, role and draft. Capacity, scope and
+physical cleanup checks still apply. Running work, deferred/unlinked retries,
+unresolved human inputs and terminal drafts cannot acquire this hold.
+
+The version-2 dispatch witness records `bound_source`: original entry identity,
+actual predecessor task/claim, execution-hint hash, native terminal status,
+completion timestamp and context hash. Its queued task/context and null
+claim/start remain separate. Readiness source identity includes predecessor
+claim/status/context; changes reset eligibility or refuse reservation. Under the
+project admission lock, the host locks both task rows, rechecks current business,
+queue and management facts, then persists the queue marker before the business
+hold. Publication lookup/replay locates that exact continuation marker instead
+of assuming the original entry owns every later queue reservation.
+
+Business stores emit `sourceKind: bound-dispatch` with the actual saved execution
+mapping and current checkpoint. They retain all earlier observations and do not
+insert a binding, Agent view or Direct RUN for the unclaimed continuation. The
+outbox reopens the same Case. Source inspection retains the normal actual
+resource anchor plus queued-task/marker identities. Stop and lost acknowledgements
+replay the exact durable reservation under fresh running authority; later owned
+cancellation can terminate the queued row while retaining its marker history.
+The hold still grants no process cancellation, write fence or Done authority.
+
+Answering the final human question leaves the saved draft in
+`waiting_for_answers` until a fresh runtime resumes it. Such an answer-complete
+checkpoint now reports `awaiting_resume`; terminal-failure observation and
+fault-style surrender refuse it. Only the linked queued-dispatch path can hold
+it. Independently verified handoff preserves the exact authenticated answers
+while restarting derived conclusions. Unanswered, abandoned and completed
+checkpoints remain refused. Permanent attempt/draft/grant surrender also covers
+these dispatch observations after a new generation binds.
+
+Controlled PostgreSQL tests cover prepared entries, bound entry claims, later
+bound continuation claims, failed predecessors and answer-complete continuations,
+including stop, claim races, source/context/hint changes, capacity/cleanup waits
+and interrupted acknowledgements. Business tests cover Direct/YAML holds, SQLite
+reopen, source inspection, another verified handoff, old-authority rejection,
+normal result application and retained human facts. A bundled-worker test and
+shared UTF-8 witness fixture check the private JSON boundary. Native queue facts
+are real; management/business host ports and semantic conclusions are controlled.
+This is not a real-provider or packaged recovery acceptance run.
+
 ## Remaining recovery work
 
 Observation of a normally applied recovery result and its guarded Case closure
@@ -418,7 +467,7 @@ are connected. Bound terminal executions without a result now create an
 immutable host business hold and reopen their original Case. Readonly runnable-
 dispatch sampling and durable eligible-time evidence are connected through the
 [Admin observer](admin.md#dispatch-readiness-observation). Automatic stall
-takeback for an active bound stage or its queued continuation, partially-bound
+takeback for an actively executing bound stage, partially-bound
 preparation failure holds, source/cohort changes and recovery
 of completed drafts without owner settlement still require migration. Waiting
 alone does not synthesize a successful result, fault or Case closure. Broader revocation,

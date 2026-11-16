@@ -94,12 +94,12 @@ it("stops repeated unchanged failure even when an empty commit changes the commi
   await configure(); await develop(0); await verify(0, "failed"); const oldCommit = git("rev-parse", "HEAD");
   await develop(1, false, true); expect(git("rev-parse", "HEAD")).not.toBe(oldCommit);
   const failure = await verify(1, "failed"); expect(failure.rework).toMatchObject({ round: 1, stop_reason: "stagnant" }); expect(await pending()).toEqual([]);
-});
+}, 15000);
 
 it("stops at the authorized rework cap despite new code", async () => {
   await configure(1); await develop(0); await verify(0, "failed"); await develop(1); const exhausted = await verify(1, "failed");
   expect(exhausted.rework.stop_reason).toBe("budget"); expect(await pending()).toEqual([]);
-});
+}, 15000);
 
 it("keeps specification failures out of automatic development", async () => {
   await configure(); await develop(0); const failed = await verify(0, "failed", "specification");

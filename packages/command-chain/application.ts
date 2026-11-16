@@ -617,11 +617,14 @@ export class EngineeringApplication {
         if(action==="repair-dispatch-hold"){
           if(value.held){if(input.native?.hash!==value.held.dispatchStall?.hash)throw new DraftConflictError("Dispatch hold cannot replace its native witness");this.db.exec("COMMIT");return {held:value.held};}
           const native=repairDispatchStallSchema.parse(input.native),c=value.checkpoint;
-          if(!c||!("preparation" in c)||c.attempt_id!==null||!value.snapshot||!value.position||native.checkpoint_hash!==c.hash||native.case_id!==c.case_id||native.target_hash!==c.target_hash||native.application_hash!==c.application_hash||native.ready_hash!==c.ready_hash||native.task_id!==c.task_id||native.workspace_id!==c.workspace_id||native.issue_id!==c.issue_id||native.project_id!==c.project_id||native.runtime_id!==c.runtime_id||native.agent_id!==c.agent_id||native.user_id!==c.user_id||native.verification_attempt_id!==c.verification_attempt_id||JSON.stringify(native.preparation)!==JSON.stringify(c.preparation))throw new DraftConflictError("Prepared dispatch changed before its host hold");
+          if(!c||!value.snapshot||!value.position||native.checkpoint_hash!==c.hash||native.case_id!==c.case_id||native.target_hash!==c.target_hash||native.application_hash!==c.application_hash||native.ready_hash!==c.ready_hash||native.workspace_id!==c.workspace_id||native.issue_id!==c.issue_id||native.project_id!==c.project_id||native.runtime_id!==c.runtime_id||native.agent_id!==c.agent_id||native.user_id!==c.user_id||native.verification_attempt_id!==c.verification_attempt_id)throw new DraftConflictError("Dispatch checkpoint changed before its host hold");
+          if(native.preparation){if(!("preparation" in c)||c.attempt_id!==null||native.task_id!==c.task_id||JSON.stringify(native.preparation)!==JSON.stringify(c.preparation))throw new DraftConflictError("Prepared dispatch changed before its host hold");}
+          else if(!native.bound_source||c.attempt_id===null||native.bound_source.attempt_id!==c.attempt_id||native.bound_source.task_id!==c.task_id||native.bound_source.entry_task_id!==c.entry_task_id||native.bound_source.execution_hint_hash!==c.execution_hint_hash)throw new DraftConflictError("Bound dispatch changed before its host hold");
           const held=this.interventions.holdDispatch(actor,value.position,value.snapshot,native,request.host_version);this.db.exec("COMMIT");return {held};
         }
         if(value.held){if(input.native?.hash!==value.held.recovery?.hash)throw new DraftConflictError("Recovery hold cannot replace its immutable native fault");this.db.exec("COMMIT");return {held:value.held};}
         const native=repairRecoveryFaultSchema.parse(input.native),c=value.checkpoint;
+        if(c&&"awaiting_resume" in c)throw new DraftConflictError("Answered continuation requires a native dispatch witness");
         if(!c||!value.position||!value.snapshot||native.checkpoint_hash!==c.hash||native.case_id!==c.case_id||native.target_hash!==c.target_hash||native.application_hash!==c.application_hash||native.ready_hash!==c.ready_hash||native.entry_task_id!==c.entry_task_id||native.task_id!==c.task_id||(c.attempt_id!==null&&native.attempt_id!==c.attempt_id)||JSON.stringify(native.preparation??null)!==JSON.stringify("preparation" in c?c.preparation:null)||native.workspace_id!==c.workspace_id||native.issue_id!==c.issue_id||native.execution_hint_hash!==c.execution_hint_hash||native.agent_id!==c.agent_id||native.user_id!==c.user_id||native.project_id!==c.project_id||native.runtime_id!==c.runtime_id||native.verification_attempt_id!==c.verification_attempt_id)throw new DraftConflictError("Recovery checkpoint changed before its host hold");
         const held=this.interventions.holdRecovery(actor,value.position,value.snapshot,native,request.host_version);this.db.exec("COMMIT");return {held};
       }catch(error){this.db.exec("ROLLBACK");throw error;}
@@ -666,7 +669,7 @@ export class EngineeringApplication {
         const proposal=reservedRepairProposal(this.db,reservation,original),checkpoint=proposal.checkpoint;
         const source=z.record(z.string(),z.unknown()).parse(await this.invoke({actor,action:"repair-source",payload:pin}));
         let change:HandoffRootChange;
-        if(checkpoint.kind==="direct")change=this.direct.repairSuccessor(reservation,!!(original.dispatchStall||original.recovery?.preparation));
+        if(checkpoint.kind==="direct")change=this.direct.repairSuccessor(reservation,!!(original.dispatchStall?.preparation||original.recovery?.preparation));
         else if(proposal.rootKind==="business")change=this.business.repairSuccessor(original,checkpoint);
         else if(proposal.rootKind==="requirement")change=this.requirements.repairSuccessor(original,checkpoint);
         else change=this.repairEngineeringSuccessor(original,checkpoint);
@@ -719,7 +722,7 @@ export class EngineeringApplication {
       if (actor.kind !== "host") throw new Error("Only the host can validate an Admin repair source");
       const original = this.interventions.repairSource(actor.workspaceId, actor.issueId, request.payload);
       const staged=readStagedRepair(this.db,original);if(staged)return {...staged.manifest.source,checkpoint_state:"staged",handoff_target_hash:staged.proposal.targetHash,handoff_application_hash:staged.manifest.application.hash};
-      if(original.dispatchStall||original.recovery?.preparation)return readPreparedRecoverySource(this.db,original,z.object({case_id:text}).parse(request.payload).case_id);
+      if(original.dispatchStall?.preparation||original.recovery?.preparation)return readPreparedRecoverySource(this.db,original,z.object({case_id:text}).parse(request.payload).case_id);
       const frozen = original.chain === "direct" ? z.object({ repository_path: text, code_version: z.string() }).parse(original.snapshot) : (() => { const value = z.object({repositoryPath:text,contract:z.object({binding:z.object({codeVersion:text})})}).parse(original.snapshot); return {repository_path:value.repositoryPath,code_version:value.contract.binding.codeVersion}; })();
       let registeredPath = frozen.repository_path;
       let execution: { repositoryPath: string; mode: "in_place" | "worktree" } | undefined;
@@ -748,6 +751,7 @@ export class EngineeringApplication {
       return { observation_id: original.observationId, case_id: z.object({case_id:text}).parse(request.payload).case_id,
         snapshot_hash: original.snapshotHash, receipt_hash: original.receiptHash, kernel_version: original.kernelVersion ?? null, host_version: original.hostVersion ?? null, workspace_id: original.workspaceId, issue_id: original.issueId,
         agent_id: original.agentId, attempt_id: original.attemptId, chain: original.chain, revision: original.revision, sequence: original.sequence,
+        ...(original.dispatchStall?{dispatch_hold_hash:original.dispatchStall.hash,dispatch_task_id:original.dispatchStall.task_id}:{}),
         registered_repository_path: registeredPath, execution_repository_path: execution.repositoryPath, mode: execution.mode, code_version: frozen.code_version };
     }
     if (action === "repair-observation-ack") {

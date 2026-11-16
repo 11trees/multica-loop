@@ -99,6 +99,7 @@ func (h *Handler) observeEngineeringRecoveryReadiness(ctx context.Context, raw j
 		State           string  `json:"state"`
 		Reason          string  `json:"reason"`
 		TaskID          string  `json:"task_id"`
+		AttemptID       string  `json:"attempt_id"`
 		DraftID         *string `json:"draft_id"`
 		Revision        int     `json:"revision"`
 		Sequence        int     `json:"sequence"`
@@ -119,7 +120,7 @@ func (h *Handler) observeEngineeringRecoveryReadiness(ctx context.Context, raw j
 		case "waiting":
 			value.Reason = state.Reason
 		case "eligible":
-			if err = h.classifyEngineeringRecoveryQueue(ctx, observed, state.TaskID, state.DraftID, state.Revision, state.Sequence, &value); err != nil {
+			if err = h.classifyEngineeringRecoveryQueue(ctx, observed, state.TaskID, state.AttemptID, state.DraftID, state.Revision, state.Sequence, &value); err != nil {
 				value.Readiness = "source-changed"
 				value.Reason = "native-source-unavailable"
 			}
@@ -154,7 +155,7 @@ func (h *Handler) observeEngineeringRecoveryReadiness(ctx context.Context, raw j
 	return result, nil
 }
 
-func (h *Handler) classifyEngineeringRecoveryQueue(ctx context.Context, observed *engineeringObservedPublication, currentTask string, draftID *string, revision, sequence int, value *engineeringReadinessObservation) error {
+func (h *Handler) classifyEngineeringRecoveryQueue(ctx context.Context, observed *engineeringObservedPublication, currentTask, currentAttempt string, draftID *string, revision, sequence int, value *engineeringReadinessObservation) error {
 	p, r := observed.Published.Publication, observed.Current.Reservation
 	if revision != r.Continuation.ExpectedRevision || engineeringOptionalText(draftID) != engineeringOptionalText(observed.Application.DraftID) {
 		return fmt.Errorf("business readiness changed its prepared stage")
@@ -233,6 +234,17 @@ func (h *Handler) classifyEngineeringRecoveryQueue(ctx context.Context, observed
 	if current == nil || uuidToString(current.AgentID) != p.AgentID || uuidToString(current.RuntimeID) != p.RuntimeID || uuidToString(current.OriginatorUserID) != p.UserID {
 		return fmt.Errorf("current recovery native task changed")
 	}
+	if currentAttempt != "" {
+		if !current.DispatchedAt.Valid || currentAttempt != currentTask+":"+strconv.FormatInt(current.DispatchedAt.Time.UnixMicro(), 10) {
+			return fmt.Errorf("bound readiness native claim changed")
+		}
+		if currentTask != p.TaskID {
+			hint, e := h.engineeringRecoveryForTask(ctx, *current, p.WorkspaceID)
+			if e != nil || hint == nil || hint.TargetHash != p.TargetHash || engineeringOptionalText(hint.DraftID) != engineeringOptionalText(draftID) {
+				return fmt.Errorf("bound readiness native source changed")
+			}
+		}
+	}
 	if current.Status == "running" || current.Status == "dispatched" {
 		id := currentTask
 		value.TaskID = &id
@@ -270,7 +282,12 @@ func (h *Handler) classifyEngineeringRecoveryQueue(ctx context.Context, observed
 		if candidate.DispatchedAt.Valid {
 			claim = strconv.FormatInt(candidate.DispatchedAt.Time.UnixMicro(), 10)
 		}
-		value.SourceKey = engineeringHandoffFieldsHash("multica:repair-native-dispatch-source:1", runtime.OwnerID.String(), runtime.DaemonID.String, runtime.Visibility, string(candidate.Context), claim)
+		sourceFields := []string{"multica:repair-native-dispatch-source:1", runtime.OwnerID.String(), runtime.DaemonID.String, runtime.Visibility, string(candidate.Context), claim}
+		if current.ID != candidate.ID {
+			sourceFields[0] = "multica:repair-native-dispatch-source:2"
+			sourceFields = append(sourceFields, currentTask, currentAttempt, current.Status, current.DispatchedAt.Time.UTC().Format(time.RFC3339Nano), current.CompletedAt.Time.UTC().Format(time.RFC3339Nano), string(current.Context))
+		}
+		value.SourceKey = engineeringHandoffFieldsHash(sourceFields...)
 		guards, e := h.Queries.ListEngineeringProjectControllers(ctx, db.ListEngineeringProjectControllersParams{WorkspaceID: workspace, ProjectID: issue.ProjectID})
 		if e != nil {
 			return e

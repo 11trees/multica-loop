@@ -9,7 +9,7 @@ const sidecarSchema=z.strictObject({batchId:z.string(),before:z.string(),after:z
 const bindingsSchema=z.strictObject({physical:z.string(),execution:z.string().nullable()});
 const manifestSchema=z.strictObject({application:handoffApplicationSchema,reservation:handoffReservationSchema,source:z.record(z.string(),z.unknown()),sidecars:z.array(sidecarSchema),bindings:bindingsSchema});
 export function originalRepairBindings(db:DatabaseSync,original:InterventionRecord,kind:"direct"|"business"|"requirement"|"engineering"){
- if(original.dispatchStall||original.recovery?.preparation)return retainedRepairPreparation(db,original).manifest.bindings;
+ if(original.dispatchStall?.preparation||original.recovery?.preparation)return retainedRepairPreparation(db,original).manifest.bindings;
  const physical=db.prepare("SELECT payload FROM engineering_process_binding WHERE workspace_id=? AND issue_id=? AND agent_id=? AND attempt_id=?").get(original.workspaceId,original.issueId,original.agentId,original.attemptId);
  if(!physical)throw new DraftConflictError("Original physical repository binding disappeared during recovery");
  let execution:string|null=null;

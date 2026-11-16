@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/multica-ai/multica/server/internal/util"
@@ -15,38 +16,69 @@ import (
 
 const engineeringDispatchHoldKey = "engineering_dispatch_hold"
 
+type engineeringDispatchBoundSource struct {
+	EntryTaskID       string  `json:"entry_task_id"`
+	TaskID            string  `json:"task_id"`
+	AttemptID         string  `json:"attempt_id"`
+	ExecutionHintHash *string `json:"execution_hint_hash"`
+	Status            string  `json:"status"`
+	CompletedAt       string  `json:"completed_at"`
+	ContextHash       string  `json:"context_hash"`
+}
+
 type engineeringDispatchStall struct {
-	Hash                  string                         `json:"hash"`
-	CaseID                string                         `json:"case_id"`
-	VerificationAttemptID string                         `json:"verification_attempt_id"`
-	TargetHash            string                         `json:"target_hash"`
-	ApplicationHash       string                         `json:"application_hash"`
-	ReadyHash             string                         `json:"ready_hash"`
-	PublicationHash       string                         `json:"publication_hash"`
-	TaskID                string                         `json:"task_id"`
-	WorkspaceID           string                         `json:"workspace_id"`
-	IssueID               string                         `json:"issue_id"`
-	ProjectID             string                         `json:"project_id"`
-	RuntimeID             string                         `json:"runtime_id"`
-	AgentID               string                         `json:"agent_id"`
-	UserID                string                         `json:"user_id"`
-	CheckpointHash        string                         `json:"checkpoint_hash"`
-	Preparation           engineeringRecoveryPreparation `json:"preparation"`
-	WatchHash             string                         `json:"watch_hash"`
-	SourceKey             string                         `json:"source_key"`
-	EligibleElapsedMS     int64                          `json:"eligible_elapsed_ms"`
-	IntentRevision        int64                          `json:"intent_revision"`
-	ObservedAt            int64                          `json:"observed_at"`
-	ReservedAt            string                         `json:"reserved_at"`
-	TaskCreatedAt         string                         `json:"task_created_at"`
-	ContextHash           string                         `json:"context_hash"`
-	Status                string                         `json:"status"`
-	ClaimedAt             *string                        `json:"claimed_at"`
-	StartedAt             *string                        `json:"started_at"`
+	Hash                  string                          `json:"hash"`
+	CaseID                string                          `json:"case_id"`
+	VerificationAttemptID string                          `json:"verification_attempt_id"`
+	TargetHash            string                          `json:"target_hash"`
+	ApplicationHash       string                          `json:"application_hash"`
+	ReadyHash             string                          `json:"ready_hash"`
+	PublicationHash       string                          `json:"publication_hash"`
+	TaskID                string                          `json:"task_id"`
+	WorkspaceID           string                          `json:"workspace_id"`
+	IssueID               string                          `json:"issue_id"`
+	ProjectID             string                          `json:"project_id"`
+	RuntimeID             string                          `json:"runtime_id"`
+	AgentID               string                          `json:"agent_id"`
+	UserID                string                          `json:"user_id"`
+	CheckpointHash        string                          `json:"checkpoint_hash"`
+	Preparation           *engineeringRecoveryPreparation `json:"preparation,omitempty"`
+	BoundSource           *engineeringDispatchBoundSource `json:"bound_source,omitempty"`
+	WatchHash             string                          `json:"watch_hash"`
+	SourceKey             string                          `json:"source_key"`
+	EligibleElapsedMS     int64                           `json:"eligible_elapsed_ms"`
+	IntentRevision        int64                           `json:"intent_revision"`
+	ObservedAt            int64                           `json:"observed_at"`
+	ReservedAt            string                          `json:"reserved_at"`
+	TaskCreatedAt         string                          `json:"task_created_at"`
+	ContextHash           string                          `json:"context_hash"`
+	Status                string                          `json:"status"`
+	ClaimedAt             *string                         `json:"claimed_at"`
+	StartedAt             *string                         `json:"started_at"`
 }
 
 func engineeringDispatchStallHash(p engineeringDispatchStall) string {
-	return engineeringHandoffFieldsHash("multica:repair-dispatch-stall:1", p.CaseID, p.VerificationAttemptID, p.TargetHash, p.ApplicationHash, p.ReadyHash, p.PublicationHash, p.TaskID, p.WorkspaceID, p.IssueID, p.ProjectID, p.RuntimeID, p.AgentID, p.UserID, p.CheckpointHash, p.Preparation.ObservationID, p.Preparation.ReceiptHash, p.Preparation.SourceAttemptID, p.Preparation.BindingsHash, p.WatchHash, p.SourceKey, strconv.FormatInt(p.EligibleElapsedMS, 10), strconv.FormatInt(p.IntentRevision, 10), strconv.FormatInt(p.ObservedAt, 10), p.ReservedAt, p.TaskCreatedAt, p.ContextHash, p.Status)
+	prefix := "multica:repair-dispatch-stall:1"
+	if p.BoundSource != nil {
+		prefix = "multica:repair-dispatch-stall:2"
+	}
+	fields := []string{prefix, p.CaseID, p.VerificationAttemptID, p.TargetHash, p.ApplicationHash, p.ReadyHash, p.PublicationHash, p.TaskID, p.WorkspaceID, p.IssueID, p.ProjectID, p.RuntimeID, p.AgentID, p.UserID, p.CheckpointHash}
+	if b := p.BoundSource; b != nil {
+		fields = append(fields, b.EntryTaskID, b.TaskID, b.AttemptID, engineeringOptionalText(b.ExecutionHintHash), b.Status, b.CompletedAt, b.ContextHash)
+	} else if b := p.Preparation; b != nil {
+		fields = append(fields, b.ObservationID, b.ReceiptHash, b.SourceAttemptID, b.BindingsHash)
+	}
+	fields = append(fields, p.WatchHash, p.SourceKey, strconv.FormatInt(p.EligibleElapsedMS, 10), strconv.FormatInt(p.IntentRevision, 10), strconv.FormatInt(p.ObservedAt, 10), p.ReservedAt, p.TaskCreatedAt, p.ContextHash, p.Status)
+	return engineeringHandoffFieldsHash(fields...)
+}
+func engineeringDispatchAnchor(p engineeringDispatchStall) string {
+	if p.BoundSource != nil {
+		return p.BoundSource.AttemptID
+	}
+	if p.Preparation != nil {
+		return p.Preparation.SourceAttemptID
+	}
+	return ""
 }
 func engineeringDispatchContext(task db.AgentTaskQueue) (map[string]json.RawMessage, string, error) {
 	values := map[string]json.RawMessage{}
@@ -76,7 +108,7 @@ func engineeringDispatchMarker(task db.AgentTaskQueue) (*engineeringDispatchStal
 		return nil, nil
 	}
 	var receipt engineeringDispatchStall
-	if json.Unmarshal(raw, &receipt) != nil || receipt.Hash != engineeringDispatchStallHash(receipt) || receipt.Status != "queued" || receipt.ClaimedAt != nil || receipt.StartedAt != nil || receipt.EligibleElapsedMS < 20*60*1000 {
+	if json.Unmarshal(raw, &receipt) != nil || (receipt.Preparation == nil) == (receipt.BoundSource == nil) || receipt.BoundSource != nil && (receipt.BoundSource.TaskID == receipt.TaskID || !strings.HasPrefix(receipt.BoundSource.AttemptID, receipt.BoundSource.TaskID+":")) || receipt.Hash != engineeringDispatchStallHash(receipt) || receipt.Status != "queued" || receipt.ClaimedAt != nil || receipt.StartedAt != nil || receipt.EligibleElapsedMS < 20*60*1000 {
 		return nil, fmt.Errorf("invalid native dispatch hold")
 	}
 	return &receipt, nil
@@ -90,8 +122,25 @@ func (h *Handler) dispatchStallTask(ctx context.Context, p engineeringHandoffPub
 	if err != nil {
 		return task, nil, err
 	}
-	receipt, err := engineeringDispatchMarker(task)
-	return task, receipt, err
+	tasks, err := h.Queries.ListTasksByIssue(ctx, task.IssueID)
+	if err != nil {
+		return task, nil, err
+	}
+	var marked *engineeringDispatchStall
+	for _, candidate := range tasks {
+		receipt, e := engineeringDispatchMarker(candidate)
+		if e != nil {
+			return task, nil, e
+		}
+		if receipt != nil && receipt.TargetHash == p.TargetHash {
+			if marked != nil {
+				return task, nil, fmt.Errorf("multiple native dispatch reservations")
+			}
+			task = candidate
+			marked = receipt
+		}
+	}
+	return task, marked, nil
 }
 func (h *Handler) validateEngineeringDispatchStall(ctx context.Context, p engineeringDispatchStall, task db.AgentTaskQueue) error {
 	_, contextHash, err := engineeringDispatchContext(task)
@@ -114,8 +163,52 @@ func (h *Handler) validateEngineeringDispatchStall(ctx context.Context, p engine
 		return fmt.Errorf("invalid held publication")
 	}
 	v := published.Publication
-	if !v.Published || v.TargetHash != p.TargetHash || uuidToString(row.TaskID) != p.TaskID || v.Hash != engineeringHandoffPublicationHash(v) || v.Hash != p.PublicationHash || v.CaseID != p.CaseID || v.VerificationAttemptID != p.VerificationAttemptID || v.TaskID != p.TaskID || v.ApplicationHash != p.ApplicationHash || v.ReadyHash != p.ReadyHash || v.WorkspaceID != p.WorkspaceID || v.IssueID != p.IssueID || v.RuntimeID != p.RuntimeID || v.AgentID != p.AgentID || v.UserID != p.UserID || uuidToString(row.ProjectID) != p.ProjectID || uuidToString(row.WorkspaceID) != p.WorkspaceID {
+	if !v.Published || v.TargetHash != p.TargetHash || uuidToString(row.TaskID) != v.TaskID || v.Hash != engineeringHandoffPublicationHash(v) || v.Hash != p.PublicationHash || v.CaseID != p.CaseID || v.VerificationAttemptID != p.VerificationAttemptID || v.TaskID != engineeringDispatchEntry(p) || v.ApplicationHash != p.ApplicationHash || v.ReadyHash != p.ReadyHash || v.WorkspaceID != p.WorkspaceID || v.IssueID != p.IssueID || v.RuntimeID != p.RuntimeID || v.AgentID != p.AgentID || v.UserID != p.UserID || uuidToString(row.ProjectID) != p.ProjectID || uuidToString(row.WorkspaceID) != p.WorkspaceID {
 		return fmt.Errorf("dispatch hold publication changed")
+	}
+	if p.BoundSource != nil {
+		return h.validateEngineeringBoundDispatch(ctx, p, task)
+	}
+	return nil
+}
+func engineeringDispatchEntry(p engineeringDispatchStall) string {
+	if p.BoundSource != nil {
+		return p.BoundSource.EntryTaskID
+	}
+	return p.TaskID
+}
+
+func (h *Handler) validateEngineeringBoundDispatch(ctx context.Context, p engineeringDispatchStall, queued db.AgentTaskQueue) error {
+	b := p.BoundSource
+	if b == nil || b.TaskID == p.TaskID {
+		return fmt.Errorf("invalid bound dispatch source")
+	}
+	sourceID, err := util.ParseUUID(b.TaskID)
+	if err != nil {
+		return err
+	}
+	source, err := h.Queries.GetAgentTask(ctx, sourceID)
+	if err != nil {
+		return err
+	}
+	_, contextHash, err := engineeringDispatchContext(source)
+	if err != nil {
+		return err
+	}
+	if uuidToString(source.IssueID) != p.IssueID || uuidToString(source.AgentID) != p.AgentID || uuidToString(source.RuntimeID) != p.RuntimeID || uuidToString(source.OriginatorUserID) != p.UserID || !source.DispatchedAt.Valid || b.AttemptID != b.TaskID+":"+strconv.FormatInt(source.DispatchedAt.Time.UnixMicro(), 10) || (source.Status != "completed" && source.Status != "failed") || source.Status != b.Status || !source.CompletedAt.Valid || source.CompletedAt.Time.UTC().Format(time.RFC3339Nano) != b.CompletedAt || contextHash != b.ContextHash {
+		return fmt.Errorf("bound dispatch source claim changed")
+	}
+	if b.TaskID != b.EntryTaskID {
+		hint, e := h.engineeringRecoveryForTask(ctx, source, p.WorkspaceID)
+		if e != nil || hint == nil || hint.TargetHash != p.TargetHash || b.ExecutionHintHash == nil || hint.Hash != *b.ExecutionHintHash {
+			return fmt.Errorf("bound dispatch source hint changed")
+		}
+	} else if b.ExecutionHintHash != nil {
+		return fmt.Errorf("entry dispatch source cannot replace its hint")
+	}
+	hint, err := h.engineeringRecoveryForTask(ctx, queued, p.WorkspaceID)
+	if err != nil || hint == nil || hint.TargetHash != p.TargetHash || hint.EntryTaskID != b.EntryTaskID {
+		return fmt.Errorf("queued dispatch continuation changed")
 	}
 	return nil
 }
@@ -147,11 +240,14 @@ func (h *Handler) holdEngineeringDispatchStall(ctx context.Context, input engine
 		return map[string]bool{"held": true}, nil
 	}
 	c := state.Checkpoint
-	if c == nil || c.Preparation == nil || c.AttemptID != "" || c.TaskID != p.TaskID {
+	if c == nil || (c.Preparation != nil && (c.AttemptID != "" || c.TaskID != p.TaskID)) || (c.Preparation == nil && c.AttemptID == "") {
 		return map[string]bool{"held": false}, nil
 	}
-	if c.CaseID != p.CaseID || c.VerificationAttemptID != p.VerificationAttemptID || c.TargetHash != p.TargetHash || c.ApplicationHash != p.ApplicationHash || c.ReadyHash != p.ReadyHash || c.EntryTaskID != p.TaskID || c.AgentID != p.AgentID || c.UserID != p.UserID || c.WorkspaceID != p.WorkspaceID || c.IssueID != p.IssueID || c.RuntimeID != p.RuntimeID || c.ProjectID != observed.Current.Reservation.ProjectID || c.Revision != observed.Current.Reservation.Continuation.ExpectedRevision || c.Sequence != observed.Current.Reservation.Continuation.ExpectedSequence || engineeringOptionalText(c.DraftID) != engineeringOptionalText(observed.Application.DraftID) {
+	if c.CaseID != p.CaseID || c.VerificationAttemptID != p.VerificationAttemptID || c.TargetHash != p.TargetHash || c.ApplicationHash != p.ApplicationHash || c.ReadyHash != p.ReadyHash || c.EntryTaskID != p.TaskID || c.AgentID != p.AgentID || c.UserID != p.UserID || c.WorkspaceID != p.WorkspaceID || c.IssueID != p.IssueID || c.RuntimeID != p.RuntimeID || c.ProjectID != observed.Current.Reservation.ProjectID || c.Revision != observed.Current.Reservation.Continuation.ExpectedRevision || c.Sequence < observed.Current.Reservation.Continuation.ExpectedSequence || engineeringOptionalText(c.DraftID) != engineeringOptionalText(observed.Application.DraftID) {
 		return nil, fmt.Errorf("prepared dispatch checkpoint changed")
+	}
+	if proof != nil && proof.BoundSource != nil && (proof.BoundSource.AttemptID != c.AttemptID || proof.BoundSource.TaskID != c.TaskID || proof.BoundSource.EntryTaskID != c.EntryTaskID || engineeringOptionalText(proof.BoundSource.ExecutionHintHash) != engineeringOptionalText(c.ExecutionHintHash)) {
+		return nil, fmt.Errorf("reserved bound source changed")
 	}
 	if proof == nil {
 		var watch struct {
@@ -167,7 +263,7 @@ func (h *Handler) holdEngineeringDispatchStall(ctx context.Context, input engine
 		if err != nil {
 			return nil, err
 		}
-		if json.Unmarshal(raw, &watch) != nil || !watch.Due || watch.Watch.ElapsedMS < 20*60*1000 || watch.Watch.IntentRevision != observed.Current.CurrentIntentRevision || watch.Observation.Hash != engineeringReadinessHash(watch.Observation) || watch.Observation.Readiness != "runnable" || engineeringOptionalText(watch.Observation.TaskID) != p.TaskID || watch.Watch.SourceKey != watch.Observation.SourceKey {
+		if json.Unmarshal(raw, &watch) != nil || !watch.Due || watch.Watch.ElapsedMS < 20*60*1000 || watch.Watch.IntentRevision != observed.Current.CurrentIntentRevision || watch.Observation.Hash != engineeringReadinessHash(watch.Observation) || watch.Observation.Readiness != "runnable" || watch.Observation.TaskID == nil || (c.Preparation != nil && engineeringOptionalText(watch.Observation.TaskID) != p.TaskID) || watch.Watch.SourceKey != watch.Observation.SourceKey {
 			return map[string]bool{"held": false}, nil
 		}
 		if h.TxStarter == nil {
@@ -187,7 +283,7 @@ func (h *Handler) holdEngineeringDispatchStall(ctx context.Context, input engine
 		if e != nil {
 			return nil, e
 		}
-		taskID, e := util.ParseUUID(p.TaskID)
+		taskID, e := util.ParseUUID(*watch.Observation.TaskID)
 		if e != nil {
 			return nil, e
 		}
@@ -200,6 +296,18 @@ func (h *Handler) holdEngineeringDispatchStall(ctx context.Context, input engine
 		}
 		if task.Status != "queued" || task.DispatchedAt.Valid || task.StartedAt.Valid {
 			return map[string]bool{"held": false}, nil
+		}
+		var boundSource *db.AgentTaskQueue
+		if c.Preparation == nil {
+			sourceID, e := util.ParseUUID(c.TaskID)
+			if e != nil {
+				return nil, e
+			}
+			source, e := q.LockEngineeringNativeTask(ctx, sourceID)
+			if e != nil {
+				return nil, e
+			}
+			boundSource = &source
 		}
 		existing, e := engineeringDispatchMarker(task)
 		if e != nil {
@@ -223,7 +331,7 @@ func (h *Handler) holdEngineeringDispatchStall(ctx context.Context, input engine
 		freshSample.Readiness = "waiting"
 		freshSample.SourceKey = ""
 		freshSample.TaskID = nil
-		if e = h.classifyEngineeringRecoveryQueue(ctx, observed, c.TaskID, c.DraftID, c.Revision, c.Sequence, &freshSample); e != nil {
+		if e = h.classifyEngineeringRecoveryQueue(ctx, observed, c.TaskID, c.AttemptID, c.DraftID, c.Revision, c.Sequence, &freshSample); e != nil {
 			return nil, e
 		}
 		freshSample.SourceKey = engineeringHandoffFieldsHash("multica:repair-dispatch-source:1", p.Hash, business.Hash, engineeringOptionalText(freshSample.TaskID), freshSample.SourceKey)
@@ -241,7 +349,21 @@ func (h *Handler) holdEngineeringDispatchStall(ctx context.Context, input engine
 		if e != nil {
 			return nil, e
 		}
-		receipt := engineeringDispatchStall{CaseID: p.CaseID, VerificationAttemptID: p.VerificationAttemptID, TargetHash: p.TargetHash, ApplicationHash: p.ApplicationHash, ReadyHash: p.ReadyHash, PublicationHash: p.Hash, TaskID: p.TaskID, WorkspaceID: p.WorkspaceID, IssueID: p.IssueID, ProjectID: c.ProjectID, RuntimeID: p.RuntimeID, AgentID: p.AgentID, UserID: p.UserID, CheckpointHash: c.Hash, Preparation: *c.Preparation, WatchHash: watch.Observation.Hash, SourceKey: watch.Observation.SourceKey, EligibleElapsedMS: watch.Watch.ElapsedMS, IntentRevision: watch.Watch.IntentRevision, ObservedAt: watch.Observation.ObservedAt, ReservedAt: time.Now().UTC().Format(time.RFC3339Nano), TaskCreatedAt: task.CreatedAt.Time.UTC().Format(time.RFC3339Nano), ContextHash: contextHash, Status: "queued"}
+		receipt := engineeringDispatchStall{CaseID: p.CaseID, VerificationAttemptID: p.VerificationAttemptID, TargetHash: p.TargetHash, ApplicationHash: p.ApplicationHash, ReadyHash: p.ReadyHash, PublicationHash: p.Hash, TaskID: uuidToString(task.ID), WorkspaceID: p.WorkspaceID, IssueID: p.IssueID, ProjectID: c.ProjectID, RuntimeID: p.RuntimeID, AgentID: p.AgentID, UserID: p.UserID, CheckpointHash: c.Hash, Preparation: c.Preparation, WatchHash: watch.Observation.Hash, SourceKey: watch.Observation.SourceKey, EligibleElapsedMS: watch.Watch.ElapsedMS, IntentRevision: watch.Watch.IntentRevision, ObservedAt: watch.Observation.ObservedAt, ReservedAt: time.Now().UTC().Format(time.RFC3339Nano), TaskCreatedAt: task.CreatedAt.Time.UTC().Format(time.RFC3339Nano), ContextHash: contextHash, Status: "queued"}
+		if c.Preparation == nil {
+			source := *boundSource
+			_, contextHash, e := engineeringDispatchContext(source)
+			if e != nil {
+				return nil, e
+			}
+			if !source.CompletedAt.Valid {
+				return map[string]bool{"held": false}, nil
+			}
+			receipt.BoundSource = &engineeringDispatchBoundSource{EntryTaskID: c.EntryTaskID, TaskID: c.TaskID, AttemptID: c.AttemptID, ExecutionHintHash: c.ExecutionHintHash, Status: source.Status, CompletedAt: source.CompletedAt.Time.UTC().Format(time.RFC3339Nano), ContextHash: contextHash}
+			if e = h.validateEngineeringBoundDispatch(ctx, receipt, task); e != nil {
+				return nil, e
+			}
+		}
 		receipt.Hash = engineeringDispatchStallHash(receipt)
 		encoded, _ := json.Marshal(receipt)
 		if _, e = q.ReserveEngineeringDispatchHold(ctx, db.ReserveEngineeringDispatchHoldParams{TaskID: taskID, Receipt: encoded, ExpectedContext: task.Context}); e != nil {
@@ -259,7 +381,7 @@ func (h *Handler) holdEngineeringDispatchStall(ctx context.Context, input engine
 	if err = h.validateEngineeringDispatchStall(ctx, *proof, task); err != nil {
 		return nil, err
 	}
-	if proof.CheckpointHash != c.Hash || !engineeringSameJSON(proof.Preparation, *c.Preparation) {
+	if proof.CheckpointHash != c.Hash || !engineeringSameJSON(proof.Preparation, c.Preparation) {
 		return nil, fmt.Errorf("reserved dispatch checkpoint changed")
 	}
 	current, err := h.readEngineeringObservedPublication(ctx, input, observed.Current)
@@ -311,7 +433,7 @@ func (h *Handler) validateEngineeringDispatchSource(ctx context.Context, source 
 	if err != nil {
 		return err
 	}
-	if proof == nil || proof.Hash != *source.DispatchHoldHash || proof.CaseID != source.CaseID || proof.WorkspaceID != source.WorkspaceID || proof.IssueID != source.IssueID || proof.AgentID != source.AgentID || proof.Preparation.SourceAttemptID != source.AttemptID {
+	if proof == nil || proof.Hash != *source.DispatchHoldHash || proof.CaseID != source.CaseID || proof.WorkspaceID != source.WorkspaceID || proof.IssueID != source.IssueID || proof.AgentID != source.AgentID || engineeringDispatchAnchor(*proof) != source.AttemptID {
 		return fmt.Errorf("dispatch source changed its queued task or anchor")
 	}
 	return h.validateEngineeringDispatchStall(ctx, *proof, task)

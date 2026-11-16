@@ -467,3 +467,45 @@ for(const kind of ["direct","verification"] as const)it(`keeps ${kind} recovery 
  db.exec("CREATE TRIGGER fail_atomic_binding BEFORE INSERT ON engineering_process_binding BEGIN SELECT RAISE(ABORT,'fixture physical binding failed'); END");await expect(invoke(h.daemon,"bind",{work_dir:repository,mode:"in_place",overlays:[]})).rejects.toThrow(/physical binding failed/);expect(db.prepare(`SELECT payload FROM ${table}`).get()!.payload).toBe(before);expect(db.prepare("SELECT state,attempt_id FROM engineering_repair_dispatch WHERE target_hash=?").get(h.ready.target_hash)).toMatchObject({state:"ready",attempt_id:null});
  expect(db.prepare("SELECT count(*) AS n FROM engineering_process_binding WHERE attempt_id=?").get(h.successor.attemptId)!.n).toBe(0);if(kind==="verification")expect(db.prepare("SELECT count(*) AS n FROM engineering_execution WHERE attempt_id=?").get(h.successor.attemptId)!.n).toBe(0);expect(await invoke(host,"repair-recovery-checkpoint",h.pin)).toMatchObject({reason:"prepared",checkpoint:{attempt_id:null}});db.exec("DROP TRIGGER fail_atomic_binding");await invoke(h.daemon,"bind",{work_dir:repository,mode:"in_place",overlays:[]});expect(await invoke(host,"repair-recovery-checkpoint",h.pin)).toMatchObject({reason:"editable",checkpoint:{attempt_id:h.successor.attemptId}});db.close();
 });
+
+for(const kind of ["direct","verification"] as const)it(`retains an actual bound ${kind} source while holding its never-claimed continuation`,async()=>{
+ const h=await recoveredProgress(kind),db=new DatabaseSync(database),{hostBoundDispatchStallFixture,hostHandoffTargetFixture}=await import("./test-helpers/repair-handoff-fixture");
+ const source=z.object({checkpoint:z.record(z.string(),z.unknown())}).parse(await invoke(host,"repair-recovery-checkpoint",h.pin)),native=await hostBoundDispatchStallFixture(source.checkpoint);
+ const held=z.object({held:z.object({observationId:z.string(),snapshotHash:z.string(),attemptId:z.string(),sourceKind:z.literal("bound-dispatch")}).passthrough()}).parse(await invoke(host,"repair-dispatch-hold",{...h.pin,native})).held;
+ expect(held.attemptId).toBe(h.successor.attemptId);expect(await invoke(host,"execution-permission")).toEqual({allowed:false});
+ expect(db.prepare("SELECT count(*) AS n FROM engineering_process_binding WHERE attempt_id LIKE ?").get(native.task_id+":%")!.n).toBe(0);
+ app.close();app=new EngineeringApplication(database,definition);expect(await invoke(host,"repair-dispatch-hold",{...h.pin,native})).toEqual({held});
+ const ack={case_id:native.case_id,observation_id:held.observationId,snapshot_hash:held.snapshotHash};await invoke(host,"repair-observation-ack",ack);
+ expect(await invoke(host,"repair-source",ack)).toMatchObject({attempt_id:h.successor.attemptId,dispatch_task_id:native.task_id,dispatch_hold_hash:native.hash});
+ const target=await hostHandoffTargetFixture(held,{...human,projectId,repositoryPath:repository,caseId:native.case_id});target.verificationAttemptId=`verified-bound-stall-${randomUUID()}`;target.workspaceBinding.runtimeId=native.runtime_id;
+ const reservation=hostHandoffReservationFixture(target,await invoke(host,"repair-handoff-prepare",target)),application=await invoke(host,"repair-handoff-stage",reservation),ready=handoffReadySchema.parse(await invoke(host,"repair-handoff-ready",application)),next={...owner,attemptId:`${ready.continuation.task_id}:7777777`};await invoke({...next,kind:"daemon"},"bind",{work_dir:repository,mode:"in_place",overlays:[]});
+ await expect(invoke(h.successor,kind === "direct" ? "direct-run" : "start")).rejects.toThrow(/surrendered|end execution/);
+ if(kind==="direct"){await invoke(next,"direct-run");await invoke(next,"direct-submit",{summary:"Ordinary result after bound continuation recovery"});}else await finishRecoveredVerification(next);
+ expect(await invoke(host,"repair-business-progress",{target_hash:ready.target_hash,application_hash:ready.application_hash,ready_hash:ready.hash})).toMatchObject({progress:{applied:true,attempt_id:next.attemptId}});db.close();
+},15000);
+
+it("holds an answered YAML continuation and retains the authenticated human fact",async()=>{
+ const h=await recoveredProgress("verification");let state=z.object({draft:draftSchema}).parse(await invoke(h.successor,"start"));
+ const command=async(command:unknown)=>{state=z.object({draft:draftSchema}).parse(await invoke(h.successor,"command",{expected_sequence:state.draft.sequence,command}));};
+ await command({type:"phase.complete"});await command({type:"runtime-input.put",key:"entry",title:"Entry",question:"Which entry?",why:"Need isolated data",recommendation:"Use local entry"});await command({type:"phase.complete"});
+ expect(await invoke(host,"repair-recovery-checkpoint",h.pin)).toEqual({checkpoint:null,reason:"waiting-for-answers"});
+ await invoke(human,"answer",{expected_sequence:state.draft.sequence,request_id:state.draft.runtimeInputs[0]!.id,answer:"Use the isolated local entry"});
+ const source=z.object({checkpoint:z.record(z.string(),z.unknown())}).parse(await invoke(host,"repair-recovery-checkpoint",h.pin)),{hostBoundDispatchStallFixture,hostHandoffTargetFixture}=await import("./test-helpers/repair-handoff-fixture"),native=await hostBoundDispatchStallFixture(source.checkpoint);
+ await expect(invoke(host,"repair-recovery-hold",{...h.pin,native:recoveryFault(source.checkpoint)})).rejects.toThrow(/Answered continuation/);
+ const held=z.object({held:z.object({observationId:z.string(),snapshotHash:z.string()}).passthrough()}).parse(await invoke(host,"repair-dispatch-hold",{...h.pin,native})).held;
+ await invoke(host,"repair-observation-ack",{case_id:native.case_id,observation_id:held.observationId,snapshot_hash:held.snapshotHash});
+ const target=await hostHandoffTargetFixture(held,{...human,projectId,repositoryPath:repository,caseId:native.case_id});target.verificationAttemptId=`verified-answer-stall-${randomUUID()}`;target.workspaceBinding.runtimeId=native.runtime_id;
+ const reservation=hostHandoffReservationFixture(target,await invoke(host,"repair-handoff-prepare",target)),application=await invoke(host,"repair-handoff-stage",reservation),ready=handoffReadySchema.parse(await invoke(host,"repair-handoff-ready",application)),next={...owner,attemptId:`${ready.continuation.task_id}:8888888`};await invoke({...next,kind:"daemon"},"bind",{work_dir:repository,mode:"in_place",overlays:[]});
+ const current=z.object({draft:draftSchema}).parse(await invoke(next,"start"));expect(current.draft.runtimeInputs.some(input=>input.answer?.userId===human.userId&&input.answer.text==="Use the isolated local entry")).toBe(true);
+},15000);
+
+it("round-trips a bound continuation hold through the private worker without a queued execution binding",async()=>{
+ const h=await recoveredProgress("direct"),worker=new URL("./dist/worker.mjs",import.meta.url).pathname,{hostBoundDispatchStallFixture}=await import("./test-helpers/repair-handoff-fixture");app.close();
+ try{
+  const call=(action:ApplicationRequest["action"],payload:unknown)=>JSON.parse(execFileSync(process.execPath,[worker,database],{encoding:"utf8",stdio:["pipe","pipe","ignore"],input:JSON.stringify({actor:host,action,payload,host_version:"sha256:"+"a".repeat(64)})}));
+  const source=z.object({result:z.object({checkpoint:z.record(z.string(),z.unknown())})}).parse(call("repair-recovery-checkpoint",h.pin)),native=await hostBoundDispatchStallFixture(source.result.checkpoint),reply=z.object({result:z.object({held:z.object({sourceKind:z.literal("bound-dispatch"),attemptId:z.string(),kernelVersion:z.string(),dispatchStall:z.object({task_id:z.string()})})})}).parse(call("repair-dispatch-hold",{...h.pin,native}));
+  expect(reply.result.held.attemptId).toBe(h.successor.attemptId);expect(reply.result.held.kernelVersion).toBe(`sha256:${createHash("sha256").update(await readFile(worker)).digest("hex")}`);
+  const db=new DatabaseSync(database);expect(db.prepare("SELECT count(*) AS n FROM engineering_process_binding WHERE attempt_id LIKE ?").get(native.task_id+":%")!.n).toBe(0);expect(db.prepare("SELECT count(*) AS n FROM engineering_intervention_view WHERE attempt_id=?").get(h.successor.attemptId)!.n).toBe(0);db.close();
+ }finally{app=new EngineeringApplication(database,definition);}
+ expect(await invoke(host,"execution-permission")).toEqual({allowed:false});
+},15000);
