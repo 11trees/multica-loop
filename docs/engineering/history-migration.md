@@ -800,10 +800,13 @@ recorded separately from controlled parser/capture tests.
    source-project/task correspondence with native records. Verify the selected
    correspondence before adopting tasks; a historical record is not a native
    engineering result.
-5. Complete explicit configuration migration, a target backup/restore and
-   rollback exercise, exclusive-owner cutover, real-provider acceptance and
+5. Complete explicit configuration migration, live recovery and rollback,
+   exclusive-owner cutover, real-provider acceptance and
    packaged-client acceptance. Keep the original source available until these
-   checks pass.
+   checks pass. The [local target backup and isolated restore](target-backup.md)
+   exercise now preserves the stopped target cohort and verifies all 196 native
+   PostgreSQL tables, both SQLite stores, selected history and retained files.
+   This does not authorize a live restore, repository ownership or provider launch.
 
 Controlled tests cover committed WAL capture, unchanged source bytes,
 application-credential exclusion, original IDs and lossless integers, stale
