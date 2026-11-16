@@ -61,11 +61,12 @@ func (h *Handler) EngineeringTeamProfile(w http.ResponseWriter, r *http.Request)
 		var input struct {
 			ExpectedRevision *int `json:"expected_revision"`
 			Definition       struct {
-				Workflow     string                   `json:"workflow"`
-				Roles        map[string]string        `json:"roles"`
-				DecisionMode string                   `json:"decision_mode"`
-				MaxReworks   *int                     `json:"max_reworks"`
-				Feedback     *engineeringTeamFeedback `json:"feedback,omitempty"`
+				Workflow       string                   `json:"workflow"`
+				Roles          map[string]string        `json:"roles"`
+				DecisionMode   string                   `json:"decision_mode"`
+				MaxReworks     *int                     `json:"max_reworks"`
+				Feedback       *engineeringTeamFeedback `json:"feedback,omitempty"`
+				ContextAdapter string                   `json:"context_adapter,omitempty"`
 			} `json:"definition"`
 		}
 		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
@@ -75,6 +76,10 @@ func (h *Handler) EngineeringTeamProfile(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		required, known := engineeringTeamRoles[input.Definition.Workflow]
+		if input.Definition.ContextAdapter != "" && (input.Definition.ContextAdapter != "openspec" || (input.Definition.Workflow != "develop" && input.Definition.Workflow != "bug_fix" && input.Definition.Workflow != "end_to_end")) {
+			writeError(w, http.StatusBadRequest, "OpenSpec repository context requires a delivery Team")
+			return
+		}
 		if !known || len(input.Definition.Roles) != len(required) {
 			writeError(w, http.StatusBadRequest, "choose the Agents required by this workflow")
 			return
@@ -120,6 +125,9 @@ func (h *Handler) EngineeringTeamProfile(w http.ResponseWriter, r *http.Request)
 			resolved[role] = uuidToString(agent.ID)
 		}
 		definition := map[string]any{"workflow": input.Definition.Workflow, "roles": resolved, "decision_mode": input.Definition.DecisionMode, "max_reworks": *input.Definition.MaxReworks}
+		if input.Definition.ContextAdapter != "" {
+			definition["context_adapter"] = input.Definition.ContextAdapter
+		}
 		if feedback := input.Definition.Feedback; feedback != nil {
 			if !feedback.valid(input.Definition.Workflow, resolved) {
 				writeError(w, http.StatusBadRequest, "Feedback roles must preserve independent verification and forward work")
@@ -162,11 +170,12 @@ func (h *Handler) EngineeringTeamProfile(w http.ResponseWriter, r *http.Request)
 }
 
 type engineeringTeamDefinition struct {
-	Workflow     string                   `json:"workflow"`
-	Roles        map[string]string        `json:"roles"`
-	DecisionMode string                   `json:"decision_mode"`
-	MaxReworks   int                      `json:"max_reworks"`
-	Feedback     *engineeringTeamFeedback `json:"feedback,omitempty"`
+	Workflow       string                   `json:"workflow"`
+	Roles          map[string]string        `json:"roles"`
+	DecisionMode   string                   `json:"decision_mode"`
+	MaxReworks     int                      `json:"max_reworks"`
+	Feedback       *engineeringTeamFeedback `json:"feedback,omitempty"`
+	ContextAdapter string                   `json:"context_adapter,omitempty"`
 }
 type engineeringTeamFeedback struct {
 	Triager    string `json:"triager"`

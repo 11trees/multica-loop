@@ -12,6 +12,7 @@ import { readyRepairDispatch,repairDispatchForTask,activateRepairDispatch,refres
 import { repairHandoffTargetSchema, handoffReservationSchema, handoffApplicationSchema,handoffHash, type HandoffYamlCheckpoint, type HandoffRootChange } from "./repair-handoff";
 import { readRepairWorkspaceVersion } from "./repair-workspace-version";
 import { EngineeringTeamStore } from "./team-store";
+import {RepositoryContextStore,repositoryContextInstructions} from "./repository-context";
 import { EngineeringProcessStore } from "./process-store";
 import { InterventionStore, interventionInstructions, type InterventionRecord } from "./intervention-store";
 import { DirectApplication } from "./direct-application";
@@ -116,6 +117,7 @@ export class EngineeringApplication {
   private readonly direct:DirectApplication;
   private readonly interventions:InterventionStore;
   private readonly processes:EngineeringProcessStore;
+  private readonly repositoryContexts:RepositoryContextStore;
 
   constructor(database: string, private readonly definitionSource: string, private readonly developmentSource?: string, private readonly analysisSource?: string,requirementDefinitions?:RequirementDefinitions,businessDefinitions?:BusinessDefinitions,kernelVersion?:string) {
     parseCommandChainDefinition(definitionSource, profile);
@@ -131,6 +133,7 @@ export class EngineeringApplication {
     initializeRepairProgress(this.db);
     initializeRepairExecutions(this.db);
     this.processes=new EngineeringProcessStore(this.db);
+    this.repositoryContexts=new RepositoryContextStore(this.db);
     this.drafts = new SqliteDraftStore(database);
     this.direct=new DirectApplication(this.db);
     this.db.exec("CREATE TABLE IF NOT EXISTS engineering_receipt (draft_id TEXT NOT NULL, receipt_id TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY (draft_id, receipt_id))");
@@ -832,7 +835,19 @@ export class EngineeringApplication {
       const frozen = original.snapshot as Awaited<ReturnType<EngineeringApplication["invokeWorkflow"]>>;
       return { ...frozen, intervention: this.interventions.view(original), agent_action: "end_execution" };
     }
-    const result = await this.invokeWorkflow(request);
+    let result = await this.invokeWorkflow(request);
+    if(actor.kind==="task"&&["read","start"].includes(action)){
+      const selected=z.object({chain:z.string()}).safeParse(result),role=selected.success?({context:"context",planning:"planner",analysis:"analyst",development:"developer",verification:"verifier",review:"reviewer"} as {[key:string]:string})[selected.data.chain]:undefined;
+      const unit=this.requirements.managedUnit(actor.workspaceId,actor.issueId),binding=new EngineeringTeamStore(this.db).binding(actor.workspaceId,unit?.parentIssueId??actor.issueId);
+      if(role&&binding?.profile.definition.context_adapter==="openspec"){
+        const view=z.object({chain:z.string(),agentId:z.string(),repositoryPath:z.string(),instructions:z.string().optional(),contract:z.object({binding:z.object({revision:z.number().int().positive(),codeVersion:text})})}).parse(result);
+        if(view.agentId!==actor.agentId||binding.profile.definition.roles[role]!==actor.agentId)throw new DraftConflictError("OpenSpec repository context is outside the frozen Team role");
+        const execution=this.processes.repository({workspaceId:actor.workspaceId,issueId:actor.issueId,agentId:actor.agentId,attemptId:actor.attemptId});
+        if(!execution||execution.projectId!==null&&execution.projectId!==binding.projectId)throw new DraftConflictError("Repository context requires the exact native project/execution binding");
+        const repositoryContext=this.repositoryContexts.read({workspaceId:actor.workspaceId,issueId:actor.issueId,attemptId:actor.attemptId,agentId:actor.agentId,chain:view.chain,teamBindingId:binding.id,teamRevision:binding.profile.revision,repositoryPath:execution.repositoryPath,contractRevision:view.contract.binding.revision,codeVersion:view.contract.binding.codeVersion});
+        result=Object.assign({},result,{repositoryContext,instructions:[view.instructions,repositoryContextInstructions].filter(Boolean).join("\n\n")});
+      }
+    }
     if(actor.kind==="human"&&action==="prepare-run"){
       const selected=z.object({agent_id:z.uuid()}).parse(result),checkpoint=z.object({expected_revision:z.number().int().positive(),expected_sequence:z.number().int().nonnegative()}).parse(request.payload),hint=prepareRepairExecutionHint(this.db,actor,selected.agent_id,checkpoint.expected_revision,checkpoint.expected_sequence,this.recoveryActiveDraftId(actor.workspaceId,actor.issueId));
       if(hint)return {...result,recovery_execution:hint};

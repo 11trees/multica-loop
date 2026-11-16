@@ -181,6 +181,10 @@
     "runtime_scope": "この Team の全ロールのランタイムを設定します。",
     "runtime_partial": "{{total}} 件中 {{count}} 件を更新しました。再試行してください。",
     "runtime_saved": "Team のランタイムを保存しました。",
-    "connect_runtime": "ランタイムを接続"
+    "connect_runtime": "ランタイムを接続",
+    "repository_context": "リポジトリの資料",
+    "context_none": "標準",
+    "context_openspec": "OpenSpec の変更文書",
+    "context_hint": "実行ごとに文書のバージョンを保持します。タスクは Team の設定を引き継ぎます。"
   }
 }

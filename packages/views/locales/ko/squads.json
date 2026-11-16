@@ -181,6 +181,10 @@
     "runtime_scope": "이 Team의 모든 역할에 런타임을 설정합니다.",
     "runtime_partial": "{{total}}개 중 {{count}}개를 업데이트했습니다. 다시 시도하세요.",
     "runtime_saved": "Team 런타임을 저장했습니다.",
-    "connect_runtime": "런타임 연결"
+    "connect_runtime": "런타임 연결",
+    "repository_context": "저장소 자료",
+    "context_none": "기본값",
+    "context_openspec": "OpenSpec 변경 문서",
+    "context_hint": "실행마다 문서 버전을 보존합니다. 작업은 Team 설정을 따릅니다."
   }
 }

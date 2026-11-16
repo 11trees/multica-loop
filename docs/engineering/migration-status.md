@@ -47,9 +47,15 @@ scenario. See
 | Bug Fix | Controlled local Team lifecycle connected in both repository modes | [Native Team acceptance](reproduction.md#controlled-native-bug-fix-team-acceptance): browser create/start, authenticated reproduction facts, one native child, real Git repair, independent Chrome verification, automatic Review and exact reading before native Done. Competing child-done leader wakeups are suppressed with facts retained. [Protocol acceptance](requirement-review.md#bug-fix-team-protocol-acceptance) additionally covers two dependent units and storage reopen in both in-place/worktree modes. Native worktree attempts are reclaimed between roles and before reading while retaining the original HEAD and exact Review/delivery refs. Daemon-owned process lifecycle, real-provider diagnosis and packaged acceptance remain |
 | Post-delivery feedback | Partial | Capture, triage, forward delivery, independent per-comment verification and new report reading connected; report correction connected; Team-bound roles and automatic forward authorization connected; original-contract revision and reconciliation remain incomplete |
 
-The legacy OpenSpec pack supplies variants of six chains. Those repository
-adapters, pack selection and variant-specific acceptance have not been migrated.
-The generic loader is not evidence that the OpenSpec behavior is connected.
+The pinned legacy OpenSpec pack has six YAML variants: five parse equal to their
+default definitions and one changes only the context AS-IS instruction. Its active
+behavior is a repository-document context reader. That behavior now has a
+[Team-owned OpenSpec setting](openspec-context.md), with attempt-bound path/hash/
+text snapshots, managed-child inheritance and physical worktree binding. Both
+controlled Bug Fix Team lifecycles retain it across all six delivery roles without
+weakening verification/reading gates. Explicit legacy per-Agent configuration
+reconciliation, custom repository Artifact writing, real-provider and packaged
+acceptance remain; no OpenSpec CLI or generic pack registry is implied.
 
 ## Cross-cutting requirements
 

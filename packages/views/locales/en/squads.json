@@ -183,6 +183,10 @@
     "runtime_scope": "Applies to every role Agent in this Team.",
     "runtime_partial": "Updated {{count}} of {{total}} roles. Retry to finish.",
     "runtime_saved": "Team runtime saved.",
-    "connect_runtime": "Connect a runtime"
+    "connect_runtime": "Connect a runtime",
+    "repository_context": "Repository context",
+    "context_none": "Default",
+    "context_openspec": "OpenSpec changes",
+    "context_hint": "Keeps a document version for each execution. Tasks inherit this Team setting."
   }
 }

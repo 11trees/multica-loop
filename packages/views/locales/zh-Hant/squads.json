@@ -181,6 +181,10 @@
     "runtime_scope": "統一設定此 Team 所有角色的執行環境。",
     "runtime_partial": "已更新 {{count}} / {{total}} 個角色，請重試完成。",
     "runtime_saved": "已儲存 Team 執行環境。",
-    "connect_runtime": "連接執行環境"
+    "connect_runtime": "連接執行環境",
+    "repository_context": "倉庫資料",
+    "context_none": "預設",
+    "context_openspec": "OpenSpec 變更文件",
+    "context_hint": "按執行保留文件版本，任務沿用 Team 設定。"
   }
 }

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/multica-ai/multica/server/internal/testutil"
@@ -186,4 +187,43 @@ func TestEngineeringTeamStartsNativeTaskWithFrozenDefinitionAndNoLeaderEvaluatio
 		t.Fatal(err)
 	}
 	testutil.Call(t, h.StartEngineeringTeam, request(map[string]any{})).Want(http.StatusConflict)
+}
+
+func TestEngineeringTeamOpenSpecContextIsTeamOwnedAndBackwardCompatible(t *testing.T) {
+	runtime := dbfx.Runtime(t, "OpenSpec context runtime")
+	roles := map[string]string{}
+	for _, role := range engineeringTeamRoles["develop"] {
+		roles[role] = dbfx.Agent(t, "OpenSpec "+role, runtime)
+	}
+	squad := createSquadAs(t, "", "OpenSpec Team", roles["context"])
+	for _, id := range roles {
+		if id != roles["context"] {
+			dbfx.Insert(t, "squad_member", testutil.Cols{"squad_id": squad.ID, "member_type": "agent", "member_id": id, "role": "member"})
+		}
+	}
+	recorder := &engineeringRecorder{response: json.RawMessage(`{"profile":null}`)}
+	h := *testHandler
+	h.EngineeringWorker = recorder
+	definition := map[string]any{"workflow": "develop", "roles": roles, "decision_mode": "balanced", "max_reworks": 1, "context_adapter": "openspec"}
+	body := map[string]any{"expected_revision": 0, "definition": definition}
+	request := func() *http.Request {
+		return squadScopeReq("", http.MethodPut, "/engineering", body, map[string]string{"id": squad.ID})
+	}
+	testutil.Call(t, h.EngineeringTeamProfile, request()).Want(http.StatusOK)
+	projected := recorder.inputs[0]["payload"].(map[string]any)["definition"].(map[string]any)
+	if projected["context_adapter"] != "openspec" {
+		t.Fatal("Team context adapter not projected")
+	}
+	definition["context_adapter"] = "caller-script"
+	testutil.Call(t, h.EngineeringTeamProfile, request()).Want(http.StatusBadRequest)
+	definition["workflow"] = "direct"
+	definition["roles"] = map[string]string{"executor": roles["context"]}
+	definition["context_adapter"] = "openspec"
+	testutil.Call(t, h.EngineeringTeamProfile, request()).Want(http.StatusBadRequest)
+	delete(definition, "context_adapter")
+	testutil.Call(t, h.EngineeringTeamProfile, request()).Want(http.StatusOK)
+	raw, err := json.Marshal(engineeringTeamDefinition{Workflow: "direct", Roles: map[string]string{"executor": roles["context"]}, DecisionMode: "balanced"})
+	if err != nil || strings.Contains(string(raw), "context_adapter") {
+		t.Fatal("old Team definition gained a context field", err)
+	}
 }

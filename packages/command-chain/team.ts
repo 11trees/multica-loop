@@ -16,7 +16,9 @@ export const teamDefinitionSchema = z.strictObject({
   decision_mode: z.enum(["conservative", "balanced", "autonomous", "fully_autonomous"]),
   max_reworks: z.number().int().min(0).max(10),
   feedback: teamFeedbackSchema.optional(),
+  context_adapter: z.literal("openspec").optional(),
 }).superRefine((definition, context) => {
+  if(definition.context_adapter&&!supportsTeamFeedback(definition.workflow))context.addIssue({code:"custom",path:["context_adapter"],message:"OpenSpec context requires a delivery workflow"});
   const required: readonly string[] = teamWorkflowRoles[definition.workflow];
   if (Object.keys(definition.roles).length !== required.length || required.some(role => !definition.roles[role])) {
     context.addIssue({code:"custom", path:["roles"], message:"Choose an Agent for every workflow role, without extra roles"});

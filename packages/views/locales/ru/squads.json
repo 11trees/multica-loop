@@ -186,6 +186,10 @@
     "runtime_scope": "Задаёт среду для всех ролей этой Team.",
     "runtime_partial": "Обновлено {{count}} из {{total}} ролей. Повторите для завершения.",
     "runtime_saved": "Среда Team сохранена.",
-    "connect_runtime": "Подключить среду"
+    "connect_runtime": "Подключить среду",
+    "repository_context": "Материалы репозитория",
+    "context_none": "По умолчанию",
+    "context_openspec": "Изменения OpenSpec",
+    "context_hint": "Сохраняет версию документов для каждого запуска. Задачи наследуют эту настройку Team."
   }
 }

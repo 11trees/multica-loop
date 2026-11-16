@@ -4,7 +4,7 @@ import {handoffReadySchema} from "./repair-handoff";
 import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
-import { mkdtemp,readFile,realpath,rm,writeFile } from "node:fs/promises";
+import { mkdir,mkdtemp,readFile,realpath,rm,writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { stringify } from "yaml";
@@ -186,7 +186,8 @@ async function deliverManaged(issueId:string,root:string,mode:"in_place"|"worktr
 
 it.each(["in_place","worktree"] as const)("closes a frozen Bug Fix Team through human answers, reproduction and independent %s delivery",async mode=>{
  const teamId=randomUUID(),reviewer=randomUUID(),expected="Existing rules require Ready and Continue";
- const definition:TeamDefinition={workflow:"bug_fix",roles:{context:backlog,planner,reproducer,...deliveryRoles,reviewer},decision_mode:"balanced",max_reworks:1};
+ await mkdir(join(repository,"openspec/changes/current"),{recursive:true});await writeFile(join(repository,"openspec/changes/current/proposal.md"),"# Original OpenSpec input\n");execFileSync("git",["-C",repository,"add","."]);execFileSync("git",["-C",repository,"commit","-qm","Original OpenSpec input"],{stdio:"ignore"});
+ const definition:TeamDefinition={workflow:"bug_fix",roles:{context:backlog,planner,reproducer,...deliveryRoles,reviewer},decision_mode:"balanced",max_reworks:1,context_adapter:"openspec"};
  const {units,policy}=await authorizedUnits(mode,{id:teamId,definition});
  const host=(issueId=human.issueId)=>({kind:"host" as const,workspaceId:human.workspaceId,issueId});
  const pending=()=>app.invoke({actor:{kind:"coordinator"},action:"continuations"});
@@ -226,6 +227,7 @@ it.each(["in_place","worktree"] as const)("closes a frozen Bug Fix Team through 
  for(const kind of ["outcome","scope","implementation","verification","risks"])await put("report-sections",{kind,content:`Bug Fix ${kind} at the combined delivery commit`},kind);
  await review.command({type:"phase.complete"});await review.command({type:"phase.complete"});
  expect(review.state.conclusion).toMatchObject({verdict:"report_ready"});
+ const contextDb=new DatabaseSync(database);try{const snapshots=contextDb.prepare("SELECT payload FROM engineering_repository_context WHERE workspace_id=?").all(human.workspaceId).map(row=>JSON.parse(String(row.payload)));expect([...new Set(snapshots.map(row=>row.chain))].sort()).toEqual(["analysis","context","development","planning","review","verification"]);expect(snapshots.every(row=>row.resources[0]?.content==="# Original OpenSpec input\n")).toBe(true);expect(snapshots.find(row=>row.agentId===reviewer).repositoryPath).toBe(reviewRoot);if(mode==="worktree")expect(snapshots.some(row=>row.repositoryPath!==repository&&row.chain==="analysis")).toBe(true);}finally{contextDb.close();}
  await expect(app.invoke({actor:host(),action:"completion"})).rejects.toThrow(/Read and acknowledge/);
  const reading=z.object({revision:z.number(),sequence:z.number(),requirement:z.object({review:z.object({report_hash:z.string()})})}).parse(await app.invoke({actor:human,action:"overview"}));
  const acknowledgement={expected_revision:reading.revision,expected_sequence:reading.sequence,report_hash:reading.requirement.review.report_hash};

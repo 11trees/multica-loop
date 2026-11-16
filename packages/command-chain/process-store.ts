@@ -101,6 +101,11 @@ export class EngineeringProcessStore {
         const allocations = this.db.prepare("SELECT status,payload FROM engineering_process WHERE workspace_id=? AND issue_id=? ORDER BY rowid").all(workspaceId, issueId).map(row => ({ ...JSON.parse(String(row.payload)), status: row.status }));
         return { bindings, allocations };
     }
+    repository(owner:Owner){
+        owner=ownerSchema.parse(owner);
+        const row=this.db.prepare("SELECT payload FROM engineering_process_binding WHERE workspace_id=? AND issue_id=? AND agent_id=? AND attempt_id=?").get(owner.workspaceId,owner.issueId,owner.agentId,owner.attemptId);
+        return row?z.strictObject({projectId:z.uuid().nullable(),repositoryPath:text,mode:z.enum(["in_place","worktree"])}).parse(JSON.parse(String(row.payload))):null;
+    }
     assertExited(workspaceId: string, issueId: string) { if (this.db.prepare("SELECT 1 FROM engineering_process WHERE workspace_id=? AND issue_id=? AND status<>'exited'").get(workspaceId, issueId))
         throw new DraftConflictError("Native provider process has not confirmed physical exit"); }
 }

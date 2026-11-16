@@ -212,3 +212,11 @@ shared-repository ownership retain their own migration requirements.
 ![Built-in Team settings](assets/builtin-team-settings-390.png)
 
 ![Task choosing a built-in Team](assets/builtin-team-task-390.png)
+
+## OpenSpec repository material
+
+A delivery Team can select [OpenSpec repository context](openspec-context.md) in
+its existing settings. Tasks retain the selected Team version; managed units
+inherit it. Each native role attempt freezes the exact daemon-bound directory
+and Markdown versions on its first authenticated checkpoint read. This does not
+add a task-level Agent/pack choice or import source configuration automatically.

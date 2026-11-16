@@ -183,6 +183,10 @@
     "runtime_scope": "Configure le runtime de tous les rôles de cette Team.",
     "runtime_partial": "{{count}} rôles sur {{total}} mis à jour. Réessayez pour terminer.",
     "runtime_saved": "Runtime de la Team enregistré.",
-    "connect_runtime": "Connecter un runtime"
+    "connect_runtime": "Connecter un runtime",
+    "repository_context": "Contexte du dépôt",
+    "context_none": "Par défaut",
+    "context_openspec": "Changements OpenSpec",
+    "context_hint": "Conserve une version des documents par exécution. Les tâches héritent de ce réglage du Team."
   }
 }

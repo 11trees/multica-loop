@@ -1,7 +1,7 @@
 // @vitest-environment node
 import {randomUUID} from "node:crypto";
 import {execFileSync} from "node:child_process";
-import {mkdtemp,readFile,realpath,rm,writeFile} from "node:fs/promises";
+import {mkdir,mkdtemp,readFile,realpath,rm,writeFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {afterEach,beforeEach,expect,it} from "vitest";
@@ -37,4 +37,13 @@ it("does not adopt legacy tasks automatically, and rejects per-task role overrid
  expect(await invoke(host,"team-routing",{team_id:teamId,created_at:"2000-01-01T00:00:00.000Z"})).toMatchObject({owned:false});
  expect(await invoke(host,"team-routing",{team_id:teamId,created_at:"2099-01-01T00:00:00.000Z"})).toMatchObject({owned:true});
  await expect(invoke(human,"team-start",{team_id:teamId,team_revision:1,project_id:projectId,input:"Task goal",repository_path:repository,execution_resources:[{path:repository,mode:"in_place"}],agent_id:randomUUID()})).rejects.toThrow();
+});
+
+it("exposes frozen OpenSpec documents only after native Team role binding, retaining the original Team setting",async()=>{
+ await mkdir(join(repository,"openspec/changes/current"),{recursive:true});await writeFile(join(repository,"openspec/changes/current/proposal.md"),"# Frozen native material\n");execFileSync("git",["-C",repository,"add","."]);execFileSync("git",["-C",repository,"commit","-qm","Original repository material"]);
+ const roles=Object.fromEntries(teamWorkflowRoles.develop.map(role=>[role,randomUUID()])),definition={workflow:"develop",roles,decision_mode:"balanced",max_reworks:2,context_adapter:"openspec"};await invoke(manager,"team-profile",{expected_revision:0,definition});await invoke(human,"team-start",{team_id:teamId,team_revision:1,project_id:projectId,input:"Keep the authoritative native goal",repository_path:repository,execution_resources:Object.keys(roles).map(()=>({path:repository,mode:"in_place"}))});
+ const task={kind:"task" as const,workspaceId,issueId,agentId:roles.context!,attemptId:"openspec:claim:1",projectId};await expect(invoke(task,"read")).rejects.toThrow(/bind/);await invoke({...task,kind:"daemon"},"bind",{work_dir:repository,mode:"in_place",overlays:[]});
+ const result=await invoke(task,"start");expect(result).toMatchObject({chain:"context",repositoryContext:{adapter:"openspec",attemptId:task.attemptId,teamRevision:1,resources:[{path:"openspec/changes/current/proposal.md",content:"# Frozen native material\n",authority:"source_material"}]}});
+ const {context_adapter:_,...next}=definition;await invoke(manager,"team-profile",{expected_revision:1,definition:next});expect(await invoke(task,"read")).toMatchObject({repositoryContext:Reflect.get(result,"repositoryContext")});await expect(invoke({...task,agentId:roles.verifier!},"read")).rejects.toThrow(/own|role/);
+ await writeFile(join(repository,"openspec/changes/current/proposal.md"),"Changed after the original attempt read\n");await invoke(task,"intervention-request",{summary:"Readonly material changed",reason:"Retain the original checkpoint for independent investigation",evidence:"Current document bytes differ"});expect(await invoke(task,"read")).toMatchObject({repositoryContext:Reflect.get(result,"repositoryContext"),agent_action:"end_execution"});
 });

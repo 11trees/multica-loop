@@ -44,3 +44,8 @@ it("freezes a task's Team, project and input independently of later Team edits",
  expect(store.bind(workspace,randomUUID(),user,{...input,team_revision:2}).profile).toEqual(second);
  expect(store.binding(randomUUID(),issue)).toBeNull();
 });
+
+it("keeps OpenSpec context on the frozen Team without changing older default definitions",()=>{
+ const old=definition();expect(teamDefinitionSchema.parse(old)).toEqual(old);expect(()=>teamDefinitionSchema.parse({...old,context_adapter:"openspec"})).toThrow(/delivery workflow/);
+ const value={...old,workflow:"develop",roles:Object.fromEntries(teamWorkflowRoles.develop.map(role=>[role,randomUUID()])),context_adapter:"openspec"};store.configure(workspace,team,user,{expected_revision:0,definition:value});const frozen=store.bind(workspace,issue,user,{team_id:team,team_revision:1,project_id:project,input:"Original OpenSpec task"});const {context_adapter:_,...next}=value;store.configure(workspace,team,user,{expected_revision:1,definition:next});expect(store.binding(workspace,issue)?.profile.definition.context_adapter).toBe("openspec");expect(frozen.profile.definition.context_adapter).toBe("openspec");expect(store.current(workspace,team)?.definition).not.toHaveProperty("context_adapter");
+});
