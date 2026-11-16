@@ -4,8 +4,8 @@ LoopWork's repair takeover drains workspace writers before granting an owned
 repair anchor (`repair-takeover.ts` and `execution-processes.ts`). Native task
 termination, cancellation and slot availability do not establish that fact. The
 native ownership journal and project admission guards supply prerequisites;
-Recorded Codex takeover draining is connected; controlled repair workspaces and
-independent repair verification remain unconnected.
+Recorded Codex takeover draining is connected; controlled repair writes and actual
+independent check execution remain unconnected. Separate [Test preparation](repair-verification.md) is connected.
 
 ## Task preparation and cleanup
 

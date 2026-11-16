@@ -383,6 +383,15 @@ func TestEngineeringTakeoverBundledWorkersAndPrivateControl(t *testing.T) {
 	if err = json.Unmarshal(call(management, map[string]any{"action": "acquire", "owner_id": "rpc-fixture", "execution_supported": true}), &acquired); err != nil {
 		t.Fatal(err)
 	}
+	renew := func() {
+		t.Helper()
+		var result struct {
+			Renewed bool `json:"renewed"`
+		}
+		if err := json.Unmarshal(call(management, map[string]any{"action": "renew", "authority": acquired.Authority}), &result); err != nil || !result.Renewed {
+			t.Fatal("fixture supervision lease did not renew", err)
+		}
+	}
 	f.h.EngineeringWorker = business
 	f.h.EngineeringAdminWorker = management
 	if err = f.h.ReconcileEngineeringAdmin(ctx, acquired.Authority); err != nil {
@@ -429,6 +438,7 @@ func TestEngineeringTakeoverBundledWorkersAndPrivateControl(t *testing.T) {
 		t.Fatal("private drain progress was not durable in management storage", err)
 	}
 	targetsHash := state.Progress.TargetsHash
+	renew()
 	f.call(t, "end", map[string]any{"host_id": host, "no_provider_started": true}, 200)
 	if err = f.h.ReconcileEngineeringTakeovers(ctx, acquired.Authority); err != nil {
 		t.Fatal(err)
@@ -510,6 +520,43 @@ func TestEngineeringTakeoverBundledWorkersAndPrivateControl(t *testing.T) {
 	if string(permission) != `{"allowed":false}` {
 		t.Fatal("verification request resumed original business", string(permission))
 	}
+	renew()
+	var independent struct {
+		Claim   json.RawMessage `json:"claim"`
+		Attempt struct {
+			Role       string `json:"role"`
+			Status     string `json:"status"`
+			Generation int64  `json:"generation"`
+			ID         string `json:"attemptId"`
+		} `json:"attempt"`
+	}
+	if err = json.Unmarshal(call(management, map[string]any{"action": "claim", "authority": acquired.Authority}), &independent); err != nil || independent.Attempt.Role != "verification" || independent.Attempt.Status != "waiting" {
+		t.Fatal("independent Test did not allocate a waiting generation", err)
+	}
+	if err = f.h.ReconcileEngineeringTakeovers(ctx, acquired.Authority); err != nil {
+		t.Fatal(err)
+	}
+	renew()
+	if err = f.h.ValidateEngineeringIndependentVerification(ctx, independent.Claim); err != nil {
+		t.Fatal(err)
+	}
+	fence, err = f.h.Queries.GetEngineeringRepairFence(ctx, db.GetEngineeringRepairFenceParams{WorkspaceID: parseUUID(testWorkspaceID), ProjectID: parseUUID(f.project)})
+	if err != nil || fence.Generation != independent.Attempt.Generation || fence.AttemptID != independent.Attempt.ID || fence.Phase != "owned" {
+		t.Fatal("independent generation did not reauthorize the exact original native fence", err)
+	}
+	if err = os.WriteFile(filepath.Join(repository, "uncommitted-repair.txt"), []byte("Wrong version before independent launch"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err = f.h.ValidateEngineeringIndependentVerification(ctx, independent.Claim); err == nil {
+		t.Fatal("independent launch accepted stale frozen source content")
+	}
+	if err = os.WriteFile(filepath.Join(repository, "uncommitted-repair.txt"), []byte("Actual candidate source"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err = f.h.ValidateEngineeringIndependentVerification(ctx, independent.Claim); err != nil {
+		t.Fatal(err)
+	}
+	call(management, map[string]any{"action": "verification-wait-cancel", "authority": acquired.Authority, "attempt_id": independent.Attempt.ID})
 	cancel()
 }
 

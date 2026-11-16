@@ -54,7 +54,10 @@ it("freezes every original target from host facts, excludes repairer checks, and
  expect(store.issue(workspaceId,issueId).status).toBe("running");
  expect(store.execution.finish(h.claim,{exit_confirmed:true,reason:"Physical exit confirmed"})).toEqual({settled:true});
  expect(store.issue(workspaceId,issueId)).toMatchObject({status:"verifying",original_version:"original-runtime",observation_count:2});
- expect(store.execution.active()).toEqual([]);expect(store.execution.claim(h.authority)).toBeNull();
+ expect(store.execution.active()).toEqual([]);
+ const verifier=store.execution.claim(h.authority)!;
+ expect(verifier.attempt).toMatchObject({role:"verification",status:"waiting",pid:null,verification:{sourceRepairAttemptId:h.claim.attemptId,inputHash:frozen.hash}});
+ expect(store.execution.verificationCurrent(verifier.claim)).toMatchObject({ready:false});
  expect(()=>store.execution.prepareVerification(h.claim)).toThrow(/identity, intent or generation/);
  expect(store.execution.verificationInput(h.claim.attemptId)).toEqual(frozen);
  expect(store.execution.readVerificationInput(h.authority,h.claim.attemptId)).toEqual(frozen);
@@ -111,4 +114,59 @@ it("rejects missing original oracles and conflicting target identities while ret
  expect(()=>originalRepairTargets([{...first,evidence:{original:{...first.evidence.original,snapshot:{contract:{sources:[{key:"missing-oracle"}]}}}}}])).toThrow();
  expect(()=>originalRepairTargets([{...first,issueId:randomUUID()}])).toThrow(/identity/);
  expect(originalRepairTargets([observation("direct","direct")])[0]!.original).toBe("Original task with full materials");
+});
+
+function waitingVerification(){const h=setup();h.command({action:"submit",result:h.result});store.execution.prepareVerification(h.claim);store.execution.finish(h.claim,{exit_confirmed:true,reason:"Original repair invocation ended"});const verifier=store.execution.claim(h.authority)!;return {...h,verifier};}
+it("requires a new owned scope and a durable launch reservation, with no Admin commands for the separate Test",()=>{
+ const h=waitingVerification(),claim=h.verifier.claim;
+ expect(store.execution.claim(h.authority)).toBeNull();
+ expect(()=>store.execution.command(claim,{action:"status"})).toThrow(/no Admin command authority/);
+ expect(()=>store.execution.bind(claim,{pid:42,marker:"fixture-birth",group_id:42})).toThrow(/durable launch/);
+ expect(()=>store.execution.launchVerification(claim)).toThrow(/not currently owned/);
+ store.execution.recordTakeoverProgress(claim,h.progress);
+ expect(store.execution.verificationCurrent(claim,true)).toMatchObject({ready:true,input:{sourceRepairAttemptId:h.claim.attemptId}});
+ expect(store.execution.launchVerification(claim)).toEqual({reserved:true});
+ expect(()=>store.execution.launchVerification(claim)).toThrow(/already reserved/);
+ store.execution.bind(claim,{pid:42,marker:"fixture-birth",group_id:42});
+ expect(()=>store.execution.cancelWaitingVerification(h.authority,claim.attemptId)).toThrow(/never-launched/);
+});
+it("safely requeues a durable never-launched Test across stop and supervisor replacement without inheriting permission",()=>{
+ const h=waitingVerification();store.execution.setIntent({intent:"stopped",request_id:"stop-waiting"});
+ store.close();store=new AdminStore(filename,()=>now);expect(store.execution.active()).toMatchObject([{role:"verification",status:"waiting",pid:null}]);
+ now+=30001;const successor=store.acquireSupervisor("successor",30000,true)!;
+ expect(()=>store.execution.verificationCurrent(h.verifier.claim)).toThrow(/authority/);
+ expect(store.execution.cancelWaitingVerification(successor,h.verifier.claim.attemptId)).toEqual({cancelled:true});
+ expect(store.execution.active()).toEqual([]);expect(store.issue(workspaceId,issueId).status).toBe("verifying");
+ store.execution.setIntent({intent:"running",request_id:"resume-waiting"});const next=store.execution.claim(successor)!;
+ expect(next.attempt).toMatchObject({role:"verification",status:"waiting",generation:h.verifier.attempt.generation+1});
+ expect(store.execution.verificationCurrent(next.claim)).toMatchObject({ready:false});
+});
+it("preserves a separate Test plan against exact original targets and physical exit without declaring repair passed",async()=>{
+ const {verificationArtifactsHash}=await import("./repair-verification-plan");const h=waitingVerification(),claim=h.verifier.claim;
+ store.execution.recordTakeoverProgress(claim,h.progress);store.execution.launchVerification(claim);store.execution.bind(claim,{pid:42,marker:"test-birth",group_id:42});
+ const view=store.execution.verificationCurrent(claim,true);
+ const files=[{path:"independent.cjs",kind:"file" as const,hash:"f".repeat(64),size:70,mode:448}],artifacts={directory:"/fixture/private-test",mode:448,files,hash:verificationArtifactsHash(files,448)};
+ const proposed={reproduction:{targetRef:"original-failures",command:"node independent.cjs reproduce"},acceptanceChecks:view.input.targets.map(target=>({targetRef:target.targetRef,command:"node independent.cjs actual-assertion"}))};
+ expect(()=>store.execution.recordVerificationPlan(claim,{proposed:{...proposed,passed:true},artifacts})).toThrow();
+ expect(()=>store.execution.recordVerificationPlan(claim,{proposed:{...proposed,acceptanceChecks:proposed.acceptanceChecks.slice(1)},artifacts})).toThrow(/every exact/);
+ expect(()=>store.execution.recordVerificationPlan(claim,{proposed,artifacts:{...artifacts,hash:"0".repeat(64)}})).toThrow(/manifest hash/);
+ expect(store.execution.recordVerificationPlan(claim,{proposed,artifacts})).toEqual({prepared:true});
+ const saved=store.execution.verificationPlan(claim.attemptId);
+ expect(()=>store.execution.recordVerificationPlan(claim,{proposed:{...proposed,reproduction:{...proposed.reproduction,command:"replace"}},artifacts})).toThrow(/cannot be replaced/);
+ expect(store.execution.finish(claim,{exit_confirmed:false,reason:"Test group remains"})).toEqual({settled:false});
+ expect(store.issue(workspaceId,issueId).status).toBe("running");
+ store.execution.finish(claim,{exit_confirmed:true,reason:"Test preparation physically ended"});
+ expect(store.issue(workspaceId,issueId)).toMatchObject({status:"verification-prepared",observation_count:2});
+ expect(store.execution.claim(h.authority)).toBeNull();expect(store.execution.readVerificationPlan(h.authority,claim.attemptId)).toEqual(saved);
+ store.observe(h.authority,observation("new-after-plan"));
+ expect(store.issue(workspaceId,issueId).status).toBe("queued");
+ expect(store.execution.readVerificationPlan(h.authority,claim.attemptId)).toEqual(saved);
+ expect(store.execution.claim(h.authority)!.attempt.role).toBe("investigation");
+});
+
+it("returns a cancelled waiting Test to repair when new original facts invalidate its frozen input",()=>{
+ const h=waitingVerification();store.observe(h.authority,observation("new-while-waiting"));
+ expect(()=>store.execution.verificationCurrent(h.verifier.claim)).toThrow(/observations changed/);
+ store.execution.cancelWaitingVerification(h.authority,h.verifier.claim.attemptId);
+ expect(store.issue(workspaceId,issueId).status).toBe("queued");expect(store.execution.claim(h.authority)!.attempt.role).toBe("investigation");
 });

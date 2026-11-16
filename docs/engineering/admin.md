@@ -81,7 +81,7 @@ A native task or an investigation invocation cannot use these management command
 
 ## Investigation and physical ownership
 
-The management database schema is version 5. It freezes one invocation generation,
+The management database schema is version 6. It freezes one invocation generation,
 session identity, runtime revision and recovery method per allocation. A durable
 fair queue rotates Cases, with at most one live investigation process globally.
 There is no fallback executable discovery or unconfigured alternate runtime.
@@ -113,7 +113,10 @@ Deferred investigation retains the failed attempt and original observations whil
 requeueing the Case. A `verification-requested` submission now requires owned
 scoped takeover, exact host-read content and all original references. The private
 host freezes independent input before replying; confirmed repair exit moves the
-Case to waiting verification. See [the verification input gate](repair-verification.md).
+Case to waiting verification. A separate Test generation now reauthorizes the
+original native source and prepares checks without Admin command credentials;
+its prepared plan does not execute checks or authorize business completion.
+See [the verification protocol](repair-verification.md).
 Diagnosis and external-wait prerequisites remain unconnected. No investigation
 receipt closes the Case or resumes business.
 
@@ -140,7 +143,7 @@ Fake-provider integration runs the real SDK process lifecycle and bundled worker
 asserting PID binding before the first command, private status/evidence/submit,
 retained deferred results, cooperative user stop and confirmed group exit. Separate
 checks refuse a wrong birth marker and unknown allocation identity; CLI checks
-keep human credentials out of the invocation protocol. Race-enabled checks passed. The complete protocol kernel passed 257 tests across
+keep human credentials out of the invocation protocol. Race-enabled checks passed. An earlier increment's complete protocol kernel run passed 257 tests across
 24 files; the PostgreSQL-backed engineering handler checks, kernel typecheck/lint,
 Go vet and environment registry checks also passed. Linux cross-compilation passed;
 no Linux process was executed.
@@ -166,10 +169,11 @@ that their Cases, observations, attempts and scheduling records are removed.
 
 [Native execution ownership](process-ownership.md) now records preparation-to-cleanup
 controllers, original issue/chat scope, Codex birth/exit facts and project admission
-guards in PostgreSQL as prerequisites for takeover. Admin draining-fence acquisition and native task cancellation are connected; physical writer draining and owned repair access remain incomplete.
-Scoped workspace takeover, repair workspace/build actions, independent diagnosis,
-repair verification, external dependency probes, verified business handoff and
-runtime updates remain unconnected. Real-provider, Linux runtime and packaged
+guards in PostgreSQL as prerequisites for takeover. Recorded local Codex draining,
+owned cohort progress, current content identity and separate independent Test
+preparation are connected. Repair write access, controlled workspace/build
+actions, independent diagnosis, actual repair check execution, external dependency
+probes, verified business handoff and runtime updates remain unconnected. Real-provider, Linux runtime and packaged
 acceptance remain unverified. The complete migration stays active.
 
 

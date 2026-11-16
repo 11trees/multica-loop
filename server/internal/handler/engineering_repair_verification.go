@@ -41,3 +41,38 @@ func (h *Handler) PrepareEngineeringRepairVerification(ctx context.Context, clai
 	_, err = h.EngineeringAdminWorker.Call(ctx, map[string]any{"action": "verification-prepare", "claim": claim})
 	return err
 }
+
+// Source authorization belongs to the host; a saved input is not a live lease.
+func (h *Handler) ValidateEngineeringIndependentVerification(ctx context.Context, claim json.RawMessage) error {
+	if h.EngineeringTakeoverControl == nil {
+		return fmt.Errorf("native verification ownership control unavailable")
+	}
+	raw, err := h.EngineeringAdminWorker.Call(ctx, map[string]any{"action": "takeover-current", "claim": claim})
+	if err != nil {
+		return err
+	}
+	var current engineeringTakeoverCurrent
+	if err = json.Unmarshal(raw, &current); err != nil {
+		return err
+	}
+	progress, err := h.EngineeringTakeoverControl.Call(ctx, map[string]any{"claim": claim})
+	if err != nil {
+		return err
+	}
+	var physical engineeringRepairProgress
+	if err = json.Unmarshal(progress, &physical); err != nil {
+		return err
+	}
+	if physical.Phase != "owned" || physical.WorkspaceRoot == nil {
+		return fmt.Errorf("independent verification is not physically owned")
+	}
+	if _, err = h.EngineeringAdminWorker.Call(ctx, map[string]any{"action": "takeover-progress", "claim": claim, "payload": progress}); err != nil {
+		return err
+	}
+	source := current.Request
+	if err = h.recordEngineeringRepairWorkspaceVersion(ctx, claim, source.WorkspaceID, source.IssueID, source.CaseID, source.ObservationID, source.SnapshotHash, progress); err != nil {
+		return err
+	}
+	_, err = h.EngineeringAdminWorker.Call(ctx, map[string]any{"action": "verification-current", "claim": claim, "require_owned": true})
+	return err
+}

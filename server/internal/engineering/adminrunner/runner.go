@@ -37,6 +37,10 @@ type claim struct {
 	SessionID  string    `json:"sessionId"`
 }
 type attempt struct {
+	Role             string  `json:"role"`
+	Status           string  `json:"status"`
+	SessionID        string  `json:"sessionId"`
+	Generation       int64   `json:"generation"`
 	AttemptID        string  `json:"attemptId"`
 	CaseID           string  `json:"caseId"`
 	OwnerID          string  `json:"ownerId"`
@@ -68,6 +72,7 @@ type Runner struct {
 	Multica             string
 	Root                string
 	PrepareVerification func(context.Context, json.RawMessage) error
+	VerifyScope         func(context.Context, json.RawMessage) error
 	mu                  sync.Mutex
 	active              *invocation
 }
@@ -107,6 +112,15 @@ func (r *Runner) Tick(ctx context.Context, owner string, token int64) error {
 		return nil
 	}
 	for _, old := range state.Active {
+		if old.Status == "waiting" && old.Role == "verification" {
+			if state.Control.Intent == "running" && old.OwnerID == current.OwnerID && old.SupervisionToken == current.Token && old.IntentRevision == state.Control.Revision {
+				return r.startVerification(ctx, current, old)
+			}
+			if _, err = r.Client.Call(ctx, map[string]any{"action": "verification-wait-cancel", "authority": current, "attempt_id": old.AttemptID}); err != nil {
+				return err
+			}
+			continue
+		}
 		if old.PID == nil || old.Marker == nil {
 			return fmt.Errorf("Admin allocation %s has unconfirmed process identity", old.AttemptID)
 		}
@@ -141,13 +155,19 @@ func (r *Runner) Tick(ctx context.Context, owner string, token int64) error {
 	if err = json.Unmarshal(data, &allocated); err != nil || allocated.Claim.AttemptID == "" {
 		return fmt.Errorf("invalid Admin allocation")
 	}
+	if allocated.Attempt.Role == "verification" {
+		return r.startVerification(ctx, current, allocated.Attempt)
+	}
+	r.launch(ctx, allocated.Claim, allocated.Attempt)
+	return nil
+}
+func (r *Runner) launch(ctx context.Context, identity claim, attempt attempt) {
 	runCtx, cancel := context.WithCancel(ctx)
-	run := &invocation{claim: allocated.Claim, attempt: allocated.Attempt, cancel: cancel, done: make(chan struct{})}
+	run := &invocation{claim: identity, attempt: attempt, cancel: cancel, done: make(chan struct{})}
 	r.mu.Lock()
 	r.active = run
 	r.mu.Unlock()
 	go r.execute(runCtx, run)
-	return nil
 }
 func (r *Runner) Stop(ctx context.Context) bool {
 	r.mu.Lock()
@@ -156,9 +176,24 @@ func (r *Runner) Stop(ctx context.Context) bool {
 	if run == nil {
 		data, err := r.Client.Call(ctx, map[string]any{"action": "state"})
 		var state struct {
+			Control struct {
+				Owner string `json:"owner_id"`
+				Token int64  `json:"fencing_token"`
+			} `json:"control"`
 			Active []attempt `json:"active"`
 		}
-		return err == nil && json.Unmarshal(data, &state) == nil && len(state.Active) == 0
+		if err != nil || json.Unmarshal(data, &state) != nil {
+			return false
+		}
+		for _, old := range state.Active {
+			if old.Status != "waiting" || old.Role != "verification" {
+				return false
+			}
+			if _, err = r.Client.Call(ctx, map[string]any{"action": "verification-wait-cancel", "authority": authority{OwnerID: state.Control.Owner, Token: state.Control.Token}, "attempt_id": old.AttemptID}); err != nil {
+				return false
+			}
+		}
+		return true
 	}
 	run.cancel()
 	select {
@@ -193,6 +228,10 @@ func (r *Runner) execute(ctx context.Context, run *invocation) {
 			_, _ = r.Client.Call(settle, map[string]any{"action": "retire", "authority": run.claim.Authority, "payload": map[string]any{"attempt_id": run.claim.AttemptID, "exit_confirmed": true, "pid": pid, "marker": marker, "owned_launch": true, "reason": reason}})
 		}
 	}()
+	if run.attempt.Role == "verification" {
+		reason = r.prepareIndependentChecks(ctx, run)
+		return
+	}
 	temporary, err := os.MkdirTemp("", "multica-admin-")
 	if err != nil {
 		reason = err.Error()
@@ -253,13 +292,7 @@ func (r *Runner) execute(ctx context.Context, run *invocation) {
 	})}
 	go func() { _ = server.Serve(listener) }()
 	defer server.Close()
-	environment := map[string]string{}
-	for _, entry := range os.Environ() {
-		key, _, _ := strings.Cut(entry, "=")
-		if strings.HasPrefix(key, "MULTICA_") || strings.HasPrefix(key, "PG") || strings.HasPrefix(key, "POSTGRES_") || key == "DATABASE_URL" {
-			environment[key] = ""
-		}
-	}
+	environment := adminProviderEnvironment()
 	environment["MULTICA_ADMIN_SOCKET"] = socket
 	environment["MULTICA_ADMIN_TOKEN"] = token
 	environment["MULTICA_ADMIN_MULTICA"] = r.Multica
@@ -268,23 +301,7 @@ func (r *Runner) execute(ctx context.Context, run *invocation) {
 		reason = "Unsupported Admin provider"
 		return
 	}
-	backend, err := agent.New("codex", agent.Config{ExecutablePath: run.attempt.Runtime.Configuration.ExecutablePath, Env: environment, OnProcessStarted: func(pid int) error {
-		run.mu.Lock()
-		run.pid = pid
-		run.mu.Unlock()
-		marker, err := processidentity.Marker(pid)
-		if err != nil {
-			return err
-		}
-		if err = processidentity.ValidateGroup(pid); err != nil {
-			return err
-		}
-		run.mu.Lock()
-		run.marker = marker
-		run.mu.Unlock()
-		_, err = r.Client.Call(ctx, map[string]any{"action": "bind", "claim": run.claim, "payload": map[string]any{"pid": pid, "marker": marker, "group_id": pid}})
-		return err
-	}})
+	backend, err := agent.New("codex", agent.Config{ExecutablePath: run.attempt.Runtime.Configuration.ExecutablePath, Env: environment, OnProcessStarted: func(pid int) error { return r.bindProcess(ctx, run, pid) }})
 	if err != nil {
 		reason = err.Error()
 		return

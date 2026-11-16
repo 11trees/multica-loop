@@ -72,6 +72,9 @@ func init() {
 }
 
 func resolveToken(cmd *cobra.Command) string {
+	if inIndependentVerificationContext() {
+		return ""
+	}
 	if v := strings.TrimSpace(os.Getenv("MULTICA_TOKEN")); v != "" {
 		return v
 	}

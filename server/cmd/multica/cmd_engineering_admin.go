@@ -62,7 +62,7 @@ func callAdminCommand(ctx context.Context, payload any) (json.RawMessage, error)
 }
 
 func adminWorker(cmd *cobra.Command) (*engineering.Client, error) {
-	if os.Getenv("MULTICA_ADMIN_TOKEN") != "" || os.Getenv("MULTICA_TASK_ID") != "" {
+	if os.Getenv("MULTICA_ADMIN_TOKEN") != "" || inDaemonTaskIdentityContext() {
 		return nil, fmt.Errorf("Management control is unavailable inside an agent invocation")
 	}
 	worker, _ := cmd.Flags().GetString("worker")
@@ -255,6 +255,7 @@ func init() {
 		executor := &adminrunner.Runner{Client: client, Multica: binary, Root: root}
 		h := &handler.Handler{EngineeringTakeoverControl: &engineering.LocalControlClient{Socket: client.Database[:len(client.Database)-len(".admin.sqlite")] + ".control.sock"}, Queries: db.New(pool), EngineeringWorker: &engineering.Client{Worker: client.Worker, Database: client.Database[:len(client.Database)-len(".admin.sqlite")]}, EngineeringAdminWorker: client, EngineeringAdminExecutor: executor}
 		executor.PrepareVerification = h.PrepareEngineeringRepairVerification
+		executor.VerifyScope = h.ValidateEngineeringIndependentVerification
 		h.RunEngineeringAdmin(ctx)
 		return nil
 	}}

@@ -52,6 +52,13 @@ func TestAdminFakeProviderHelper(t *testing.T) {
 			_ = output.Encode(map[string]any{"method": "turn/completed", "params": map[string]any{"threadId": "fixture-thread", "turn": map[string]any{"id": "fixture-turn", "status": "interrupted"}}})
 			continue
 		case "turn/start":
+			if os.Getenv("MULTICA_VERIFICATION_INPUT") != "" {
+				fixtureIndependentPlan()
+				_ = output.Encode(map[string]any{"id": json.RawMessage(request.ID), "result": map[string]any{"turn": map[string]any{"id": "fixture-turn", "status": "inProgress"}}})
+				_ = output.Encode(map[string]any{"method": "turn/started", "params": map[string]any{"threadId": "fixture-thread", "turn": map[string]any{"id": "fixture-turn"}}})
+				_ = output.Encode(map[string]any{"method": "turn/completed", "params": map[string]any{"threadId": "fixture-thread", "turn": map[string]any{"id": "fixture-turn", "status": "completed"}}})
+				continue
+			}
 			// The provider cannot issue its first command before the host persisted PID.
 			status := fixtureAdminCommand(map[string]any{"action": "status"})
 			var view struct {

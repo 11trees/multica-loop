@@ -32,7 +32,7 @@ export class AdminStore {
       const tables = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all();
       if (tables.some(table => /^(engineering_|requirement_|business_contract$|direct_contract$|chain_drafts$)/.test(String(table.name))) || tables.length && !tables.some(table => table.name === "admin_control")) throw new Error("Admin storage cannot reuse a business or unrelated database");
       const version = Number(this.db.prepare("PRAGMA user_version").get()!.user_version);
-      if (version > 5) throw new Error("Admin database version is newer than this worker");
+      if (version > 6) throw new Error("Admin database version is newer than this worker");
       this.db.exec(`PRAGMA busy_timeout=1000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; BEGIN IMMEDIATE;
         CREATE TABLE IF NOT EXISTS admin_control(singleton INTEGER PRIMARY KEY CHECK(singleton=1),
           desired_intent TEXT NOT NULL DEFAULT 'stopped',intent_revision INTEGER NOT NULL DEFAULT 0,
@@ -46,9 +46,9 @@ export class AdminStore {
         CREATE INDEX IF NOT EXISTS admin_observation_issue ON admin_observation(workspace_id,issue_id);
         `);
       const lockedVersion=Number(this.db.prepare("PRAGMA user_version").get()!.user_version);
-      if(lockedVersion>5)throw new Error("Admin database version is newer than this worker");
+      if(lockedVersion>6)throw new Error("Admin database version is newer than this worker");
       initializeAdminExecution(this.db,lockedVersion);
-      this.db.exec("PRAGMA user_version=5; COMMIT");
+      this.db.exec("PRAGMA user_version=6; COMMIT");
       this.execution=new AdminExecutionStore(this.db,this.now,value=>this.requireSupervisor(value));
     } catch (error) { this.db.close(); throw error; }
   }
@@ -114,7 +114,7 @@ export class AdminStore {
         this.db.prepare("INSERT INTO admin_case(case_id,dedupe_key,workspace_id,scope,scope_key,original_version,original_summary,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)")
           .run(repairCase.case_id, key, observation.workspaceId, observation.scope, observation.scopeKey, observation.sourceVersion, observation.summary, this.now(), this.now());
       } else {
-        this.db.prepare("UPDATE admin_case SET status=CASE WHEN status IN ('closed','verifying','observing') AND ?<>'admin' THEN 'queued' ELSE status END,updated_at=? WHERE case_id=?")
+        this.db.prepare("UPDATE admin_case SET status=CASE WHEN status IN ('closed','verifying','verification-prepared','observing') AND ?<>'admin' THEN 'queued' ELSE status END,updated_at=? WHERE case_id=?")
           .run(observation.origin, this.now(), repairCase.case_id);
       }
       this.db.prepare("INSERT OR IGNORE INTO admin_schedule(case_id) VALUES(?)").run(repairCase.case_id);
@@ -137,6 +137,11 @@ export class AdminStore {
 
 export const adminRequestSchema = z.discriminatedUnion("action", [
   z.strictObject({action:z.literal("state")}),
+  z.strictObject({action:z.literal("verification-current"),claim:adminClaimSchema,require_owned:z.boolean().optional().default(false)}),
+  z.strictObject({action:z.literal("verification-launch"),claim:adminClaimSchema}),
+  z.strictObject({action:z.literal("verification-wait-cancel"),authority:adminAuthoritySchema,attempt_id:text}),
+  z.strictObject({action:z.literal("verification-plan"),claim:adminClaimSchema,payload:z.unknown()}),
+  z.strictObject({action:z.literal("verification-plan-read"),authority:adminAuthoritySchema,attempt_id:text}),
   z.strictObject({action:z.literal("takeover-predecessor"),claim:adminClaimSchema,attempt_id:text}),
   z.strictObject({action:z.literal("verification-prepare"),claim:adminClaimSchema}),
   z.strictObject({action:z.literal("verification-input"),authority:adminAuthoritySchema,attempt_id:text}),
@@ -161,6 +166,11 @@ export const adminRequestSchema = z.discriminatedUnion("action", [
 export function invokeAdmin(store: AdminStore, input: unknown) {
   const request = adminRequestSchema.parse(input);
   switch (request.action) {
+    case "verification-current": return store.execution.verificationCurrent(request.claim,request.require_owned);
+    case "verification-launch": return store.execution.launchVerification(request.claim);
+    case "verification-wait-cancel": return store.execution.cancelWaitingVerification(request.authority,request.attempt_id);
+    case "verification-plan-read": return store.execution.readVerificationPlan(request.authority,request.attempt_id);
+    case "verification-plan": return store.execution.recordVerificationPlan(request.claim,request.payload);
     case "takeover-predecessor": return store.execution.predecessorStopped(request.claim,request.attempt_id);
     case "verification-input": return store.execution.readVerificationInput(request.authority,request.attempt_id);
     case "verification-prepare": return store.execution.prepareVerification(request.claim);

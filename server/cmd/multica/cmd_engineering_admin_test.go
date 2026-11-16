@@ -103,3 +103,28 @@ func TestEngineeringAdminManagementIsUnavailableToTaskInvocation(t *testing.T) {
 		t.Fatal("Native business task obtained local management control")
 	}
 }
+
+func TestEngineeringAdminIndependentTestCannotUseHumanCredentials(t *testing.T) {
+	for _, marker := range []string{"MULTICA_VERIFICATION_INPUT", "MULTICA_VERIFICATION_RESULT"} {
+		t.Run(marker, func(t *testing.T) {
+			t.Setenv(marker, filepath.Join(t.TempDir(), "private-test-input"))
+			t.Setenv("MULTICA_TOKEN", "human-credential-must-not-be-used")
+			command, _, err := engineeringCmd.Find([]string{"admin-control", "start"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if resolveToken(command) != "" {
+				t.Fatal("independent Test inherited a member or task token")
+			}
+			if _, err = adminWorker(command); err == nil {
+				t.Fatal("independent Test obtained management access")
+			}
+			if err = requireHumanLocalCommand("login"); err == nil {
+				t.Fatal("independent Test could authenticate as the user")
+			}
+			if err = requireTaskLocalConfigRoot(); err == nil {
+				t.Fatal("independent Test could fall back to the user's config root")
+			}
+		})
+	}
+}

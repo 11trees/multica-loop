@@ -367,10 +367,13 @@ func normalizeAPIBaseURL(raw string) string {
 	return raw
 }
 
-// inAgentExecutionContext reports whether the CLI has explicit task identity
-// markers from a daemon-managed agent task.
+func inIndependentVerificationContext() bool {
+	return os.Getenv("MULTICA_VERIFICATION_INPUT") != "" || os.Getenv("MULTICA_VERIFICATION_RESULT") != ""
+}
+
+// inAgentExecutionContext includes credential-free independent Test invocations.
 func inAgentExecutionContext() bool {
-	return os.Getenv("MULTICA_AGENT_ID") != "" || os.Getenv("MULTICA_TASK_ID") != ""
+	return os.Getenv("MULTICA_AGENT_ID") != "" || os.Getenv("MULTICA_TASK_ID") != "" || inIndependentVerificationContext()
 }
 
 // inDaemonManagedExecutionContext reports whether the CLI is being invoked

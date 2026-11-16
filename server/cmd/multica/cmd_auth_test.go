@@ -17,6 +17,8 @@ import (
 
 func TestMain(m *testing.M) {
 	for _, key := range []string{
+		"MULTICA_VERIFICATION_INPUT",
+		"MULTICA_VERIFICATION_RESULT",
 		"MULTICA_AGENT_ID",
 		"MULTICA_TASK_ID",
 		"MULTICA_TOKEN",
