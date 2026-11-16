@@ -661,12 +661,57 @@ confirmed the secondary source preimages, private permissions and all five
 additional historical task lookups. Original primary/task-packet identities and
 native correspondence remain unchanged.
 
-This is a persistent operator-readable archive. Native history-page navigation
-for supplemental databases/files is still pending. Task/document file and image
+This is a persistent archive with operator lookup and the shared history-page
+navigation below. Task/document file and image
 references, repository evidence trees, unregistered run/profile directories and
 remote resources remain outside this capture. No remote references are fetched,
 and no installed provider/account is consulted. These gaps remain part of the
 full migration objective.
+
+### Supplemental history page
+
+In the local workspace, open **LoopWork history → Supplementary history**.
+Chinese UI: **LoopWork 历史 → 补充归档**. Historical database and file browsing
+share the existing Web/Desktop history route. Task/document URLs retain the
+supplement mode, opaque source-database ID and exact original IDs. Different
+backup versions of the same ID remain separate across navigation, refresh and
+Query caches. Application/empty/unsupported payloads remain catalog-only;
+only retained business snapshots expose tasks/documents. Supplemental tasks
+have no preparation, Team configuration, execution or completion controls.
+
+The host explicitly opts in with both settings, in addition to the primary
+archive settings:
+
+```sh
+MULTICA_LOOPWORK_HISTORY_SUPPLEMENT=/absolute/persistent/supplement
+MULTICA_LOOPWORK_HISTORY_SUPPLEMENT_HASH=exact_saved_supplement_sha256
+```
+
+Go retains local-human/workspace authorization and projects both pinned hashes
+into a separate `--history-supplement` worker. This mode creates no directories
+or business/Admin stores and accepts catalog, task/document and bounded file
+reads only. Requests use opaque identities; no caller path or archive override
+enters the reader. The worker rechecks the full manifest/payload inventory,
+and Go/client schemas reject a different source identity or execution authority.
+Older primary-only clients and responses continue to work.
+
+File previews show the first bounded bytes as inert text. Original-file download
+reads authenticated chunks of at most 1 MiB, checks offset/length/identity across
+chunks, and verifies the complete SHA-256 before saving a binary Blob. Empty
+files remain valid originals. Remote image/link references do not auto-load.
+The same component provides the narrow layout, pending/error states and explicit
+return to the primary archive. Screenshots use fixture data only:
+
+![Supplemental file reader](assets/supplement-file.png)
+
+![Supplemental file reader on a narrow screen](assets/supplement-file-narrow.png)
+
+Controlled tests cover strict read-only requests, local-human scope, sanitized
+worker credentials, same-ID database/cache isolation, original document membership,
+lossless record projection, empty/multi-chunk binary downloads and changed-hash
+refusal. Browser coverage checks source switching, deep-link reload, exact
+download bytes, no remote image requests and both viewport sizes. This does not
+establish real-provider or packaged Desktop acceptance.
 
 ## Remaining cutover work
 

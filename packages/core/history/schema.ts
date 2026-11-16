@@ -1,6 +1,6 @@
 import {z} from "zod";
 const text=z.string(),nullable=text.nullable(),id=text.min(1),time=text.nullable();
-export const HistoryAvailabilitySchema=z.object({enabled:z.boolean().default(false)});
+export const HistoryAvailabilitySchema=z.object({enabled:z.boolean().default(false),supplement:z.object({enabled:z.boolean(),hash:z.union([z.literal(""),z.string().regex(/^[a-f0-9]{64}$/)])}).refine(row=>!row.enabled||row.hash.length===64).optional().default({enabled:false,hash:""})});
 const source=z.object({hash:text.regex(/^[a-f0-9]{64}$/),commit:text,captured_at:z.iso.datetime(),name:z.literal("LoopWork")});
 const task=z.object({id,project_id:id,title:text,item_type:nullable,status:text,run_state:text,closure_status:text,updated_at:time});
 export const HistoryListSchema=z.object({historical_only:z.literal(true),source,projects:z.array(z.object({id,name:text,workspace_root:text,deleted_at:time.optional().default(null),task_count:z.number().int().nonnegative(),unfinished_count:z.number().int().nonnegative()})),tasks:z.array(task),total:z.number().int().nonnegative(),offset:z.number().int().nonnegative(),limit:z.number().int().positive()});
@@ -36,3 +36,21 @@ export const HistoryActivationSchema=z.object({format:z.literal("loopwork-native
  if(new Set(row.tasks.map(item=>item.issue_id)).size!==row.tasks.length||row.tasks.some(item=>item.cutover_id!==row.cutover_id)||row.resources.some(item=>item.resource_ref.execution_mode!==row.execution_mode))ctx.addIssue({code:"custom",message:"Invalid activation cohort"});
 }).transform(row=>({cutoverId:row.cutover_id,scopeHash:row.scope_hash,workspaceHash:row.workspace_hash,executionMode:row.execution_mode,executionStarted:row.execution_started,tasks:row.tasks,resources:row.resources,roles:row.roles}));
 export type HistoryActivation=z.infer<typeof HistoryActivationSchema>;
+const digest=z.string().regex(/^[a-f0-9]{64}$/);
+const supplementScope={historical_only:z.literal(true),execution_authorized:z.literal(false),archive_hash:digest,hash:digest};
+const supplementDatabase=z.object({id:digest,path:z.string().min(1),kind:z.string(),available:z.boolean(),task_count:z.number().int().nonnegative(),additional_task_count:z.number().int().nonnegative()});
+const supplementFile=z.object({id:digest,path:z.string().min(1),category:z.string(),bytes:z.number().int().min(0).max(268435456),sha256:digest,origin:z.record(z.string(),z.string())});
+const supplementTask=z.object({id:z.string().min(1),title:z.string(),status:z.string(),additional:z.boolean()});
+const supplementDocument=z.object({id:z.string().min(1),title:z.string(),kind:z.string(),revision:z.string()});
+export const SupplementCatalogSchema=z.object({...supplementScope,databases:z.array(supplementDatabase),files:z.array(supplementFile)});
+export const SupplementTasksSchema=z.object({...supplementScope,database:supplementDatabase,tasks:z.array(supplementTask),total:z.number().int().nonnegative(),offset:z.number().int().nonnegative(),limit:z.literal(50)});
+export const SupplementTaskSchema=z.object({...supplementScope,database:supplementDatabase,task:supplementTask.extend({description:z.string().nullable(),raw:z.record(z.string(),z.unknown())}).nullable(),documents:z.array(supplementDocument)});
+export const SupplementDocumentSchema=z.object({...supplementScope,database:supplementDatabase,task_id:z.string(),document:supplementDocument.extend({content:z.string().nullable(),raw:z.record(z.string(),z.unknown())}).nullable()});
+export const SupplementFileSchema=z.object({...supplementScope,file:supplementFile,offset:z.number().int().nonnegative(),byte_length:z.number().int().min(0).max(1048576),data_base64:z.string().max(1398104).regex(/^[A-Za-z0-9+/]*={0,2}$/).refine(value=>value.length%4===0),eof:z.boolean()}).superRefine((row,ctx)=>{if(row.offset+row.byte_length>row.file.bytes||row.eof!==(row.offset+row.byte_length===row.file.bytes))ctx.addIssue({code:"custom",message:"Invalid historical file range"});});
+export type SupplementCatalog=z.infer<typeof SupplementCatalogSchema>;
+export type SupplementTasks=z.infer<typeof SupplementTasksSchema>;
+export type SupplementTask=z.infer<typeof SupplementTaskSchema>;
+export type SupplementDocument=z.infer<typeof SupplementDocumentSchema>;
+export type SupplementFile=z.infer<typeof SupplementFileSchema>;
+
+export type SupplementResponse=SupplementCatalog|SupplementTasks|SupplementTask|SupplementDocument|SupplementFile;

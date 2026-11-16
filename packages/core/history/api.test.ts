@@ -1,7 +1,7 @@
 // @vitest-environment node
 import {afterEach,expect,it,vi} from "vitest";
 import {ApiClient} from "../api/client";
-import {historyKeys} from "./queries";
+import {historyKeys,supplementOptions} from "./queries";
 import {HistoryPacketSchema,historyPacketTables,HistoryPreparationSchema,HistoryAdoptionSchema} from "./schema";
 const source={hash:"a".repeat(64),commit:"original-source",captured_at:"2026-11-17T00:00:00Z",name:"LoopWork"};
 afterEach(()=>vi.unstubAllGlobals());
@@ -11,7 +11,7 @@ it("pins request workspace, encodes original non-UUID IDs and rejects an unprove
  expect(fetch.mock.calls[0]![0]).toContain(`/tasks/${encodeURIComponent("原任务/1")}/documents/${encodeURIComponent("原报告#2")}`);
  const headers=new Headers(fetch.mock.calls[0]![1]?.headers);expect(headers.get("X-Workspace-ID")).toBe("local-workspace");expect(headers.get("X-Workspace-Slug")).toBe("");
  fetch.mockResolvedValue(new Response(JSON.stringify({historical_only:false,source,task:null,documents:[]}),{status:200}));await expect(client.historyTask("local-workspace","original")).rejects.toThrow(/Invalid historical/);
- fetch.mockResolvedValue(new Response(JSON.stringify({enabled:"yes"}),{status:200}));expect(await client.historyAvailability("local-workspace")).toEqual({enabled:false});
+ fetch.mockResolvedValue(new Response(JSON.stringify({enabled:"yes"}),{status:200}));expect(await client.historyAvailability("local-workspace")).toEqual({enabled:false,supplement:{enabled:false,hash:""}});
  expect(historyKeys.all("workspace-a","user-a")).not.toEqual(historyKeys.all("workspace-b","user-a"));expect(historyKeys.all("workspace-a","user-a")).not.toEqual(historyKeys.all("workspace-a","user-b"));
 });
 it("prepares only an explicitly scoped source version and rejects execution authority in the response",async()=>{
@@ -48,4 +48,27 @@ it("activates only the explicitly reviewed scope and workspace without accepting
  expect(JSON.parse(fetch.mock.calls[0]![1]?.body)).toEqual({expected_scope_hash:input.expectedScopeHash,expected_workspace_hash:input.expectedWorkspaceHash,execution_mode:"in_place"});expect(new Headers(fetch.mock.calls[0]![1]?.headers).get("X-Workspace-ID")).toBe("workspace");
  for(const bad of [{...receipt,workspace_hash:"c".repeat(64)},{...receipt,execution_started:true},{...receipt,tasks:[{...receipt.tasks[0],execution_authorized:true}]},{...receipt,resources:[]}]){fetch.mockResolvedValue(new Response(JSON.stringify(bad),{status:200}));await expect(client.activateHistoryCutover("workspace",uuid,input)).rejects.toThrow(/Invalid migration activation/);}
  expect(HistoryAdoptionSchema.parse({cutover_id:uuid,preparation_id:uuid,issue_id:uuid,identifier:"LOOP-9",phase:"activated",execution_authorized:false}).phase).toBe("activated");
+});
+
+it("keeps supplemental database identity in requests and validates original download bytes",async()=>{
+ const hash="a".repeat(64),database="b".repeat(64),fileID="c".repeat(64),bytes=new Uint8Array([0,1,255,2]),sha=Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",bytes))).map(v=>v.toString(16).padStart(2,"0")).join("");
+ const envelope={historical_only:true,execution_authorized:false,hash,archive_hash:"d".repeat(64)},file={id:fileID,path:"original/PROMPT.md",category:"generated_prompt_memory_history",bytes:4,sha256:sha,origin:{agent_id:"original-agent"}},chunk={...envelope,file,offset:0,byte_length:4,data_base64:btoa(String.fromCharCode(...bytes)),eof:true};
+ const fetch=vi.fn().mockResolvedValue(new Response(JSON.stringify(chunk),{status:200}));vi.stubGlobal("fetch",fetch);const client=new ApiClient("https://history.test");expect(await client.downloadHistorySupplementFile("workspace",hash,fileID)).toEqual(bytes);expect(new Headers(fetch.mock.calls[0]![1]?.headers).get("X-Workspace-ID")).toBe("workspace");
+ for(const invalid of [{...chunk,hash:"e".repeat(64)},{...chunk,execution_authorized:true},{...chunk,file:{...file,id:"e".repeat(64)}},{...chunk,byte_length:3},{...chunk,data_base64:"!not-base64"}]){fetch.mockResolvedValue(new Response(JSON.stringify(invalid),{status:200}));await expect(client.historySupplement("workspace",hash,{action:"file",fileId:fileID})).rejects.toThrow();}
+ fetch.mockResolvedValue(new Response(JSON.stringify({...chunk,file:{...file,sha256:"0".repeat(64)}}),{status:200}));await expect(client.downloadHistorySupplementFile("workspace",hash,fileID)).rejects.toThrow(/fingerprint/);
+ fetch.mockImplementation(async()=>new Response(JSON.stringify({...envelope,database:{id:database,path:"old/one.db",kind:"historical_business_database",available:true,task_count:0,additional_task_count:0},tasks:[],total:0,offset:0,limit:50}),{status:200}));await client.historySupplement("workspace",hash,{action:"tasks",databaseId:database});expect(fetch.mock.lastCall![0]).toContain(`/databases/${database}/tasks`);
+ await expect(client.historySupplement("workspace",hash,{action:"tasks",databaseId:"e".repeat(64)})).rejects.toThrow(/supplement/);
+});
+
+it("downloads multiple bounded chunks and accepts zero-byte original files",async()=>{
+ const hash="a".repeat(64),id="b".repeat(64),bytes=new Uint8Array(1048580).fill(97),sha=Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",bytes))).map(v=>v.toString(16).padStart(2,"0")).join("");
+ const fetch=vi.fn().mockImplementation(async(url:string)=>{const offset=Number(new URL(url).searchParams.get('offset')),part=bytes.slice(offset,offset+1048576);return new Response(JSON.stringify({historical_only:true,execution_authorized:false,archive_hash:"c".repeat(64),hash,file:{id,path:"admin/host.log",bytes:bytes.length,sha256:sha,category:"management_host_log",origin:{}},offset,byte_length:part.length,data_base64:Buffer.from(part).toString('base64'),eof:offset+part.length===bytes.length}),{status:200});});vi.stubGlobal("fetch",fetch);
+ const client=new ApiClient("https://history.test");expect(await client.downloadHistorySupplementFile("workspace",hash,id)).toEqual(bytes);expect(fetch).toHaveBeenCalledTimes(2);
+ const emptySha="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+ fetch.mockResolvedValue(new Response(JSON.stringify({historical_only:true,execution_authorized:false,archive_hash:"c".repeat(64),hash,file:{id,path:"run/stderr.log",bytes:0,sha256:emptySha,category:"run_diagnostics",origin:{}},offset:0,byte_length:0,data_base64:"",eof:true}),{status:200}));expect(await client.downloadHistorySupplementFile("workspace",hash,id)).toEqual(new Uint8Array(0));
+});
+
+it("separates same-ID backup records by database, archive, workspace and human in the cache",()=>{
+ const input={action:"task" as const,databaseId:"a".repeat(64),taskId:"same"},key=supplementOptions("workspace","owner","b".repeat(64),input).queryKey;
+ for(const other of [supplementOptions("other","owner","b".repeat(64),input).queryKey,supplementOptions("workspace","other","b".repeat(64),input).queryKey,supplementOptions("workspace","owner","c".repeat(64),input).queryKey,supplementOptions("workspace","owner","b".repeat(64),{...input,databaseId:"d".repeat(64)}).queryKey])expect(key).not.toEqual(other);
 });

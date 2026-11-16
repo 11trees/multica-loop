@@ -1,3 +1,4 @@
+import {type SupplementResponse,SupplementCatalogSchema,SupplementTasksSchema,SupplementTaskSchema,SupplementDocumentSchema,SupplementFileSchema} from "../history/schema";
 import {HistoryAvailabilitySchema,HistoryListSchema,HistoryTaskSchema,HistoryDocumentSchema,HistoryPacketSchema,type HistoryList,type HistoryTask,type HistoryDocument,type HistoryPacket} from "../history/schema";
 import {HistoryActivationSchema,type HistoryActivation,HistoryPreparationSchema,HistoryPreparedSchema,type HistoryPreparation,type HistoryPrepared} from "../history/schema";
 import { EngineeringTeamResponseSchema, type EngineeringTeamResponse, type TeamDefinition } from "../squads/engineering-schema";
@@ -3104,7 +3105,33 @@ export class ApiClient {
     return state;
   }
 
-  async historyAvailability(workspaceId:string){return parseWithFallback(await this.fetch<unknown>("/api/engineering/history/availability",{headers:workspaceHeader({workspaceId})}),HistoryAvailabilitySchema,{enabled:false},{endpoint:"GET /api/engineering/history/availability"});}
+  async historySupplement(workspaceId:string,hash:string,input:{action:"catalog"|"tasks"|"task"|"document"|"file";databaseId?:string;taskId?:string;documentId?:string;fileId?:string;offset?:number;length?:number;search?:string}){
+    const root="/api/engineering/history/supplement",params=new URLSearchParams();
+    if(input.offset!==undefined)params.set("offset",String(input.offset));if(input.length!==undefined)params.set("length",String(input.length));if(input.search)params.set("search",input.search);
+    const database=`${root}/databases/${encodeURIComponent(input.databaseId??"")}/tasks`,task=`${database}/${encodeURIComponent(input.taskId??"")}`;
+    const endpoint=input.action==="catalog"?root:input.action==="tasks"?database:input.action==="task"?task:input.action==="document"?`${task}/documents/${encodeURIComponent(input.documentId??"")}`:`${root}/files/${encodeURIComponent(input.fileId??"")}`;
+    const raw=await this.fetch<unknown>(endpoint+(params.size?`?${params}`:""),{headers:workspaceHeader({workspaceId})});
+    const schema=input.action==="catalog"?SupplementCatalogSchema:input.action==="tasks"?SupplementTasksSchema:input.action==="task"?SupplementTaskSchema:input.action==="document"?SupplementDocumentSchema:SupplementFileSchema;
+    const result=parseWithFallback<SupplementResponse|null>(raw,schema,null,{endpoint:"GET /api/engineering/history/supplement"});
+    if(!result||result.hash!==hash||("database" in result&&result.database.id!==input.databaseId)||("task" in result&&result.task&&result.task.id!==input.taskId)||("task_id" in result&&result.task_id!==input.taskId)||("document" in result&&result.document&&result.document.id!==input.documentId)||("file" in result&&(result.file.id!==input.fileId||result.offset!==(input.offset??0))))throw new Error("Invalid historical supplement response");
+    if("file" in result&&(atob(result.data_base64).length!==result.byte_length||result.byte_length>(input.length??65536)))throw new Error("Invalid historical file byte count");
+    return result;
+  }
+  async downloadHistorySupplementFile(workspaceId:string,hash:string,fileId:string){
+    let bytes:Uint8Array<ArrayBuffer>|undefined,offset=0,sha="",complete=false;
+    do{
+      const result=await this.historySupplement(workspaceId,hash,{action:"file",fileId,offset,length:1048576});
+      if(!("file" in result))throw new Error("Invalid historical download response");
+      if(!bytes){bytes=new Uint8Array(result.file.bytes);sha=result.file.sha256;}
+      if(result.file.bytes!==bytes.length||result.file.sha256!==sha)throw new Error("Historical file changed during download");
+      const data=Uint8Array.from(atob(result.data_base64),character=>character.charCodeAt(0));
+      if(data.length!==result.byte_length||!data.length&&!result.eof)throw new Error("Invalid historical download range");
+      bytes.set(data,offset);offset+=data.length;complete=result.eof;
+    }while(!complete);
+    const actual=Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",bytes))).map(value=>value.toString(16).padStart(2,"0")).join("");
+    if(actual!==sha)throw new Error("Historical download fingerprint changed");return bytes;
+  }
+  async historyAvailability(workspaceId:string){return parseWithFallback(await this.fetch<unknown>("/api/engineering/history/availability",{headers:workspaceHeader({workspaceId})}),HistoryAvailabilitySchema,{enabled:false,supplement:{enabled:false,hash:""}},{endpoint:"GET /api/engineering/history/availability"});}
   async listHistory(workspaceId:string,filter:{projectId?:string;search?:string;offset?:number}){
     const params=new URLSearchParams();if(filter.projectId)params.set("project_id",filter.projectId);if(filter.search)params.set("search",filter.search);if(filter.offset)params.set("offset",String(filter.offset));
     const result=parseWithFallback<HistoryList|null>(await this.fetch<unknown>(`/api/engineering/history?${params}`,{headers:workspaceHeader({workspaceId})}),HistoryListSchema,null,{endpoint:"GET /api/engineering/history"});if(!result)throw new Error("Invalid historical task response");return result;

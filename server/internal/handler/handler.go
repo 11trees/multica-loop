@@ -70,14 +70,16 @@ type dbExecutor interface {
 
 type Config struct {
 	// LocalAuthEnabled enables the fork's loopback-only, single-user session bootstrap.
-	LocalAuthEnabled          bool
-	EngineeringWorkerPath     string
-	EngineeringDatabasePath   string
-	EngineeringHistoryArchive string
-	EngineeringHistoryHash    string
-	AllowSignup               bool
-	AllowedEmails             []string
-	AllowedEmailDomains       []string
+	LocalAuthEnabled                 bool
+	EngineeringWorkerPath            string
+	EngineeringDatabasePath          string
+	EngineeringHistoryArchive        string
+	EngineeringHistoryHash           string
+	EngineeringHistorySupplement     string
+	EngineeringHistorySupplementHash string
+	AllowSignup                      bool
+	AllowedEmails                    []string
+	AllowedEmailDomains              []string
 	// DisableWorkspaceCreation, when true, makes POST /api/workspaces return
 	// 403 for every caller. There is no role/owner exception because the repo
 	// has no platform-admin concept; operators bootstrap the workspace with
@@ -240,6 +242,9 @@ type Handler struct {
 		Call(context.Context, any) (json.RawMessage, error)
 	}
 	EngineeringHistoryWorker interface {
+		Call(context.Context, any) (json.RawMessage, error)
+	}
+	EngineeringSupplementWorker interface {
 		Call(context.Context, any) (json.RawMessage, error)
 	}
 	EngineeringSourceInspector interface {
@@ -586,6 +591,9 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 		if cfg.LocalAuthEnabled && cfg.EngineeringHistoryArchive != "" && cfg.EngineeringHistoryHash != "" {
 			h.EngineeringHistoryWorker = &engineering.Client{Worker: cfg.EngineeringWorkerPath, Database: cfg.EngineeringHistoryArchive, History: true}
 			h.EngineeringSourceInspector = &engineering.Client{Worker: cfg.EngineeringWorkerPath, Database: cfg.EngineeringHistoryArchive, SourceInspector: true}
+			if cfg.EngineeringHistorySupplement != "" && cfg.EngineeringHistorySupplementHash != "" {
+				h.EngineeringSupplementWorker = &engineering.Client{Worker: cfg.EngineeringWorkerPath, Database: cfg.EngineeringHistorySupplement, HistorySupplement: true}
+			}
 		}
 		if h.TaskService != nil {
 			h.TaskService.EngineeringTeamOwnsIssue = func(ctx context.Context, issue db.Issue) (bool, error) {

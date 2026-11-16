@@ -328,6 +328,21 @@
       "open_native": "打开原生任务",
       "native_unavailable": "原生任务已不可用，请核对迁移对应关系。",
       "native_activated": "迁移已激活，请在原生任务中继续。"
+    },
+    "supplement": {
+      "title": "补充归档",
+      "databases": "历史数据库",
+      "files": "历史文件",
+      "database": "来源库",
+      "excluded": "仅目录信息",
+      "additional": "主归档未包含",
+      "download": "下载原文件",
+      "preview": "预览 {{count}} / {{total}} 字节",
+      "empty": "空文件",
+      "boundary": "只读材料。旧提示词、进程文件和日志不授予执行权限。",
+      "unavailable": "此工作区无法查看补充归档。",
+      "primary": "主归档",
+      "fingerprint": "文件指纹"
     }
   }
 }

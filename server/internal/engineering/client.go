@@ -21,11 +21,12 @@ func (e *Rejection) Error() string { return e.Message }
 // Client serializes local application operations. The trusted worker receives
 // projected identity, never bearer credentials, and owns the protocol database.
 type Client struct {
-	Worker, Database string
-	Admin            bool
-	History          bool
-	SourceInspector  bool
-	mu               sync.Mutex
+	Worker, Database  string
+	Admin             bool
+	History           bool
+	SourceInspector   bool
+	HistorySupplement bool
+	mu                sync.Mutex
 }
 
 func (c *Client) Call(ctx context.Context, input any) (json.RawMessage, error) {
@@ -39,7 +40,7 @@ func (c *Client) Call(ctx context.Context, input any) (json.RawMessage, error) {
 	}
 	args := []string{c.Worker, c.Database}
 	modes := 0
-	for _, enabled := range []bool{c.Admin, c.History, c.SourceInspector} {
+	for _, enabled := range []bool{c.Admin, c.History, c.SourceInspector, c.HistorySupplement} {
 		if enabled {
 			modes++
 		}
@@ -52,6 +53,9 @@ func (c *Client) Call(ctx context.Context, input any) (json.RawMessage, error) {
 	}
 	if c.History {
 		args = append(args, "--history")
+	}
+	if c.HistorySupplement {
+		args = append(args, "--history-supplement")
 	}
 	if c.SourceInspector {
 		args = append(args, "--source-inspect")

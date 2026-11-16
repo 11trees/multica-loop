@@ -328,6 +328,21 @@
       "open_native": "ネイティブタスクを開く",
       "native_unavailable": "ネイティブタスクを利用できません。移行の対応関係を確認してください。",
       "native_activated": "移行が有効になりました。ネイティブタスクで続行してください。"
+    },
+    "supplement": {
+      "title": "補足アーカイブ",
+      "databases": "履歴データベース",
+      "files": "履歴ファイル",
+      "database": "元のデータベース",
+      "excluded": "目録のみ",
+      "additional": "主アーカイブに未収録",
+      "download": "元ファイルをダウンロード",
+      "preview": "プレビュー: {{count}} / {{total}} バイト",
+      "empty": "空のファイル",
+      "boundary": "読み取り専用です。古いプロンプト、プロセスファイル、ログは実行権限を与えません。",
+      "unavailable": "このワークスペースでは補足アーカイブを利用できません。",
+      "primary": "主アーカイブ",
+      "fingerprint": "ファイルのフィンガープリント"
     }
   }
 }

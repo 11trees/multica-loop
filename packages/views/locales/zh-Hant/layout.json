@@ -328,6 +328,21 @@
       "open_native": "開啟原生任務",
       "native_unavailable": "原生任務已無法使用，請核對遷移對應關係。",
       "native_activated": "遷移已啟用，請在原生任務中繼續。"
+    },
+    "supplement": {
+      "title": "補充歸檔",
+      "databases": "歷史資料庫",
+      "files": "歷史檔案",
+      "database": "來源資料庫",
+      "excluded": "僅目錄資訊",
+      "additional": "主歸檔未包含",
+      "download": "下載原始檔案",
+      "preview": "預覽 {{count}} / {{total}} 位元組",
+      "empty": "空檔案",
+      "boundary": "唯讀材料。舊提示詞、程序檔案和日誌不授予執行權限。",
+      "unavailable": "此工作區無法查看補充歸檔。",
+      "primary": "主歸檔",
+      "fingerprint": "檔案指紋"
     }
   }
 }

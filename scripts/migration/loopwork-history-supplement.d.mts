@@ -1,0 +1,1 @@
+export function browseHistorySupplement(directory:string,input:{action:string;expected_archive_hash:string;expected_hash:string;database_id?:string;task_id?:string;document_id?:string;file_id?:string;offset?:number;length?:number;search?:string}):Promise<unknown>;

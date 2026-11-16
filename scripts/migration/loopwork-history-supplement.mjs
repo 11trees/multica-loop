@@ -1,8 +1,7 @@
 import {createHash,randomUUID} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {constants,createReadStream} from 'node:fs';
-import {chmod,copyFile,lstat,mkdir,mkdtemp,readdir,readFile,realpath,rename,rm,writeFile} from 'node:fs/promises';
-import {tmpdir} from 'node:os';
+import {chmod,copyFile,lstat,mkdir,open,readdir,readFile,realpath,rename,rm,writeFile} from 'node:fs/promises';
 import {basename,dirname,isAbsolute,join,relative,resolve,sep} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {copyDatabase,sourceFiles,verifyArchive} from './loopwork-history-lib.mjs';
@@ -182,4 +181,48 @@ export async function readSupplementRecord(directory,archiveHash,supplementHash,
  if(!schema?.columns.includes(key))throw new Error('Historical record schema is unavailable');
  const db=new DatabaseSync(join(directory,entry.file),{readOnly:true});
  try{db.exec('PRAGMA query_only=ON;PRAGMA trusted_schema=OFF');const columns=schema.columns.filter(c=>!/(token|credential|password|secret|api_key)/i.test(c));const query=db.prepare(`SELECT ${columns.map(quote).join(',')} FROM ${quote(table)} WHERE ${quote(key)}=?`);query.setReadBigInts(true);return {historical_only:true,execution_authorized:false,archive_hash:archiveHash,supplement_hash:manifest.hash,source_database:entry.source_path,table,source_id:id,record:query.get(id)??null};}finally{db.close();}
+}
+
+const wire=value=>JSON.parse(JSON.stringify(value,(_key,item)=>typeof item==='bigint'?{sqlite_integer:String(item)}:item instanceof Uint8Array?{sqlite_blob:Buffer.from(item).toString('base64')}:item));
+const sourceID=path=>createHash('sha256').update(path).digest('hex');
+const materialHeader=item=>({id:sourceID(item.path),path:item.path,category:item.category,bytes:item.bytes,sha256:item.sha256,origin:item.origin});
+export async function browseHistorySupplement(directory,input){
+ directory=await realpath(directory);
+ const manifest=await verifyHistorySupplement(directory,input.expected_archive_hash,input.expected_hash);
+ const envelope={historical_only:true,execution_authorized:false,archive_hash:manifest.archive_hash,hash:manifest.hash};
+ const databaseHeader=entry=>({id:sourceID(entry.source_path),path:entry.source_path,kind:entry.kind,available:!!entry.file&&entry.kind==='historical_business_database',task_count:entry.task_ids?.length??0,additional_task_count:entry.task_ids_outside_primary_archive?.length??0});
+ if(input.action==='catalog')return {...envelope,databases:manifest.databases.map(databaseHeader),files:manifest.materials.map(materialHeader)};
+ if(input.action==='file'){
+  const item=manifest.materials.find(row=>sourceID(row.path)===input.file_id);if(!item)throw new Error('Historical file is unavailable');
+  const offset=input.offset??0,length=Math.min(input.length??65536,Math.max(0,item.bytes-offset));
+  if(!Number.isSafeInteger(offset)||offset<0||offset>item.bytes||!Number.isSafeInteger(input.length??65536)||(input.length??65536)<1||(input.length??65536)>1048576)throw new Error('Invalid historical file range');
+  const handle=await open(join(directory,item.file),'r');let data;
+  try{data=Buffer.alloc(length);const {bytesRead}=await handle.read(data,0,length,offset);if(bytesRead!==length)throw new Error('Historical file changed during read');}finally{await handle.close();}
+  if(!equal(await fingerprint(directory,item.file),{bytes:item.bytes,sha256:item.sha256}))throw new Error('Historical file changed during read');
+  return {...envelope,file:materialHeader(item),offset,byte_length:length,data_base64:data.toString('base64'),eof:offset+length===item.bytes};
+ }
+ const entry=manifest.databases.find(row=>sourceID(row.source_path)===input.database_id&&row.file&&row.kind==='historical_business_database');
+ if(!entry)throw new Error('Historical database is unavailable');
+ const db=new DatabaseSync(join(directory,entry.file),{readOnly:true});
+ try{
+  db.exec('PRAGMA query_only=ON;PRAGMA trusted_schema=OFF');
+  const columns=table=>entry.tables.find(row=>row.name===table)?.columns??[];
+  const selected=table=>columns(table).filter(name=>!/(token|credential|password|secret|api_key)/i.test(name)).map(quote).join(',');
+  const tasks=()=>{const query=db.prepare(`SELECT ${selected('tasks')} FROM tasks ORDER BY task_id`);query.setReadBigInts(true);return query.all();};
+  const taskHeader=row=>({id:String(row.task_id),title:typeof row.title==='string'?row.title:String(row.task_id),status:typeof row.agile_status==='string'?row.agile_status:typeof row.status==='string'?row.status:'',additional:entry.task_ids_outside_primary_archive.some(id=>String(id)===String(row.task_id))});
+  const documentHeader=row=>({id:String(row.document_id),title:typeof row.title==='string'?row.title:String(row.document_id),kind:typeof row.kind==='string'?row.kind:'',revision:String(row.revision??'')});
+  if(input.action==='tasks'){
+   const search=(input.search??'').toLocaleLowerCase(),all=tasks().map(taskHeader).filter(row=>!search||row.title.toLocaleLowerCase().includes(search)||row.id.toLocaleLowerCase().includes(search)),offset=input.offset??0;
+   return {...envelope,database:databaseHeader(entry),tasks:all.slice(offset,offset+50),total:all.length,offset,limit:50};
+  }
+  const query=db.prepare(`SELECT ${selected('tasks')} FROM tasks WHERE task_id=?`);query.setReadBigInts(true);const task=query.get(input.task_id);
+  if(!task)return {...envelope,database:databaseHeader(entry),task_id:input.task_id,task:null,documents:[],document:null};
+  const docs=[];if(columns('documents').includes('task_id')){const query=db.prepare(`SELECT ${selected('documents')} FROM documents WHERE task_id=? ORDER BY document_id`);query.setReadBigInts(true);docs.push(...query.all(input.task_id));}
+  if(input.action==='task')return {...envelope,database:databaseHeader(entry),task:{...taskHeader(task),description:typeof task.description==='string'?task.description:null,raw:wire(task)},documents:docs.map(documentHeader)};
+  if(input.action==='document'){
+   const document=docs.find(row=>String(row.document_id)===input.document_id);
+   return {...envelope,database:databaseHeader(entry),task_id:input.task_id,document:document?{...documentHeader(document),content:typeof document.content==='string'?document.content:null,raw:wire(document)}:null};
+  }
+  throw new Error('Unsupported historical supplement read');
+ }finally{db.close();}
 }

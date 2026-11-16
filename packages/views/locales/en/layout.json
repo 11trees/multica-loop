@@ -338,6 +338,21 @@
       "open_native": "Open native task",
       "native_unavailable": "The native task is unavailable; review its migration correspondence.",
       "native_activated": "Migration activated. Continue from the native task."
+    },
+    "supplement": {
+      "title": "Supplementary history",
+      "databases": "Historical databases",
+      "files": "Historical files",
+      "database": "Source database",
+      "excluded": "Catalog only",
+      "additional": "Not in the primary archive",
+      "download": "Download original file",
+      "preview": "Preview: {{count}} of {{total}} bytes",
+      "empty": "Empty file",
+      "boundary": "Read-only material. Old prompts, process files and logs grant no execution authority.",
+      "unavailable": "Supplementary history is unavailable in this workspace.",
+      "primary": "Primary archive",
+      "fingerprint": "File fingerprint"
     }
   }
 }

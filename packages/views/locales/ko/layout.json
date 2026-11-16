@@ -328,6 +328,21 @@
       "open_native": "기본 작업 열기",
       "native_unavailable": "기본 작업을 사용할 수 없습니다. 마이그레이션 연결 정보를 확인하세요.",
       "native_activated": "마이그레이션이 활성화되었습니다. 기본 작업에서 계속하세요."
+    },
+    "supplement": {
+      "title": "추가 보관 기록",
+      "databases": "기록 데이터베이스",
+      "files": "기록 파일",
+      "database": "원본 데이터베이스",
+      "excluded": "목록만 보존",
+      "additional": "기본 보관 기록에 없음",
+      "download": "원본 파일 다운로드",
+      "preview": "미리보기: {{count}} / {{total}}바이트",
+      "empty": "빈 파일",
+      "boundary": "읽기 전용 자료입니다. 이전 프롬프트, 프로세스 파일 및 로그는 실행 권한을 부여하지 않습니다.",
+      "unavailable": "이 작업 공간에서 추가 보관 기록을 사용할 수 없습니다.",
+      "primary": "기본 보관 기록",
+      "fingerprint": "파일 지문"
     }
   }
 }

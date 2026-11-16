@@ -5,7 +5,7 @@ import {DatabaseSync} from 'node:sqlite';
 import test from 'node:test';
 import {cutoverFixture} from './loopwork-cutover-fixture.mjs';
 import {createArchive,verifyArchive} from './loopwork-history-lib.mjs';
-import {captureHistorySupplement,readSupplementRecord,verifyHistorySupplement} from './loopwork-history-supplement.mjs';
+import {browseHistorySupplement,captureHistorySupplement,readSupplementRecord,verifyHistorySupplement} from './loopwork-history-supplement.mjs';
 import {main} from './loopwork-supplement.mjs';
 
 async function fixture(t){
@@ -65,4 +65,17 @@ test('rejects source links and unsafe output paths without publishing a partial 
  await writeFile(join(f.sourceRoot,'README.md'),'Changed source checkout');
  await assert.rejects(captureHistorySupplement({archive:f.archive,expectedHash:f.hash,output:f.output}),/Pinned source checkout changed/);
  await assert.rejects(main(['capture','--output',f.output,'--source','/caller/path']),/Use capture/);
+});
+
+test('browses original database identities, guarded document membership and exact bounded binary ranges',async t=>{
+ const f=await fixture(t),saved=await captureHistorySupplement({archive:f.archive,expectedHash:f.hash,output:f.output}),scope={expected_archive_hash:f.hash,expected_hash:saved.hash};
+ const catalog=await browseHistorySupplement(f.output,{...scope,action:'catalog'}),database=catalog.databases.find(row=>row.path==='old/loop-ui.db');assert.equal(catalog.execution_authorized,false);assert.equal(catalog.files.length,7);assert.equal(catalog.databases.find(row=>row.path==='old/loopwork.db').available,false);
+ const tasks=await browseHistorySupplement(f.output,{...scope,action:'tasks',database_id:database.id,search:'Distinct'});assert.equal(tasks.total,1);assert.equal(tasks.tasks[0].id,'backup-only');assert.equal(tasks.tasks[0].additional,true);
+ const detail=await browseHistorySupplement(f.output,{...scope,action:'task',database_id:database.id,task_id:'pending'});assert.deepEqual(detail.task.raw.revision,{sqlite_integer:'9223372036854775807'});assert.equal(detail.task.raw.command_token_hash,undefined);
+ const document=await browseHistorySupplement(f.output,{...scope,action:'document',database_id:database.id,task_id:'backup-only',document_id:'original-doc'});assert.equal(document.document.content,'Retain this exact historical body');
+ assert.equal((await browseHistorySupplement(f.output,{...scope,action:'document',database_id:database.id,task_id:'pending',document_id:'original-doc'})).document,null);
+ assert.equal((await browseHistorySupplement(f.output,{...scope,action:'document',database_id:database.id,task_id:'missing',document_id:'original-doc'})).task_id,'missing');
+ const file=catalog.files.find(row=>row.path==='admin/host.log'),part=await browseHistorySupplement(f.output,{...scope,action:'file',file_id:file.id,offset:2,length:5});assert.equal(Buffer.from(part.data_base64,'base64').toString(),'igina');assert.equal(part.eof,false);
+ await assert.rejects(browseHistorySupplement(f.output,{...scope,action:'file',file_id:file.id,offset:0,length:1048577}),/Invalid historical file range/);
+ await assert.rejects(browseHistorySupplement(f.output,{...scope,action:'tasks',database_id:catalog.databases.find(row=>row.path==='old/loopwork.db').id}),/unavailable/);
 });

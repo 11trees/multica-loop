@@ -338,6 +338,21 @@
       "open_native": "Abrir tarea nativa",
       "native_unavailable": "La tarea nativa no está disponible; revisa su correspondencia de migración.",
       "native_activated": "Migración activada. Continúa desde la tarea nativa."
+    },
+    "supplement": {
+      "title": "Historial complementario",
+      "databases": "Bases históricas",
+      "files": "Archivos históricos",
+      "database": "Base de origen",
+      "excluded": "Solo catálogo",
+      "additional": "No está en el archivo principal",
+      "download": "Descargar archivo original",
+      "preview": "Vista previa: {{count}} de {{total}} bytes",
+      "empty": "Archivo vacío",
+      "boundary": "Material de solo lectura. Los prompts, archivos de procesos y registros antiguos no otorgan permiso de ejecución.",
+      "unavailable": "El historial complementario no está disponible en este espacio.",
+      "primary": "Archivo principal",
+      "fingerprint": "Huella del archivo"
     }
   }
 }

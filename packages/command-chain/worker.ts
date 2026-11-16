@@ -1,3 +1,4 @@
+import {readSupplement} from "./supplement-reader";
 import {readHistory} from "./history-reader";
 import {inspectSource} from "./source-inspector";
 import { createHash } from "node:crypto";
@@ -22,14 +23,16 @@ declare const DEFAULT_REQUIREMENT_SPEC_SOURCE:string;
 declare const DEFAULT_SPEC_REVIEW_SOURCE:string;
 const database = process.argv[2];
 if (!database) throw new Error("Engineering database path is required");
-if (!["--history","--source-inspect"].includes(process.argv[3]??"")) mkdirSync(dirname(database), { recursive: true, mode: 0o700 });
+if (!["--history","--history-supplement","--source-inspect"].includes(process.argv[3]??"")) mkdirSync(dirname(database), { recursive: true, mode: 0o700 });
 const kernelVersion = `sha256:${createHash("sha256").update(readFileSync(new URL(import.meta.url))).digest("hex")}`;
 let app: EngineeringApplication | undefined;
 let admin: AdminStore | undefined;
 try {
   const input = JSON.parse(readFileSync(0, "utf8"));
   let result: unknown;
-  if (process.argv[3] === "--source-inspect") {
+  if (process.argv[3] === "--history-supplement") {
+    result=await readSupplement(database,input);
+  } else if (process.argv[3] === "--source-inspect") {
     result=await inspectSource(database,input);
   } else if (process.argv[3] === "--history") {
     result=await readHistory(database,input);

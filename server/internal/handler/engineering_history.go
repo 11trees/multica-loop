@@ -11,7 +11,7 @@ func (h *Handler) engineeringHistoryAvailable(r *http.Request) bool {
 	return h.cfg.LocalAuthEnabled && h.EngineeringHistoryWorker != nil && h.cfg.EngineeringHistoryHash != "" && !isMachineCredentialActor(r) && r.Header.Get("X-User-ID") == localUserID && h.resolveWorkspaceID(r) == localWorkspaceID
 }
 func (h *Handler) EngineeringHistoryAvailability(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]bool{"enabled": h.engineeringHistoryAvailable(r)})
+	writeJSON(w, http.StatusOK, map[string]any{"enabled": h.engineeringHistoryAvailable(r), "supplement": map[string]any{"enabled": h.engineeringSupplementAvailable(r), "hash": h.engineeringSupplementHash(r)}})
 }
 func (h *Handler) engineeringHistoryRead(w http.ResponseWriter, r *http.Request, payload map[string]any) {
 	if !h.engineeringHistoryAvailable(r) {

@@ -10,3 +10,6 @@ export function historyDocumentOptions(wsId:string,userId:string,taskId:string,d
 export function historyPacketOptions(wsId:string,userId:string,taskId:string){return queryOptions({queryKey:[...historyKeys.all(wsId,userId),"packet",taskId],queryFn:()=>api.historyPacket(wsId,taskId),staleTime:30000});}
 export function historyPreparationOptions(wsId:string,userId:string,taskId:string){return queryOptions({queryKey:[...historyKeys.all(wsId,userId),"preparation",taskId],queryFn:()=>api.historyPreparation(wsId,taskId),staleTime:0});}
 export function historyPreparationMutationOptions(client:QueryClient,wsId:string,userId:string,taskId:string){return {mutationFn:(input:Parameters<typeof api.prepareHistoryTask>[2])=>api.prepareHistoryTask(wsId,taskId,input),onSuccess:async()=>{await Promise.all([client.invalidateQueries({queryKey:historyKeys.all(wsId,userId)}),client.invalidateQueries({queryKey:projectKeys.all(wsId)})]);}};}
+
+export function supplementOptions(wsId:string,userId:string,hash:string,input:Parameters<typeof api.historySupplement>[2]){return queryOptions({queryKey:[...historyKeys.all(wsId,userId),"supplement",hash,input],queryFn:()=>api.historySupplement(wsId,hash,input),staleTime:30000});}
+export function supplementDownloadOptions(wsId:string,hash:string){return {mutationFn:(fileId:string)=>api.downloadHistorySupplementFile(wsId,hash,fileId)};}

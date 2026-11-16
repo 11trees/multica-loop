@@ -12,10 +12,13 @@ import {PageHeader} from "../layout/page-header";
 import {useT} from "../i18n";
 import {useNavigation} from "../navigation";
 import {useDebouncedValue} from "../common/use-debounced-value";
+import {SupplementHistory} from "./supplement-history";
 import {HistoryPacket} from "./history-packet";
 
 export function HistoryPage(){
  const wsId=useCurrentWorkspace()?.id??"",userId=useAuthStore(s=>s.user?.id)??"";
+ const nav=useNavigation();
+ if(nav.searchParams.get("archive")==="supplement")return <SupplementHistory key={`${wsId}:${userId}`} wsId={wsId} userId={userId}/>;
  return <HistoryContent key={`${wsId}:${userId}`} wsId={wsId} userId={userId}/>;
 }
 function HistoryContent({wsId,userId}:{wsId:string;userId:string}){
@@ -48,6 +51,7 @@ function HistoryContent({wsId,userId}:{wsId:string;userId:string}){
   <div className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6">
    <div className="mx-auto flex max-w-6xl flex-col gap-5">
     <div className="rounded-md border border-border bg-muted/30 px-4 py-3 text-body text-muted-foreground">{t($=>$.history.ownership)}</div>
+    {availability.data?.supplement?.enabled&&<Button variant="outline" className="w-fit" onClick={()=>nav.push(`${nav.pathname}?archive=supplement`)}>{t($=>$.history.supplement.title)}</Button>}
     {loading&&<p role="status" className="flex items-center gap-2 text-body text-muted-foreground"><Loader2 className="size-4 animate-spin"/>{t($=>$.history.loading)}</p>}
     {error&&<div role="alert" className="flex items-center gap-3 text-body"><span>{t($=>$.history.error)}</span><Button variant="outline" size="sm" onClick={()=>{void availability.refetch();void list.refetch();if(selected)void detail.refetch();if(documentId)void document.refetch();}}>{t($=>$.history.retry)}</Button></div>}
     {!loading&&!availability.data?.enabled&&!error&&<p className="text-body text-muted-foreground">{t($=>$.history.unavailable)}</p>}

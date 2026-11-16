@@ -338,6 +338,21 @@
       "open_native": "Ouvrir la tâche native",
       "native_unavailable": "La tâche native est indisponible ; vérifiez sa correspondance de migration.",
       "native_activated": "Migration activée. Continuez depuis la tâche native."
+    },
+    "supplement": {
+      "title": "Historique complémentaire",
+      "databases": "Bases historiques",
+      "files": "Fichiers historiques",
+      "database": "Base source",
+      "excluded": "Catalogue uniquement",
+      "additional": "Absent de l’archive principale",
+      "download": "Télécharger le fichier original",
+      "preview": "Aperçu : {{count}} sur {{total}} octets",
+      "empty": "Fichier vide",
+      "boundary": "Documents en lecture seule. Les anciens prompts, fichiers de processus et journaux ne donnent aucun droit d’exécution.",
+      "unavailable": "L’historique complémentaire est indisponible dans cet espace.",
+      "primary": "Archive principale",
+      "fingerprint": "Empreinte du fichier"
     }
   }
 }

@@ -31,3 +31,26 @@ func TestEngineeringSourceInspectorClientUsesIsolatedReadMode(t *testing.T) {
 		}
 	}
 }
+
+func TestEngineeringSupplementClientUsesIsolatedReadMode(t *testing.T) {
+	root := t.TempDir()
+	worker := filepath.Join(root, "worker.mjs")
+	if err := os.WriteFile(worker, []byte(`process.stdout.write(JSON.stringify({result:{mode:process.argv[3],credential:process.env.DATABASE_URL??null}}));`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DATABASE_URL", "must-not-forward")
+	client := Client{Worker: worker, Database: root, HistorySupplement: true}
+	raw, err := client.Call(context.Background(), map[string]any{"action": "catalog"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result map[string]any
+	if json.Unmarshal(raw, &result) != nil || result["mode"] != "--history-supplement" || result["credential"] != nil {
+		t.Fatal("supplement worker inherited authority", string(raw))
+	}
+	for _, other := range []Client{{Worker: worker, Database: root, HistorySupplement: true, History: true}, {Worker: worker, Database: root, HistorySupplement: true, Admin: true}, {Worker: worker, Database: root, HistorySupplement: true, SourceInspector: true}} {
+		if _, err := other.Call(context.Background(), nil); err == nil {
+			t.Fatal("conflicting supplement mode accepted")
+		}
+	}
+}
