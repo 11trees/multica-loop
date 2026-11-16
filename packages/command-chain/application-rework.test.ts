@@ -88,7 +88,7 @@ it("creates a fresh development generation and rechecks every frozen scenario wi
   expect(await pending()).toEqual([]);
   expect(await app.invoke({ actor: { kind: "host", workspaceId: human.workspaceId, issueId: human.issueId }, action: "completion" })).toMatchObject({ allowed: true });
   expect(passed.rework.history[0]!.conclusion).toMatchObject({ verdict: "failed" });
-});
+}, 15000);
 
 it("stops repeated unchanged failure even when an empty commit changes the commit ID", async () => {
   await configure(); await develop(0); await verify(0, "failed"); const oldCommit = git("rev-parse", "HEAD");

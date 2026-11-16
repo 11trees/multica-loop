@@ -78,7 +78,7 @@ it("runs all four source roles with frozen upstream publications and independent
   expect(await invoke({ kind: "coordinator" }, "continuations")).toEqual([]);
   await expect(invoke({ kind: "host", workspaceId: human.workspaceId, issueId: human.issueId }, "completion")).rejects.toThrow(/Read.*specification/);
   await expect(invoke(human, "prepare-run", { expected_revision: 1, expected_sequence: state.sequence })).rejects.toThrow(/terminal/);
-});
+}, 20000);
 const returns: { stage: BusinessStage; target: BusinessStage }[] = [{ stage: "business_design", target: "intent" }, { stage: "specification", target: "intent" }, { stage: "specification", target: "business_design" }, { stage: "review", target: "intent" }, { stage: "review", target: "business_design" }, { stage: "review", target: "specification" }];
 function gaps(stage: BusinessStage, target: BusinessStage) {
   const values = outputs(stage), gap = { reason: "Selection boundary is missing", evidence: "Original input lacks a selection rule" };

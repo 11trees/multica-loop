@@ -184,7 +184,10 @@ receipts, real temporary Git repositories and SQLite. Its evidence is distinct
 from the [controlled native Team lifecycle](reproduction.md#controlled-native-bug-fix-team-acceptance),
 which now covers browser creation, authenticated reproduction facts, one native
 delivery, independent Chrome observations, automatic Review and exact reading
-before PostgreSQL Done. The native scenario uses in-place execution; native
-worktree/process lifecycle, model diagnosis quality and packaged clients remain
-unaccepted. Existing frozen Review sources are not rewritten by updating the
+before PostgreSQL Done in both repository modes. The worktree scenario reclaims
+each role's directory before continuation or reading while retaining the user's
+original HEAD and delivery/Review refs. Kernel checks reject moved/deleted Review
+refs before reading and ref drift after acknowledgement. Daemon-owned process
+lifecycle, model diagnosis quality and packaged clients remain unaccepted.
+Existing frozen Review sources are not rewritten by updating the
 default YAML.

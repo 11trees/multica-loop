@@ -79,6 +79,14 @@ Moving or deleting the delivery branch prevents completion. In-place delivery
 continues to require the registered checkout's current clean matching commit,
 allowing only the recorded generated context while the runtime is active.
 
+New requirement-role mappings also pin the draft, execution mode and available
+named worktree branch. A completed final Review can be read after its worktree
+is reclaimed: exact report reading and later Done recheck that mapping and the
+retained review branch against the frozen review commit. A moved or deleted ref
+is rejected, including after reading has already been recorded. A still-present
+directory must remain clean at the frozen commit. Missing in-place directories
+and reclaimed detached worktrees do not supply this retained proof.
+
 ## Verification and limits
 
 Package tests cover mapping ownership, unrelated clones, in-place path mismatch,

@@ -7,7 +7,7 @@ import { pathToFileURL } from "node:url";
 import { TestApiClient } from "./fixtures";
 // Native queue claims and role conclusions are controlled; the API, Git,
 // browser observations, publication, independent verification and Done are real.
-test("Bug Fix Team advances a native task from human reproduction facts through verified repair and report reading", async ({ baseURL }, testInfo) => {
+for (const mode of ["in_place", "worktree"] as const) test(`Bug Fix Team ${mode} advances a native task from human reproduction facts through verified repair and report reading`, async ({ baseURL }, testInfo) => {
   test.setTimeout(600000);
   test.skip(process.env.MULTICA_ENGINEERING_ENABLED !== "true" || !process.env.MULTICA_ENGINEERING_CLI || !process.env.MULTICA_ENGINEERING_BROWSER, "Requires managed engineering, a test-built CLI and an explicit browser");
   const api = new TestApiClient();
@@ -15,7 +15,8 @@ test("Bug Fix Team advances a native task from human reproduction facts through 
   const workspace = (await api.getWorkspaces()).find(item => item.slug === "loopwork-local")!;
   api.setWorkspaceId(workspace.id);
   api.setWorkspaceSlug(workspace.slug);
-  const directory = await realpath(await mkdtemp(join(tmpdir(), "team-bug-fix-"))), repository = join(directory, "repository");
+  const directory = await realpath(await mkdtemp(join(tmpdir(), "team-bug-fix-"))), registeredRepository = join(directory, "repository");
+  let repository = registeredRepository;
   execFileSync("git", ["init", "-q", repository]);
   const git = (...args: string[]) => execFileSync("git", ["-C", repository, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
   git("config", "user.name", "Bug Fix Team fixture");
@@ -26,6 +27,7 @@ test("Bug Fix Team advances a native task from human reproduction facts through 
   git("add", ".");
   git("commit", "-qm", "Initialize saved-state regression");
   const originalCommit = git("rev-parse", "HEAD");
+  const registeredGit = (...args: string[]) => execFileSync("git", ["-C", registeredRepository, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
   const browser = await chromium.launch({ executablePath: process.env.MULTICA_ENGINEERING_BROWSER });
   const context = await browser.newContext({ viewport: { width: 1280, height: 1200 } });
   context.setDefaultTimeout(20000);
@@ -46,7 +48,7 @@ test("Bug Fix Team advances a native task from human reproduction facts through 
     const project = await api.createProject(`Bug Fix Team ${seed.issueId}`), team = await api.createWorkflowTeamFixture(backlog.agentId);
     for (const run of runs) {
       await api.finishEngineeringRun(run.taskId);
-      await api.attachEngineeringProject(run.taskId, project.id, repository);
+      await api.attachEngineeringProject(run.taskId, project.id, registeredRepository, mode);
       if (run.agentId !== backlog.agentId)
         await api.addWorkflowTeamAgentFixture(team.id, run.agentId);
     }
@@ -81,10 +83,26 @@ test("Bug Fix Team advances a native task from human reproduction facts through 
       console.info("Native queue checkpoint", JSON.stringify({ requestedAgent: agentId, runs: await api.engineeringRunStates(issueId), chain: checkpoint.chain, status: checkpoint.status, active: checkpoint.has_active_run, review: checkpoint.requirement?.review?.agent_id }));
       throw error;
     } const id = (await api.queuedEngineeringRun(issueId, agentId))!; return api.claimEngineeringRun(id); };
-    const begin = async (issueId: string, agentId: string) => { console.info("Bug Fix Team awaiting native role", Object.entries({ context: backlog.agentId, reproducer: reproducer.agentId, planner: planner.agentId, analyst: analyst.agentId, developer: developer.agentId, verifier: verifier.agentId, reviewer: reviewer.agentId }).find(([, id]) => id === agentId)?.[0]); owner = await next(issueId, agentId); await api.bindEngineeringRepository(owner.taskId, repository); state = cli("start"); };
+    const begin = async (issueId: string, agentId: string, commit = originalCommit) => { console.info("Bug Fix Team awaiting native role", Object.entries({ context: backlog.agentId, reproducer: reproducer.agentId, planner: planner.agentId, analyst: analyst.agentId, developer: developer.agentId, verifier: verifier.agentId, reviewer: reviewer.agentId }).find(([, id]) => id === agentId)?.[0]); owner = await next(issueId, agentId);
+      if (mode === "worktree") {
+        repository = join(directory, owner.taskId);
+        registeredGit("worktree", "add", "-qb", `team-${owner.taskId}`, repository, commit);
+      }
+      await api.bindEngineeringRepository(owner.taskId, repository, mode);
+      state = cli("start");
+      expect(state.contract.binding.codeVersion).toBe(commit);
+    };
     const command = (command: unknown) => state = cli("command", { expected_sequence: state.draft.sequence, command });
     const put = (ref: string, value: unknown, key?: string) => command({ type: "artifact.put", ref, content: typeof value === "string" ? value : JSON.stringify(value), ...(key ? { key } : {}) });
-    const finish = () => api.finishEngineeringRun(owner.taskId);
+    const finish = async () => {
+      await api.finishEngineeringRun(owner.taskId);
+      if (mode === "worktree") {
+        expect(git("status", "--porcelain")).toBe("");
+        registeredGit("worktree", "remove", repository);
+        repository = registeredRepository;
+        expect(registeredGit("rev-parse", "HEAD")).toBe(originalCommit);
+      }
+    };
     const expected = "Continue activation displays Continued";
     const observe = async (saved: boolean, result: string, screenshot?: string) => { const view = await context.newPage(); try {
       await view.goto(pathToFileURL(join(repository, "index.html")).href + (saved ? "#saved" : ""));
@@ -206,12 +224,12 @@ test("Bug Fix Team advances a native task from human reproduction facts through 
     command({ type: "phase.complete" });
     git("add", "index.html");
     git("commit", "-qm", "Restore Continue in saved state");
-    const repairedCommit = git("rev-parse", "HEAD");
+    const repairedCommit = git("rev-parse", "HEAD"), deliveryBranch = git("symbolic-ref", "HEAD");
     command({ type: "phase.complete", confirmation: "Scoped commit checked" });
     command({ type: "phase.complete", confirmation: "Implementation and captured check align" });
     await finish();
     await expect(api.updateIssue(child.id, { status: "done", suppress_run: true })).rejects.toThrow(/409/);
-    await begin(child.id, verifier.agentId);
+    await begin(child.id, verifier.agentId, repairedCommit);
     expect(state.chain).toBe("verification");
     expect(state.contract.binding.codeVersion).toBe(repairedCommit);
     command({ type: "phase.complete" });
@@ -231,7 +249,7 @@ test("Bug Fix Team advances a native task from human reproduction facts through 
     console.info("Bug Fix Team review checkpoint", JSON.stringify({ chain: beforeReview.chain, status: beforeReview.status, accepted: Object.keys(beforeReview.requirement.accepted), review: !!beforeReview.requirement.review, active: beforeReview.has_active_run }));
     // Review creation and native enqueue are separate persisted scheduler turns.
     await expect.poll(() => api.engineeringOverview(issue.id).then(value => value.requirement.review?.agent_id), { timeout: 70000 }).toBe(reviewer.agentId);
-    await begin(issue.id, reviewer.agentId);
+    await begin(issue.id, reviewer.agentId, repairedCommit);
     expect(state.chain).toBe("review");
     expect(state.contract.binding.codeVersion).toBe(repairedCommit);
     expect(state.contract.subjects).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "expected", content: expected })]));
@@ -251,6 +269,8 @@ test("Bug Fix Team advances a native task from human reproduction facts through 
     await finish();
     await expect(api.updateIssue(issue.id, { status: "done", suppress_run: true })).rejects.toThrow(/409.*acknowledge/i);
     await expect.poll(() => api.engineeringOverview(issue.id).then(value => value.has_active_run), { timeout: 70000 }).toBe(false);
+    await page.reload();
+    await expect(panel.getByRole("heading", { name: "Requirement closure report", exact: true })).toBeVisible();
     const refreshed = page.waitForResponse(response => response.request().method() === "GET" && new URL(response.url()).pathname === `/api/issues/${issue.id}/engineering`);
     await panel.getByRole("button", { name: "Refresh engineering delivery" }).click();
     const fresh = await (await refreshed).json();
@@ -272,7 +292,9 @@ test("Bug Fix Team advances a native task from human reproduction facts through 
     await reading.click();
     await expect(panel.getByText("Reading confirmed for this report.", { exact: true })).toBeVisible();
     expect(await api.getOwnedEngineeringIssue(issue.id)).toMatchObject({ status: "done", assignee_type: "squad", assignee_id: team.id });
-    expect(git("rev-parse", "HEAD")).toBe(repairedCommit);
+    expect(registeredGit("rev-parse", "HEAD")).toBe(mode === "worktree" ? originalCommit : repairedCommit);
+    expect(registeredGit("rev-parse", deliveryBranch)).toBe(repairedCommit);
+    expect(registeredGit("show", `${repairedCommit}:index.html`)).toBe(fixed);
     expect(git("status", "--porcelain")).toBe("");
     expect((await api.engineeringRunStates(issue.id)).map(run => run.agent_id).sort()).toEqual([backlog.agentId, reproducer.agentId, reproducer.agentId, planner.agentId, reviewer.agentId].sort());
   }

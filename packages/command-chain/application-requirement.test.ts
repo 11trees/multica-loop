@@ -213,7 +213,9 @@ it.each(["in_place","worktree"] as const)("closes a frozen Bug Fix Team through 
  expect(await pending()).toEqual([expect.objectContaining({reason:"team_review",agent_id:reviewer,user_id:human.userId})]);
  const checkpoint=z.object({revision:z.number(),sequence:z.number()}).parse(await app.invoke({actor:human,action:"overview"}));
  await app.invoke({actor:host(),action:"team-review",payload:{expected_revision:checkpoint.revision,expected_sequence:checkpoint.sequence,execution_resources:[{path:repository,mode}],native_unit_ids:units.map(unit=>unit.issueId)}});
- const review=await start(reviewer,10,root,mode),contract=reviewContractSchema.parse(review.state.contract);
+ const reviewRoot=mode === "worktree" ? join(directory,"bug-team-review") : root,reviewBranch="refs/heads/bug-team-review";
+ if(mode === "worktree")git("worktree","add","-qb","bug-team-review",reviewRoot,finalCommit);
+ const review=await start(reviewer,10,reviewRoot,mode),contract=reviewContractSchema.parse(review.state.contract);
  expect(contract.binding.codeVersion).toBe(finalCommit);
  expect(contract.subjects).toEqual(expect.arrayContaining([expect.objectContaining({kind:"expected",content:expected})]));
  expect(contract.evidence.some(item=>item.kind==="reproduction")).toBe(true);
@@ -228,8 +230,21 @@ it.each(["in_place","worktree"] as const)("closes a frozen Bug Fix Team through 
  const reading=z.object({revision:z.number(),sequence:z.number(),requirement:z.object({review:z.object({report_hash:z.string()})})}).parse(await app.invoke({actor:human,action:"overview"}));
  const acknowledgement={expected_revision:reading.revision,expected_sequence:reading.sequence,report_hash:reading.requirement.review.report_hash};
  await expect(app.invoke({actor:review.actor,action:"review-ack",payload:acknowledgement})).rejects.toThrow(/authenticated human/);
+ if(mode==="worktree"){
+  git("worktree","remove",root);git("worktree","remove",reviewRoot);app.close();reopen();
+  git("update-ref",reviewBranch,original,finalCommit);
+  await expect(app.invoke({actor:human,action:"review-ack",payload:acknowledgement})).rejects.toThrow(/Retained requirement checkpoint branch/);
+  git("update-ref","-d",reviewBranch);
+  await expect(app.invoke({actor:human,action:"review-ack",payload:acknowledgement})).rejects.toThrow(/Retained requirement checkpoint branch/);
+  git("update-ref",reviewBranch,finalCommit);
+ }
  await app.invoke({actor:human,action:"review-ack",payload:acknowledgement});app.close();reopen();
  expect(await app.invoke({actor:host(),action:"completion"})).toMatchObject({allowed:true,binding:{codeVersion:finalCommit}});
+ if(mode === "worktree"){
+  git("update-ref",reviewBranch,original,finalCommit);
+  await expect(app.invoke({actor:host(),action:"completion"})).rejects.toThrow(/Retained requirement checkpoint branch/);
+  git("update-ref",reviewBranch,finalCommit,original);
+ }
 },60000);
 
 it.each(["scope_addition","bug"] as const)("uses frozen Team Feedback roles and automatically authorizes %s forward work after real delivery and report gates",async workType=>{
@@ -348,7 +363,7 @@ it.each(["in_place","worktree"] as const)("runs two managed units serially from 
  await feedbackPlan.command({type:"phase.complete"});await feedbackPlan.command({type:"artifact.put",ref:"delivery-plan.rationale",content:"Append one independent outcome without rewriting original work"});await feedbackPlan.command({type:"phase.complete"});await feedbackPlan.command({type:"artifact.put",ref:"delivery-plan.units",key:"reader-addition",content:stringify({title:"Feedback reader action",actor:"Reader",trigger:"Open saved state",observableOutcome:"New feedback outcome",acceptance:"Feedback oracle observed",sourceRefs:planningContract.sources.map(item=>item.key),dependsOn:[]})});await feedbackPlan.command({type:"phase.complete"});await feedbackPlan.command({type:"artifact.put",ref:"delivery-plan.coverage",content:"Every frozen group acceptance and reproduction source is covered"});await feedbackPlan.command({type:"phase.complete"});
  const {CommandChainEngine}=await import("./runtime"),{SqliteDraftStore}=await import("./sqlite-store"),{createPlanningHandlers,planningContractSchema}=await import("./planning"),draftStore=new SqliteDraftStore(database),engine=new CommandChainEngine(draftStore,createPlanningHandlers(planningContractSchema.parse(feedbackPlan.state.contract)));await engine.execute(feedbackPlan.state.draft!.id,{expectedSequence:feedbackPlan.state.draft!.sequence,attemptId:feedbackPlan.actor.attemptId},{type:"phase.complete"});draftStore.close();app.close();reopen();
  if(mode === "worktree"){
-  const branch=execFileSync("git",["-C",deliveredRoot,"symbolic-ref","HEAD"],{encoding:"utf8"}).trim(),base=z.object({binding:z.object({codeVersion:z.string()})}).parse(feedbackPlan.state.contract).binding.codeVersion;execFileSync("git",["-C",registered,"worktree","remove",deliveredRoot],{stdio:"ignore"});execFileSync("git",["-C",registered,"update-ref",branch,original],{stdio:"ignore"});await expect(app.invoke({actor:{kind:"coordinator"},action:"continuations"})).rejects.toThrow(/Retained feedback checkpoint branch/);execFileSync("git",["-C",registered,"update-ref",branch,base],{stdio:"ignore"});deliveredRoot=join(directory,"feedback-next-plan");execFileSync("git",["-C",registered,"worktree","add","-qb","feedback-next",deliveredRoot,base],{stdio:"ignore"});
+  const branch=execFileSync("git",["-C",deliveredRoot,"symbolic-ref","HEAD"],{encoding:"utf8"}).trim(),base=z.object({binding:z.object({codeVersion:z.string()})}).parse(feedbackPlan.state.contract).binding.codeVersion;execFileSync("git",["-C",registered,"worktree","remove",deliveredRoot],{stdio:"ignore"});execFileSync("git",["-C",registered,"update-ref",branch,original],{stdio:"ignore"});await expect(app.invoke({actor:{kind:"coordinator"},action:"continuations"})).rejects.toThrow(/Retained requirement checkpoint branch/);execFileSync("git",["-C",registered,"update-ref",branch,base],{stdio:"ignore"});deliveredRoot=join(directory,"feedback-next-plan");execFileSync("git",["-C",registered,"worktree","add","-qb","feedback-next",deliveredRoot,base],{stdio:"ignore"});
   expect(await app.invoke({actor:{kind:"coordinator"},action:"continuations"})).toEqual([expect.objectContaining({reason:"feedback_work_ready",agent_id:planner})]);await expect(invoke(feedbackPlan.actor,"start")).rejects.toThrow(/checkpoint/);await expect(app.invoke({actor:{...feedbackPlan.actor,kind:"daemon"},action:"bind",payload:{work_dir:deliveredRoot,mode,overlays:[]}})).rejects.toThrow(/checkpoint/);const check=new DatabaseSync(database);expect(check.prepare("SELECT count(*) AS count FROM requirement_unit").get()!.count).toBe(nativeIds.length);check.close();
   const secondPlan=await start(planner,45,deliveredRoot,mode),secondContract=z.object({sources:z.array(z.object({key:z.string()})),feedback:z.object({comments:z.array(z.object({id:z.string()}))})}).parse(secondPlan.state.contract);expect(secondContract.feedback.comments.map(item=>item.id)).toEqual(["technical-source"]);await secondPlan.command({type:"phase.complete"});await secondPlan.command({type:"artifact.put",ref:"delivery-plan.rationale",content:"A separate scoped group, before any forward code changes"});await secondPlan.command({type:"phase.complete"});await secondPlan.command({type:"artifact.put",ref:"delivery-plan.units",key:"reader-addition",content:stringify({title:"Technical reader state",actor:"Reader",trigger:"Read saved state",observableOutcome:"Technical state retained",acceptance:"Technical invariant observed",sourceRefs:secondContract.sources.map(item=>item.key),dependsOn:[]})});await secondPlan.command({type:"phase.complete"});await secondPlan.command({type:"artifact.put",ref:"delivery-plan.coverage",content:"All technical group requirements covered"});await secondPlan.command({type:"phase.complete"});await secondPlan.command({type:"phase.complete"});
  }

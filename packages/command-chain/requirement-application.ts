@@ -252,10 +252,15 @@ export class RequirementApplication {
     if(!row)throw new Error("Read-only requirement runtime repository is unavailable");
     const execution=executionSchema.parse(JSON.parse(String(row.payload)));
     const forward=record.reviews.some(review=>review.draftId === draft.id && review.contract.correction) || draft.definition.id === "feedback-verify" || record.feedbackWork.some(work=>work.groups.some(group=>group.draftId === draft.id || group.reproduction?.draftId === draft.id));
-    if((forward || execution.feedbackCheckpoint) && execution.feedbackCheckpoint?.draftId !== draft.id)throw new Error("Native feedback attempt belongs to another checkpoint");
-    if(execution.feedbackCheckpoint?.mode === "worktree" && (!execution.feedbackCheckpoint.branchRef || git(record.repositoryPath,["rev-parse","--verify",execution.feedbackCheckpoint.branchRef]) !== review.contract.binding.codeVersion))throw new DraftConflictError("Retained feedback checkpoint branch changed from its frozen commit");
+    if((forward || execution.feedbackCheckpoint) && execution.feedbackCheckpoint?.draftId !== draft.id)throw new Error("Native requirement attempt belongs to another checkpoint");
+    const checkpoint=execution.feedbackCheckpoint;
+    if(checkpoint?.mode === "worktree" && (forward || checkpoint.branchRef)){
+      let commit:string|undefined;
+      try{if(checkpoint.branchRef)commit=git(record.repositoryPath,["rev-parse","--verify",checkpoint.branchRef]);}catch{ /* A missing retained ref cannot prove the completed checkpoint. */ }
+      if(commit !== review.contract.binding.codeVersion)throw new DraftConflictError("Retained requirement checkpoint branch changed from its frozen commit");
+    }
     if(existsSync(execution.repositoryPath)){const code=repositorySnapshot(execution.repositoryPath,true,execution.overlays);if(code.codeVersion !== review.contract.binding.codeVersion)throw new DraftConflictError("Read-only requirement repository changed from its frozen commit");}
-    else if(execution.feedbackCheckpoint?.mode !== "worktree" || draft.status !== "completed")throw new DraftConflictError("Read-only requirement repository is unavailable");
+    else if(checkpoint?.mode !== "worktree" || !checkpoint.branchRef || draft.status !== "completed")throw new DraftConflictError("Read-only requirement repository is unavailable");
     return execution;
   }
   private async configureReview(record:Record,request:ApplicationRequest){
@@ -697,9 +702,10 @@ export class RequirementApplication {
 
       if(!commitBinding)throw new Error("Native binding requires the host transaction");
       return commitBinding(()=>{
+      // Native cleanup can reclaim a completed role before its result is read.
       const previous=this.db.prepare("SELECT payload FROM requirement_execution WHERE workspace_id=? AND issue_id=? AND revision=? AND agent_id=? AND attempt_id=?").get(record.workspaceId,record.issueId,record.contextContract.binding.revision,actor.agentId,actor.attemptId);
-      if(previous){const binding=executionSchema.parse(JSON.parse(String(previous.payload)));if((forwardGroup || role.chain === "feedback-verify" || review?.contract.correction || binding.feedbackCheckpoint) && binding.feedbackCheckpoint?.draftId !== role.draftId)throw new Error("Native feedback attempt belongs to another checkpoint");}
-      const changed=this.db.prepare("INSERT INTO requirement_execution(workspace_id,issue_id,revision,agent_id,attempt_id,payload) SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM requirement_contract WHERE workspace_id=? AND issue_id=? AND revision=? AND COALESCE(json_extract(payload,'$.repairEpoch'),0)=?) AND NOT EXISTS(SELECT 1 FROM engineering_intervention_pending WHERE workspace_id=? AND issue_id=?) AND NOT EXISTS(SELECT 1 FROM engineering_repair_retired_claim WHERE workspace_id=? AND issue_id=? AND attempt_id=?) ON CONFLICT(workspace_id,issue_id,revision,agent_id,attempt_id) DO UPDATE SET payload=requirement_execution.payload").run(record.workspaceId,record.issueId,record.contextContract.binding.revision,actor.agentId,actor.attemptId,JSON.stringify({repositoryPath:code.repositoryPath,overlays,...(forwardGroup || role.chain === "feedback-verify" || review?.contract.correction ? {feedbackCheckpoint:{draftId:role.draftId,mode:payload.mode,branchRef:payload.mode === "worktree" ? repositoryBranch(code.repositoryPath) : null}} : {})}),record.workspaceId,record.issueId,record.contextContract.binding.revision,record.repairEpoch,record.workspaceId,record.issueId,actor.workspaceId,actor.issueId,actor.attemptId);if(changed.changes!==1)throw new DraftConflictError("Requirement execution binding changed or surrendered execution");return {bound:true,repository_path:code.repositoryPath};
+      if(previous){const binding=executionSchema.parse(JSON.parse(String(previous.payload)));if((forwardGroup || role.chain === "feedback-verify" || review?.contract.correction || binding.feedbackCheckpoint) && binding.feedbackCheckpoint?.draftId !== role.draftId)throw new Error("Native requirement attempt belongs to another checkpoint");}
+      const changed=this.db.prepare("INSERT INTO requirement_execution(workspace_id,issue_id,revision,agent_id,attempt_id,payload) SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM requirement_contract WHERE workspace_id=? AND issue_id=? AND revision=? AND COALESCE(json_extract(payload,'$.repairEpoch'),0)=?) AND NOT EXISTS(SELECT 1 FROM engineering_intervention_pending WHERE workspace_id=? AND issue_id=?) AND NOT EXISTS(SELECT 1 FROM engineering_repair_retired_claim WHERE workspace_id=? AND issue_id=? AND attempt_id=?) ON CONFLICT(workspace_id,issue_id,revision,agent_id,attempt_id) DO UPDATE SET payload=requirement_execution.payload").run(record.workspaceId,record.issueId,record.contextContract.binding.revision,actor.agentId,actor.attemptId,JSON.stringify({repositoryPath:code.repositoryPath,overlays,feedbackCheckpoint:{draftId:role.draftId,mode:payload.mode,branchRef:payload.mode === "worktree" && git(code.repositoryPath,["rev-parse","--abbrev-ref","HEAD"]) !== "HEAD" ? repositoryBranch(code.repositoryPath) : null}}),record.workspaceId,record.issueId,record.contextContract.binding.revision,record.repairEpoch,record.workspaceId,record.issueId,actor.workspaceId,actor.issueId,actor.attemptId);if(changed.changes!==1)throw new DraftConflictError("Requirement execution binding changed or surrendered execution");return {bound:true,repository_path:code.repositoryPath};
       });
     }
     if(actor.kind !== "human" && actor.kind !== "task")throw new Error("Authenticated requirement control is required");
@@ -707,7 +713,7 @@ export class RequirementApplication {
       if(actor.agentId !== role.agentId)throw new Error("Task does not own the active requirement role");
       const row=this.db.prepare("SELECT payload FROM requirement_execution WHERE workspace_id=? AND issue_id=? AND revision=? AND agent_id=? AND attempt_id=?").get(record.workspaceId,record.issueId,record.contextContract.binding.revision,actor.agentId,actor.attemptId);
       if(!row)throw new Error("The runtime must bind its requirement repository first");const execution=executionSchema.parse(JSON.parse(String(row.payload)));
-      if((forwardGroup || role.chain === "feedback-verify" || review?.contract.correction || execution.feedbackCheckpoint) && execution.feedbackCheckpoint?.draftId !== role.draftId)throw new Error("Native feedback attempt belongs to another checkpoint");
+      if((forwardGroup || role.chain === "feedback-verify" || review?.contract.correction || execution.feedbackCheckpoint) && execution.feedbackCheckpoint?.draftId !== role.draftId)throw new Error("Native requirement attempt belongs to another checkpoint");
       const code=repositorySnapshot(execution.repositoryPath,true,execution.overlays);
       if(code.codeVersion !== role.contract.binding.codeVersion)throw new Error("Requirement repository changed from its frozen snapshot");
     }

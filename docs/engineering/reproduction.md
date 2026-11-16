@@ -131,21 +131,33 @@ through unit acceptance, automatic Review and the final run's exit until reading
 Backend regression covers workflow ownership, ordinary wakeups and unavailable
 routing with pending facts; shared query tests cover the polling boundary.
 
-This is a controlled local in-place acceptance with real API, PostgreSQL, SQLite,
-temporary Git and Chrome. Native claims, role conclusions and trusted receipt
-submission are fixture supplied; no installed model/provider is invoked. Native
-worktree/process lifecycle, real-provider diagnosis, packaged clients, remote
+The scenario runs in both in-place and worktree modes. In worktree mode every
+native attempt binds a fresh named worktree at its exact frozen commit, then
+reclaims that directory before the next role or report reading. Development and
+Review refs are retained; the registered checkout stays at its original HEAD.
+Reading succeeds after reviewer cleanup. Kernel regression separately rejects
+moved/deleted Review refs before reading and ref drift after acknowledgement.
+
+This is a controlled local acceptance with real API, PostgreSQL, SQLite,
+temporary Git and Chrome. Worktree preparation/reclamation, native claims and
+task exits, role conclusions and trusted receipt submission are fixture supplied;
+no installed model/provider is invoked. Daemon-owned process lifecycle,
+real-provider diagnosis, packaged clients, remote
 execution and historical cutover remain separate acceptance work. The protocol
 scenario's two dependent units and storage reopen in both repository modes are
 documented under [Bug Fix Team protocol acceptance](requirement-review.md#bug-fix-team-protocol-acceptance).
-Fixture completion updates task rows directly, so screenshots may retain older
-run-log badges. Assertions read the complete native parent queue and guarded Done.
+Assertions read the complete native parent queue and guarded Done; final report
+screenshots reload the page after fixture task exits.
 
 ![Team reproduction waiting for an authenticated choice](assets/team-bug-awaiting-human-390.png)
 
 ![Native Team report awaiting exact reading](assets/team-bug-report-1280.png)
 
 ![Exact report reading through the narrow interface](assets/team-bug-report-reading-390.png)
+
+![Worktree Team report after reviewer cleanup](assets/team-bug-worktree-report-1280.png)
+
+![Reading the exact report after the reviewer worktree is reclaimed](assets/team-bug-worktree-report-reading-390.png)
 
 The actual page observations are retained as [saved-state failure](assets/team-bug-reproduced.png)
 and [independent post-repair verification](assets/team-bug-independent-verification.png).

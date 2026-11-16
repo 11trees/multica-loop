@@ -330,7 +330,7 @@ export class TestApiClient {
     finally { await client.end(); }
   }
 
-  async attachEngineeringProject(taskId: string, projectId: string, repository: string) {
+  async attachEngineeringProject(taskId: string, projectId: string, repository: string, mode: "in_place" | "worktree" = "in_place") {
     const run = this.engineeringRuns.find(value => value.taskId === taskId);
     if (!run || !this.createdProjectIds.includes(projectId)) throw new Error("Not an owned engineering fixture project");
     const client = new pg.Client(DATABASE_URL); await client.connect();
@@ -339,7 +339,7 @@ export class TestApiClient {
       const result = await client.query<{ issue_id:string; daemon_id:string }>(`SELECT q.issue_id,r.daemon_id FROM agent_task_queue q JOIN agent_runtime r ON r.id=q.runtime_id WHERE q.id=$1`, [taskId]);
       const row = result.rows[0]; if (!row || !this.createdIssueIds.includes(row.issue_id)) throw new Error("Fixture issue missing");
       issueId = row.issue_id;
-      await client.query(`INSERT INTO project_resource (project_id,workspace_id,resource_type,resource_ref,position) VALUES ($1,$2,'local_directory',$3,0)`, [projectId,this.workspaceId,JSON.stringify({ local_path:repository,daemon_id:row.daemon_id,execution_mode:"in_place" })]);
+      await client.query(`INSERT INTO project_resource (project_id,workspace_id,resource_type,resource_ref,position) VALUES ($1,$2,'local_directory',$3,0)`, [projectId,this.workspaceId,JSON.stringify({ local_path:repository,daemon_id:row.daemon_id,execution_mode:mode })]);
     } finally { await client.end(); }
     await this.updateIssue(issueId!, { project_id: projectId, suppress_run: true });
   }

@@ -180,8 +180,11 @@ also covers browser create/start, authenticated reproduction conditions, a real
 repair commit, one published native child, independent Chrome verification,
 automatic final Review and exact reading before native parent Done. Its isolated
 Team uses the same `bug_fix` preset; role conclusions and queue claims are
-controlled, and the user's five built-in Teams remain unconfigured. Native
-child-done wakeup regression preserves completion facts without a competing leader
+controlled, and the user's five built-in Teams remain unconfigured. Both directory
+modes are covered; worktree attempts use separate named directories, reclaimed
+before continuation or reading, with the original registered HEAD preserved.
+The final reviewer retains its exact draft/branch proof for reading after cleanup.
+Native child-done wakeup regression preserves completion facts without a competing leader
 run. Shared query regression keeps automatic Team progress observable until the
 current report is read.
 
