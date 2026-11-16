@@ -18,6 +18,7 @@ export function useEngineeringActions(workspaceId: string, issueId: string) {
     client.invalidateQueries({ queryKey: engineeringOverviewOptions(workspaceId, issueId).queryKey }),
     client.invalidateQueries({ queryKey: issueKeys.tasks(issueId) }),
   ]);
+  const startTeam=useMutation({mutationFn:async(status?:string)=>{if(status)await api.updateIssue(issueId,{status});await api.startEngineeringTeam(issueId)},onSettled:()=>Promise.all([refresh(),client.invalidateQueries({queryKey:issueKeys.all(workspaceId)})])});
   const configureDirect=useMutation({mutationFn:(input:DirectConfiguration)=>api.configureDirectEngineering(issueId,input),onSettled:refresh});
   const configureBusiness=useMutation({mutationFn:(input:BusinessConfiguration)=>api.configureBusinessEngineering(issueId,input),onSettled:refresh});
   const readSpecification=useMutation({mutationFn:(input:SpecificationReading)=>api.acknowledgeBusinessSpecification(issueId,input),onSettled:()=>Promise.all([refresh(),client.invalidateQueries({queryKey:issueKeys.all(workspaceId)})])});
@@ -34,7 +35,7 @@ export function useEngineeringActions(workspaceId: string, issueId: string) {
   const answer = useMutation({ mutationFn: (input: { expectedSequence: number; requestId: string; answer: string; selectedOption?:string }) => api.answerEngineering(issueId, input), onSettled: refresh });
   const abandon = useMutation({ mutationFn: (input: { expectedSequence: number; reason: string }) => api.abandonEngineering(issueId, input), onSettled: refresh });
   const run = useMutation({ mutationFn: (input: EngineeringCheckpoint) => api.runEngineering(issueId, input), onSettled: refresh });
-  return { configureDirect,configureBusiness,readSpecification,commentSpecification,authorizeFeedbackWork,beginFeedback,cancelFeedback,configure, configureRequirement, publish, deliver, review, acknowledge, answer, abandon, run };
+  return { startTeam,configureDirect,configureBusiness,readSpecification,commentSpecification,authorizeFeedbackWork,beginFeedback,cancelFeedback,configure, configureRequirement, publish, deliver, review, acknowledge, answer, abandon, run };
 }
 
 export function feedbackCommentsOptions(workspaceId:string,issueId:string){return queryOptions({queryKey:["engineering-feedback-comments",workspaceId,issueId],queryFn:()=>api.listComments(issueId),enabled:!!workspaceId && !!issueId,staleTime:0});}

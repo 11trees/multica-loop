@@ -25,7 +25,13 @@ func (h *Handler) requireEngineeringCompletion(ctx context.Context, workspaceID 
 }
 
 func (h *Handler) requireEngineeringCompletionWithCatalog(ctx context.Context, catalog issuestatus.Querier, workspaceID pgtype.UUID, params db.UpdateIssueParams) error {
-	if h.EngineeringWorker == nil || !params.Status.Valid {
+	if h.EngineeringWorker == nil {
+		return nil
+	}
+	if err := h.requireFrozenTeamUpdate(ctx, uuidToString(workspaceID), params); err != nil {
+		return err
+	}
+	if !params.Status.Valid {
 		return nil
 	}
 	category, err := issuestatus.CategoryWithError(ctx, catalog, workspaceID, params.Status.String)

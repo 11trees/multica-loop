@@ -56,10 +56,14 @@ func (h *Handler) ReconcileEngineering(ctx context.Context) error {
 }
 
 func (h *Handler) dispatchEngineeringContinuation(ctx context.Context, item engineeringContinuation) error {
+	if err := h.requireFrozenTeamContinuation(ctx, item); err != nil {
+		return err
+	}
+
 	if item.Reason == "direct_ready" || item.Reason == "direct_submitted" {
 		return h.dispatchDirect(ctx, item)
 	}
-	if item.Reason == "business_handoff" || item.Reason == "end_to_end_publish" || item.Reason == "end_to_end_review" {
+	if item.Reason == "business_handoff" || item.Reason == "end_to_end_publish" || item.Reason == "end_to_end_review" || item.Reason == "team_publish" || item.Reason == "team_review" {
 		return h.dispatchEndToEnd(ctx, item)
 	}
 	if item.Reason == "business_comment_publish" || item.Reason == "business_comment_resolve" {
@@ -94,7 +98,7 @@ func (h *Handler) dispatchEngineeringContinuation(ctx context.Context, item engi
 	if err != nil {
 		return err
 	}
-	if item.ExpectedRevision < 1 || item.ExpectedSequence < 0 || (item.Reason != "business_ready" && item.Reason != "feedback_verify_ready" && item.Reason != "feedback_work_ready" && item.Reason != "feedback_ready" && item.Reason != "reproduction_handoff" && item.Reason != "review_ready" && item.Reason != "unit_ready" && item.Reason != "context_handoff" && item.Reason != "human_answers" && item.Reason != "development_handoff" && item.Reason != "verification_rework" && item.Reason != "analysis_handoff" && item.Reason != "verification_reanalysis") {
+	if item.ExpectedRevision < 1 || item.ExpectedSequence < 0 || (item.Reason != "team_ready" && item.Reason != "business_ready" && item.Reason != "feedback_verify_ready" && item.Reason != "feedback_work_ready" && item.Reason != "feedback_ready" && item.Reason != "reproduction_handoff" && item.Reason != "review_ready" && item.Reason != "unit_ready" && item.Reason != "context_handoff" && item.Reason != "human_answers" && item.Reason != "development_handoff" && item.Reason != "verification_rework" && item.Reason != "analysis_handoff" && item.Reason != "verification_reanalysis") {
 		return fmt.Errorf("invalid engineering continuation checkpoint")
 	}
 	if existing, err := h.Queries.GetAgentTask(ctx, taskID); err == nil {

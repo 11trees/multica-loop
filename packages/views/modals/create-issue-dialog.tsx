@@ -3,7 +3,7 @@
 import { useLayoutEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@multica/ui/lib/utils";
-import { Dialog, DialogContent } from "@multica/ui/components/ui/dialog";
+import { Dialog, DialogContent,DialogTitle } from "@multica/ui/components/ui/dialog";
 import {
   useCreateModeStore,
   type CreateMode,
@@ -13,6 +13,11 @@ import { ManualCreatePanel, manualDialogContentClass } from "./create-issue";
 import { sourceContextPreviewOptions } from "@multica/core/issues/queries";
 import { useIssueDraftStore } from "@multica/core/issues/stores/draft-store";
 import { useWorkspaceId } from "@multica/core/hooks";
+import { api } from "@multica/core/api";
+import {Spinner} from "@multica/ui/components/ui/spinner";
+import {Button} from "@multica/ui/components/ui/button";
+import {useT} from "../i18n";
+import { TeamCreatePanel } from "./team-create-issue";
 
 /**
  * Shell that owns the single `<Dialog>` AND `<DialogContent>` for the
@@ -118,11 +123,15 @@ function CreateIssueDialogBody({
   sourceContextData?: Record<string, unknown>;
   sourceContextExpanded?: boolean;
 }) {
+  const {t}=useT("issues");
   const setLastMode = useCreateModeStore((s) => s.setLastMode);
+  const capabilities=useQuery({queryKey:["engineering-capabilities"],queryFn:()=>api.getConfig(),staleTime:60000});
+  const teamMode=capabilities.data?.engineering_teams_enabled===true;
   const [mode, setMode] = useState<CreateMode>(initialMode);
   const [manualOpened, setManualOpened] = useState(initialMode === "manual");
   const [panelData, setPanelData] = useState(data ?? null);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [teamPending,setTeamPending]=useState(false);
   const effectiveData = {
     ...(panelData ?? {}),
     ...sourceContextData,
@@ -177,13 +186,13 @@ function CreateIssueDialogBody({
         );
 
   return (
-    <Dialog open onOpenChange={(v) => { if (!v) onClose(); }}>
+    <Dialog open onOpenChange={(v) => { if (!v && !teamPending) onClose(); }}>
       <DialogContent
         finalFocus={false}
         showCloseButton={false}
-        className={className}
+        className={teamMode || capabilities.isPending || capabilities.isError ? "max-h-[85dvh] w-[calc(100vw-2rem)] max-w-2xl gap-0 overflow-hidden p-0" : className}
       >
-        {mode === "agent" ? (
+        {capabilities.isPending || capabilities.isError ? <div className="space-y-4 p-5"><DialogTitle>{t($=>$.engineering.new_task)}</DialogTitle>{capabilities.isError ? <><p role="alert">{t($=>$.engineering.load_error)}</p><Button variant="outline" onClick={()=>{void capabilities.refetch()}}>{t($=>$.engineering.refresh)}</Button></> : <Spinner />}<Button variant="ghost" onClick={onClose}>{t($=>$.engineering.cancel)}</Button></div> : teamMode ? <TeamCreatePanel onClose={onClose} onPendingChange={setTeamPending} data={effectiveData} /> : mode === "agent" ? (
           <AgentCreatePanel
             onClose={onClose}
             onSwitchMode={switchTo("manual")}

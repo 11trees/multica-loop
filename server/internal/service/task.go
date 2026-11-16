@@ -38,6 +38,8 @@ import (
 )
 
 type TaskService struct {
+	EngineeringTeamOwnsIssue func(context.Context, db.Issue) (bool, error)
+
 	// RecordMemberActivity enables the member_delegation_day ledger, which
 	// only feeds self-host telemetry. Off unless the server enables telemetry
 	// at startup, so DO_NOT_TRACK stops collection, not just delivery.
@@ -1283,6 +1285,15 @@ func (s *TaskService) enqueueIssueTask(ctx context.Context, issue db.Issue, trig
 }
 
 func (s *TaskService) enqueueIssueTaskWithCommentPlan(ctx context.Context, issue db.Issue, triggerCommentID pgtype.UUID, coalescedCommentIDs []pgtype.UUID, forceFreshSession bool, handoffNote string, actorUserID pgtype.UUID, rerunOfTaskID pgtype.UUID, fireAt pgtype.Timestamptz, origin RunOrigin, freshRerun bool) (db.AgentTaskQueue, error) {
+	if s.EngineeringTeamOwnsIssue != nil {
+		owned, err := s.EngineeringTeamOwnsIssue(ctx, issue)
+		if err != nil {
+			return db.AgentTaskQueue{}, err
+		}
+		if owned {
+			return db.AgentTaskQueue{}, fmt.Errorf("task execution belongs to its Team workflow")
+		}
+	}
 	if !issue.AssigneeID.Valid {
 		slog.Error("task enqueue failed", "issue_id", util.UUIDToString(issue.ID), "error", "issue has no assignee")
 		return db.AgentTaskQueue{}, fmt.Errorf("issue has no assignee")
@@ -1465,6 +1476,15 @@ func (s *TaskService) enqueueMentionTask(ctx context.Context, issue db.Issue, ag
 }
 
 func (s *TaskService) enqueueMentionTaskWithCommentPlan(ctx context.Context, issue db.Issue, agentID pgtype.UUID, triggerCommentID pgtype.UUID, coalescedCommentIDs []pgtype.UUID, isLeader bool, squadID pgtype.UUID, forceFreshSession bool, handoffNote string, actorUserID pgtype.UUID, rerunOfTaskID pgtype.UUID, origin RunOrigin, freshRerun, workflowHandoff bool, engineeringTaskID ...pgtype.UUID) (db.AgentTaskQueue, error) {
+	if len(engineeringTaskID) == 0 && s.EngineeringTeamOwnsIssue != nil {
+		owned, err := s.EngineeringTeamOwnsIssue(ctx, issue)
+		if err != nil {
+			return db.AgentTaskQueue{}, err
+		}
+		if owned {
+			return db.AgentTaskQueue{}, fmt.Errorf("task execution belongs to its Team workflow")
+		}
+	}
 	if err := guardIssueNotInTriage(ctx, s.Queries, issue.ID, origin); err != nil {
 		return db.AgentTaskQueue{}, err
 	}

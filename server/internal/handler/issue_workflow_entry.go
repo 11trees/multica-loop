@@ -88,6 +88,15 @@ func (h *Handler) applyIssueWorkflow(ctx context.Context, prev db.Issue, params 
 	if assigneeTouched || prev.TriageState.Valid {
 		return nil, nil
 	}
+	if prev.AssigneeType.String == "squad" {
+		routing, err := h.engineeringTeamRouting(ctx, prev)
+		if err != nil {
+			return nil, err
+		}
+		if routing.Owned {
+			return nil, nil
+		}
+	}
 	entering := ""
 	switch {
 	case projectMoving && enterOnMove:

@@ -1,4 +1,5 @@
 import { z } from "zod";
+export const EngineeringTeamStartedSchema=z.object({started:z.literal(true)});
 
 const source = z.object({ key: z.string(), kind: z.string(), description: z.string(), oracle: z.string(), source_ref: z.string().optional().default("") })
   .transform(value => ({ key: value.key, kind: value.kind, description: value.description, oracle: value.oracle, sourceRef: value.source_ref }));
@@ -37,6 +38,7 @@ const repair=z.union([
  z.object({available:z.literal(true),recorded:z.literal(true),case_id:z.string().min(1),status:z.string().min(1),original_version:z.string().min(1),observation_count:z.number().int().positive(),supervision_active:z.boolean(),desired_intent:z.string().min(1),execution_connected:z.boolean()}),
 ]);
 const state = z.object({
+  team:z.object({id:z.uuid(),revision:z.number().int().positive(),workflow:z.enum(["direct","business_analysis","end_to_end","develop","bug_fix"]),frozen:z.boolean(),aligned:z.boolean(),input:z.string()}).optional(),
   repair:repair.nullable().optional().default(null),
   intervention:intervention.nullable().optional().default(null),
   direct_enabled:z.boolean().optional().default(false),direct:direct.nullable().optional().default(null),
@@ -72,6 +74,7 @@ const state = z.object({
   if (value.configured && value.status === "waiting_for_answers" && !value.questions) ctx.addIssue({ code: "custom", message: "Missing human checkpoint questions" });
 });
 export const EngineeringOverviewSchema = state.transform(value => ({
+  ...(value.team ? {team:value.team} : {}),
   repair:value.repair,
   intervention:value.intervention,
   directEnabled:value.direct_enabled,direct:value.direct,

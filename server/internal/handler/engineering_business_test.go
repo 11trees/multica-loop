@@ -131,6 +131,9 @@ type endToEndWorker struct {
 
 func (f *endToEndWorker) Call(_ context.Context, input any) (json.RawMessage, error) {
 	value := input.(map[string]any)
+	if value["action"] == "team-routing" {
+		return json.RawMessage(`{"owned":false,"binding":null,"profile":null}`), nil
+	}
 	switch value["action"] {
 	case "parent-scope":
 		return json.RawMessage(`{"managed":false}`), nil

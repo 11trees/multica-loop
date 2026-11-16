@@ -16,6 +16,9 @@ type engineeringCoordinatorFixture struct {
 
 func (s *engineeringCoordinatorFixture) Call(_ context.Context, input any) (json.RawMessage, error) {
 	value := input.(map[string]any)
+	if value["action"] == "team-routing" {
+		return json.RawMessage(`{"owned":false,"binding":null,"profile":null}`), nil
+	}
 	if value["action"] == "continuations" {
 		body, err := json.Marshal([]engineeringContinuation{s.item})
 		return body, err

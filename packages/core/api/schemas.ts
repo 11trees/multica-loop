@@ -1066,6 +1066,7 @@ export interface AppConfigResponse {
   /** Whether issue create atomically validates and persists `properties`.
    * Older servers silently ignore the field, so absent means unsupported. */
   issue_create_properties_supported?: boolean;
+  engineering_teams_enabled?: boolean;
   /** Whether deleting a comment keeps its replies and the server routes
    * DELETE /api/comments/{id}/keep-replies. Older servers deleted the replies
    * too, so absent must be treated as false (#8296). */
@@ -1362,6 +1363,7 @@ export const AppConfigSchema = z.object({
   local_worktree_supported: BooleanWithDefaultSchema(false),
   agent_conversation_starters_supported: BooleanWithDefaultSchema(false),
   issue_create_properties_supported: BooleanWithDefaultSchema(false),
+  engineering_teams_enabled: BooleanWithDefaultSchema(false),
   comment_delete_keep_replies_supported: BooleanWithDefaultSchema(false),
   theme_store_enabled: BooleanWithDefaultSchema(false),
   server_version: OptionalStringSchema,
@@ -1386,6 +1388,7 @@ export const EMPTY_APP_CONFIG: AppConfigResponse = {
   agent_conversation_starters_supported: false,
   // Fail closed: old servers returned success while dropping create properties.
   issue_create_properties_supported: false,
+  engineering_teams_enabled: false,
   // Fail closed: old servers delete a comment's replies with it.
   comment_delete_keep_replies_supported: false,
   theme_store_enabled: false,

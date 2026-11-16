@@ -2302,6 +2302,21 @@
     "direct_result": "Résultat Direct",
     "direct_completed": "Résultat soumis enregistré ; Direct est terminé.",
     "direct_submitted": "Résultat soumis ; attente de la fin du processus.",
-    "direct_refresh": "Actualiser Direct"
+    "direct_refresh": "Actualiser Direct",
+    "team": "Équipe",
+    "team_version": "Version {{revision}}",
+    "team_frozen": "L’équipe, le projet et l’objectif sont figés pour cette tâche.",
+    "team_changed": "La tâche ne correspond plus à son équipe, projet ou objectif figés.",
+    "team_start": "Démarrer le workflow de l’équipe",
+    "new_task": "Nouvelle tâche",
+    "task_goal": "Objectif de la tâche",
+    "task_project": "Projet",
+    "select_project": "Choisir un projet",
+    "select_team": "Choisir une équipe",
+    "team_setup_required": "Configurez d’abord le workflow d’une équipe",
+    "task_materials": "Documents et contexte",
+    "task_saved": "Tâche enregistrée ; réessayez de démarrer le workflow.",
+    "save_task_draft": "Enregistrer le brouillon",
+    "create_start": "Créer et démarrer"
   }
 }

@@ -3,7 +3,7 @@ import { FeedbackCaptureSchema, FeedbackCancelledSchema, RequirementReviewConfig
 import type { ZodType } from "zod";
 import { EngineeringOverviewSchema, EngineeringWriteSchema } from "./schemas";
 import type { FeedbackWorkAuthorization, FeedbackCapture, FeedbackCancellation, RequirementReviewConfiguration, RequirementReviewAcknowledgement, RequirementDeliveryConfiguration, EngineeringCheckpoint, RequirementConfiguration, EngineeringConfiguration, EngineeringOverview } from "../issues/engineering-schema";
-import { DirectConfiguredSchema, type DirectConfiguration, SpecificationReadSchema, SpecificationCommentSubmittedSchema, type SpecificationReading, type SpecificationComment, BusinessConfiguredSchema, type BusinessConfiguration } from "../issues/engineering-schema";
+import { EngineeringTeamStartedSchema, DirectConfiguredSchema, type DirectConfiguration, SpecificationReadSchema, SpecificationCommentSubmittedSchema, type SpecificationReading, type SpecificationComment, BusinessConfiguredSchema, type BusinessConfiguration } from "../issues/engineering-schema";
 import { AgentRuntimeSchema, EMPTY_RUNTIME } from "../runtimes/schema";
 import type { IssueWakeup, IssueWakeupInput, IssueWakeupSummaryRow, PausedWakeup, SystemWakeup, WakeupRun, WorkspaceSystemWakeup } from "../types/issue-wakeup";
 import type { WorkspaceWakeupPage, WorkspaceWakeupFilters } from "../types/issue-wakeup";
@@ -3100,6 +3100,11 @@ export class ApiClient {
     const state = parseWithFallback<EngineeringOverview | null>(raw, EngineeringOverviewSchema, null, { endpoint: "GET /api/issues/:id/engineering" });
     if (!state) throw new Error("Invalid engineering overview response");
     return state;
+  }
+
+  async startEngineeringTeam(issueId:string):Promise<void>{
+    const raw=await this.fetch<unknown>(`/api/issues/${issueId}/engineering/team-start`,{method:"POST",body:JSON.stringify({})});
+    if(!parseWithFallback(raw,EngineeringTeamStartedSchema,null,{endpoint:"POST /api/issues/:id/engineering/team-start"}))throw new Error("Invalid Team start response");
   }
 
   async configureEngineering(issueId: string, input: EngineeringConfiguration): Promise<void> {

@@ -2302,6 +2302,21 @@
     "direct_result": "Direct result",
     "direct_completed": "Submitted result saved; Direct is complete.",
     "direct_submitted": "Result submitted; waiting for native run completion.",
-    "direct_refresh": "Refresh Direct"
+    "direct_refresh": "Refresh Direct",
+    "team": "Team",
+    "team_version": "Version {{revision}}",
+    "team_frozen": "The Team, project and goal are frozen for this task.",
+    "team_changed": "The task no longer matches its frozen Team, project or goal.",
+    "team_start": "Start Team workflow",
+    "new_task": "New task",
+    "task_goal": "Task goal",
+    "task_project": "Project",
+    "select_project": "Choose a project",
+    "select_team": "Choose a Team",
+    "team_setup_required": "Configure a Team workflow first",
+    "task_materials": "Materials and context",
+    "task_saved": "Task saved; retry starting the Team workflow.",
+    "save_task_draft": "Save draft",
+    "create_start": "Create and start"
   }
 }

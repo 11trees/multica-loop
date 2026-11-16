@@ -105,6 +105,9 @@ func (h *Handler) ConfigureEngineeringReview(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
+	if h.rejectTeamTaskConfiguration(w, r, parent) {
+		return
+	}
 	if h.EngineeringWorker == nil {
 		writeError(w, http.StatusServiceUnavailable, "engineering is not enabled")
 		return

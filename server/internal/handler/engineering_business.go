@@ -42,6 +42,9 @@ func (h *Handler) ConfigureEngineeringBusiness(w http.ResponseWriter, r *http.Re
 	if !ok {
 		return
 	}
+	if h.rejectTeamTaskConfiguration(w, r, issue) {
+		return
+	}
 	if h.EngineeringWorker == nil {
 		writeError(w, http.StatusServiceUnavailable, "engineering is not enabled")
 		return

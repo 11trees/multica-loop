@@ -57,7 +57,11 @@ func (h *Handler) dispatchEndToEnd(ctx context.Context, item engineeringContinua
 		return fmt.Errorf("End to End project is no longer visible")
 	}
 	actor := map[string]string{"kind": "host", "workspaceId": item.WorkspaceID, "issueId": item.IssueID}
-	data, err := h.EngineeringWorker.Call(ctx, map[string]any{"actor": actor, "action": "end-to-end-scope"})
+	scopeAction := "end-to-end-scope"
+	if item.Reason == "team_publish" || item.Reason == "team_review" {
+		scopeAction = "team-delivery-scope"
+	}
+	data, err := h.EngineeringWorker.Call(ctx, map[string]any{"actor": actor, "action": scopeAction})
 	if err != nil {
 		return err
 	}
@@ -93,7 +97,7 @@ func (h *Handler) dispatchEndToEnd(ctx context.Context, item engineeringContinua
 			reviewerResources = mapping
 		}
 	}
-	if _, err = h.EngineeringWorker.Call(ctx, map[string]any{"actor": actor, "action": "end-to-end-scope", "payload": map[string]any{"execution_resources": resources}}); err != nil {
+	if _, err = h.EngineeringWorker.Call(ctx, map[string]any{"actor": actor, "action": scopeAction, "payload": map[string]any{"execution_resources": resources}}); err != nil {
 		return err
 	}
 	if item.Reason == "business_handoff" {
@@ -115,10 +119,10 @@ func (h *Handler) dispatchEndToEnd(ctx context.Context, item engineeringContinua
 	if !scope.HandedOff || item.AgentID != scope.Roles["reviewer"] {
 		return fmt.Errorf("End to End delivery authority changed")
 	}
-	if item.Reason == "end_to_end_publish" {
+	if item.Reason == "end_to_end_publish" || item.Reason == "team_publish" {
 		return h.publishEngineeringUnits(ctx, issue, item.UserID, item.ExpectedRevision, item.ExpectedSequence)
 	}
-	if item.Reason != "end_to_end_review" {
+	if item.Reason != "end_to_end_review" && item.Reason != "team_review" {
 		return fmt.Errorf("invalid End to End continuation")
 	}
 	units, err := h.loadReviewUnits(ctx, issue, true)
@@ -129,7 +133,11 @@ func (h *Handler) dispatchEndToEnd(ctx context.Context, item engineeringContinua
 	for i, unit := range units {
 		ids[i] = unit.IssueID
 	}
-	data, err = h.EngineeringWorker.Call(ctx, map[string]any{"actor": map[string]string{"kind": "human", "workspaceId": item.WorkspaceID, "issueId": item.IssueID, "userId": item.UserID}, "action": "configure-review", "payload": map[string]any{"expected_revision": item.ExpectedRevision, "expected_sequence": item.ExpectedSequence, "agent_id": scope.Roles["reviewer"], "execution_resources": reviewerResources, "native_unit_ids": ids}})
+	reviewRequest := map[string]any{"actor": map[string]string{"kind": "human", "workspaceId": item.WorkspaceID, "issueId": item.IssueID, "userId": item.UserID}, "action": "configure-review", "payload": map[string]any{"expected_revision": item.ExpectedRevision, "expected_sequence": item.ExpectedSequence, "agent_id": scope.Roles["reviewer"], "execution_resources": reviewerResources, "native_unit_ids": ids}}
+	if item.Reason == "team_review" {
+		reviewRequest = map[string]any{"actor": actor, "action": "team-review", "payload": map[string]any{"expected_revision": item.ExpectedRevision, "expected_sequence": item.ExpectedSequence, "execution_resources": reviewerResources, "native_unit_ids": ids}}
+	}
+	data, err = h.EngineeringWorker.Call(ctx, reviewRequest)
 	if err != nil {
 		return err
 	}

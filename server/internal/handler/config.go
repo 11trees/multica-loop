@@ -12,8 +12,9 @@ import (
 )
 
 type AppConfig struct {
-	LocalAuthEnabled bool   `json:"local_auth_enabled,omitempty"`
-	CdnDomain        string `json:"cdn_domain"`
+	EngineeringTeamsEnabled bool   `json:"engineering_teams_enabled"`
+	LocalAuthEnabled        bool   `json:"local_auth_enabled,omitempty"`
+	CdnDomain               string `json:"cdn_domain"`
 	// The origin used for durable private-attachment Markdown links. Clients
 	// use it only to recognize links belonging to this deployment.
 	AttachmentPublicURL string `json:"attachment_public_url,omitempty"`
@@ -122,6 +123,7 @@ type AppConfig struct {
 // to anonymous callers — never user- or tenant-scoped data.
 func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request) {
 	config := AppConfig{
+		EngineeringTeamsEnabled: h.EngineeringWorker != nil,
 		// A property of this build, not of the deployment: if this code is
 		// running, the save gate is running with it.
 		LocalWorktreeSupported:             true,

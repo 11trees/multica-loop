@@ -2221,6 +2221,21 @@
     "direct_result": "Direct 执行结果",
     "direct_completed": "提交结果已保存，Direct 已完成。",
     "direct_submitted": "结果已提交，等待执行进程结束。",
-    "direct_refresh": "刷新 Direct"
+    "direct_refresh": "刷新 Direct",
+    "team": "团队",
+    "team_version": "版本 {{revision}}",
+    "team_frozen": "本任务的团队、项目和目标已冻结。",
+    "team_changed": "任务已偏离冻结的团队、项目或目标。",
+    "team_start": "启动团队工作流",
+    "new_task": "新建任务",
+    "task_goal": "任务目标",
+    "task_project": "项目",
+    "select_project": "选择项目",
+    "select_team": "选择团队",
+    "team_setup_required": "先配置团队工作流",
+    "task_materials": "材料与上下文",
+    "task_saved": "任务已保存，可重试启动团队工作流。",
+    "save_task_draft": "保存草稿",
+    "create_start": "创建并启动"
   }
 }

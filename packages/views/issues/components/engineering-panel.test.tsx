@@ -8,10 +8,10 @@ import type { EngineeringOverview } from "@multica/core/issues";
 import { renderWithI18n } from "../../test/i18n";
 import { EngineeringPanel } from "./engineering-panel";
 
-const endpoints = vi.hoisted(() => ({ getEngineeringOverview: vi.fn(), authorizeEngineeringFeedbackWork:vi.fn(), beginEngineeringFeedback:vi.fn(),cancelEngineeringFeedback:vi.fn(),listComments:vi.fn(), listAgents: vi.fn(), answerEngineering: vi.fn(), abandonEngineering: vi.fn(), configureEngineering: vi.fn(), configureRequirementEngineering:vi.fn(), configureRequirementReview:vi.fn(),acknowledgeRequirementReview:vi.fn(),authorizeEngineeringDelivery:vi.fn(),publishEngineeringUnits:vi.fn(),runEngineering: vi.fn() }));
+const endpoints = vi.hoisted(() => ({ startEngineeringTeam:vi.fn(), getEngineeringOverview: vi.fn(), authorizeEngineeringFeedbackWork:vi.fn(), beginEngineeringFeedback:vi.fn(),cancelEngineeringFeedback:vi.fn(),listComments:vi.fn(), listAgents: vi.fn(), answerEngineering: vi.fn(), abandonEngineering: vi.fn(), configureEngineering: vi.fn(), configureRequirementEngineering:vi.fn(), configureRequirementReview:vi.fn(),acknowledgeRequirementReview:vi.fn(),authorizeEngineeringDelivery:vi.fn(),publishEngineeringUnits:vi.fn(),runEngineering: vi.fn() }));
 vi.mock("@multica/core/api", async importOriginal => ({ ...await importOriginal<typeof import("@multica/core/api")>(), api: endpoints }));
 vi.mock("@multica/core/hooks", async importOriginal => ({ ...await importOriginal<typeof import("@multica/core/hooks")>(), useWorkspaceId: () => "workspace" }));
-const issue = { id: "issue", title: "Fixture delivery", revision: 4 } as Issue;
+const issue = { id: "issue", project_id:"project", title: "Fixture delivery", revision: 4 } as Issue;
 const initial: EngineeringOverview = {
   repair:null,intervention:null,directEnabled:false,direct:null,endToEndEnabled:false,businessEnabled:false,feedbackAllowed:false,autoContinue: false, enabled: true, configured: true, chain: "verification", agentId: "verifier", revision: 2, sequence: 7,
   codeVersion: "commit-fixture", repositoryPath: "/fixture", draftId: "draft", status: "waiting_for_answers", currentPhase: "plan", hasActiveRun: false,
@@ -249,4 +249,17 @@ it("shows a recorded repair without claiming an investigation process is running
  state.repair={available:true,recorded:true,case_id:"REPAIR-original",status:"queued",original_version:"kernel-and-host-version",observation_count:2,supervision_active:true,desired_intent:"stopped",execution_connected:false};
  renderWithI18n(<QueryClientProvider client={client}><EngineeringPanel issue={issue} /></QueryClientProvider>);
  const region=await screen.findByRole("region",{name:"Repair case"});expect(within(region).getByText("Waiting for repair setup")).toBeVisible();expect(within(region).getByText("Retained observations: 2")).toBeVisible();expect(within(region).getByText("REPAIR-original")).toBeVisible();
+});
+
+it("starts a Team task without showing per-task workflow or role configuration and keeps failed starts retryable",async()=>{
+ state.configured=false;state.chain="";state.revision=null;state.sequence=null;state.questions=[];
+ state.team={id:"team",workflow:"develop",revision:3,frozen:false,aligned:true,input:""};
+ const user=userEvent.setup();renderPanel();
+ const start=await screen.findByRole("button",{name:"Start Team workflow"});
+ expect(screen.queryByRole("button",{name:/Configure delivery|Configure requirement|Configure business/})).not.toBeInTheDocument();
+ vi.mocked(api.startEngineeringTeam).mockRejectedValueOnce(new Error("Project directory unavailable"));
+ await user.click(start);await screen.findByText("Project directory unavailable");
+ expect(api.startEngineeringTeam).toHaveBeenCalledWith("issue");
+ expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+ expect(start).toBeEnabled();
 });

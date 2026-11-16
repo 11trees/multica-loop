@@ -575,6 +575,13 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 	if cfg.EngineeringWorkerPath != "" && cfg.EngineeringDatabasePath != "" {
 		h.EngineeringHostVersion = engineeringHostVersion()
 		h.EngineeringWorker = &engineering.Client{Worker: cfg.EngineeringWorkerPath, Database: cfg.EngineeringDatabasePath}
+		if h.TaskService != nil {
+			h.TaskService.EngineeringTeamOwnsIssue = func(ctx context.Context, issue db.Issue) (bool, error) {
+				routing, err := h.engineeringTeamRouting(ctx, issue)
+				return routing.Owned, err
+			}
+		}
+
 		h.EngineeringAdminWorker = &engineering.Client{Worker: cfg.EngineeringWorkerPath, Database: cfg.EngineeringDatabasePath + ".admin.sqlite", Admin: true}
 	}
 	// The default passthrough scheduler reports sweeper-race recoveries so the

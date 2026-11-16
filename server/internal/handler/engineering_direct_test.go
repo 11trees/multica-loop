@@ -20,6 +20,9 @@ type directWorkerFixture struct {
 
 func (f *directWorkerFixture) Call(_ context.Context, input any) (json.RawMessage, error) {
 	value := input.(map[string]any)
+	if value["action"] == "team-routing" {
+		return json.RawMessage(`{"owned":false,"binding":null,"profile":null}`), nil
+	}
 	switch value["action"] {
 	case "completion", "direct-scope":
 		return json.Marshal(map[string]any{"configured": true, "allowed": true, "direct_scope": f.scope})

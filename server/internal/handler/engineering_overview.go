@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/multica-ai/multica/server/internal/engineering"
@@ -69,6 +70,26 @@ func (h *Handler) GetEngineeringOverview(w http.ResponseWriter, r *http.Request)
 		response["repair"], _ = json.Marshal(repair)
 	}
 	response["has_active_run"], _ = json.Marshal(active)
+	routing, err := h.engineeringTeamRouting(r.Context(), issue)
+	if err != nil {
+		engineeringControlError(w, err)
+		return
+	}
+	profile := routing.Profile
+	if routing.Binding != nil {
+		profile = &routing.Binding.Profile
+	}
+	if profile != nil {
+		aligned := true
+		input := ""
+		if binding := routing.Binding; binding != nil {
+			input = binding.Input
+			if binding.IssueID == uuidToString(issue.ID) {
+				aligned = issue.AssigneeType.String == "squad" && uuidToString(issue.AssigneeID) == profile.TeamID && uuidToString(issue.ProjectID) == binding.ProjectID && strings.TrimSpace(issue.Title+"\n\n"+issue.Description.String) == input
+			}
+		}
+		response["team"], _ = json.Marshal(map[string]any{"id": profile.TeamID, "revision": profile.Revision, "workflow": profile.Definition.Workflow, "frozen": routing.Binding != nil, "aligned": aligned, "input": input})
+	}
 	category, err := issuestatus.CategoryWithError(r.Context(), h.Queries, issue.WorkspaceID, issue.Status)
 	if err != nil {
 		engineeringControlError(w, err)
@@ -86,6 +107,10 @@ func (h *Handler) RunEngineering(w http.ResponseWriter, r *http.Request) {
 	}
 	if h.EngineeringWorker == nil {
 		writeError(w, http.StatusServiceUnavailable, "engineering application is not enabled")
+		return
+	}
+	if err := h.requireFrozenTeamContinuation(r.Context(), engineeringContinuation{WorkspaceID: uuidToString(issue.WorkspaceID), IssueID: uuidToString(issue.ID), UserID: userID}); err != nil {
+		engineeringControlError(w, err)
 		return
 	}
 	category, err := issuestatus.CategoryWithError(r.Context(), h.Queries, issue.WorkspaceID, issue.Status)

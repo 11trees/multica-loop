@@ -97,6 +97,9 @@ func (h *Handler) humanEngineering(w http.ResponseWriter, r *http.Request, actio
 		return
 	}
 	if action == "configure" {
+		if h.rejectTeamTaskConfiguration(w, r, issue) {
+			return
+		}
 		category, err := issuestatus.CategoryWithError(r.Context(), h.Queries, issue.WorkspaceID, issue.Status)
 		if err != nil {
 			writeError(w, http.StatusServiceUnavailable, "issue lifecycle lookup is unavailable")

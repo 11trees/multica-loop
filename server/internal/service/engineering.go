@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/google/uuid"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -12,7 +13,7 @@ import (
 
 // EnqueueEngineeringRun names the frozen role without changing the issue assignee.
 func (s *TaskService) EnqueueEngineeringRun(ctx context.Context, issue db.Issue, agentID, actorUserID pgtype.UUID, note string) (db.AgentTaskQueue, error) {
-	return s.enqueueMentionTask(ctx, issue, agentID, pgtype.UUID{}, false, pgtype.UUID{}, false, note, actorUserID, pgtype.UUID{}, OriginNamed)
+	return s.enqueueMentionTaskWithCommentPlan(ctx, issue, agentID, pgtype.UUID{}, nil, false, pgtype.UUID{}, false, note, actorUserID, pgtype.UUID{}, OriginNamed, false, false, pgtype.UUID{Bytes: uuid.New(), Valid: true})
 }
 
 // The stable task ID bridges a durable engineering checkpoint to the native queue.

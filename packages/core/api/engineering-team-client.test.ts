@@ -16,3 +16,10 @@ it("does not convert malformed Team profiles or empty save acknowledgements into
  respond({profile:null});await expect(client.saveEngineeringTeam(profile.teamId,0,definition)).rejects.toThrow(/Malformed/);
  respond({enabled:false,profile:null});expect(await client.getEngineeringTeam(profile.teamId)).toEqual({enabled:false,profile:null});
 });
+
+it("starts the selected native Team without accepting per-task settings and rejects an empty acknowledgement",async()=>{
+ const client=new ApiClient("https://api.example.test");respond({started:true});await client.startEngineeringTeam("issue");
+ expect(vi.mocked(fetch).mock.calls[0]?.[0]).toContain("/api/issues/issue/engineering/team-start");
+ expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body))).toEqual({});
+ respond({});await expect(client.startEngineeringTeam("issue")).rejects.toThrow(/Invalid Team start/);
+});

@@ -2221,6 +2221,21 @@
     "direct_result": "Direct 執行結果",
     "direct_completed": "提交結果已儲存，Direct 已完成。",
     "direct_submitted": "結果已提交，等待執行程序結束。",
-    "direct_refresh": "重新整理 Direct"
+    "direct_refresh": "重新整理 Direct",
+    "team": "團隊",
+    "team_version": "版本 {{revision}}",
+    "team_frozen": "本任務的團隊、專案和目標已凍結。",
+    "team_changed": "任務已偏離凍結的團隊、專案或目標。",
+    "team_start": "啟動團隊工作流程",
+    "new_task": "新增任務",
+    "task_goal": "任務目標",
+    "task_project": "專案",
+    "select_project": "選擇專案",
+    "select_team": "選擇團隊",
+    "team_setup_required": "先設定團隊工作流程",
+    "task_materials": "資料與上下文",
+    "task_saved": "任務已儲存，可重試啟動團隊工作流程。",
+    "save_task_draft": "儲存草稿",
+    "create_start": "建立並啟動"
   }
 }

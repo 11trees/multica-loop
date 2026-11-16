@@ -527,26 +527,40 @@ func (h *Handler) DeleteSquad(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "squad is already archived")
 		return
 	}
-
-	// Transfer issues assigned to this squad to the leader agent.
-	if err := h.Queries.TransferSquadAssignees(r.Context(), db.TransferSquadAssigneesParams{
-		AssigneeID:   squad.ID,
-		AssigneeID_2: squad.LeaderID,
-	}); err != nil {
-		slog.Warn("transfer squad assignees failed", "squad_id", uuidToString(squad.ID), "error", err)
+	preserveTeam := false
+	if h.EngineeringWorker != nil {
+		data, err := h.EngineeringWorker.Call(r.Context(), map[string]any{"action": "team-lookup", "actor": map[string]string{"kind": "coordinator"}, "payload": map[string]string{"workspace_id": workspaceID, "team_id": uuidToString(squad.ID)}})
+		var state struct {
+			Profile *engineeringTeamSnapshot `json:"profile"`
+		}
+		if err != nil || json.Unmarshal(data, &state) != nil {
+			writeError(w, http.StatusServiceUnavailable, "Team definition lookup is unavailable")
+			return
+		}
+		preserveTeam = state.Profile != nil
 	}
 
-	// Mirror the issue-assignee transfer for autopilots that target this
-	// squad. Without this, autopilot.assignee_id would still point at the
-	// archived squad row and every subsequent dispatch would skip with
-	// "assignee squad is archived" — visible to ops but useless to the
-	// owner. Rewriting to the leader keeps the autopilot semantics
-	// unchanged (Path A from MUL-2429 is leader-only execution anyway).
-	if err := h.Queries.TransferSquadAutopilotsToLeader(r.Context(), db.TransferSquadAutopilotsToLeaderParams{
-		AssigneeID:   squad.ID,
-		AssigneeID_2: squad.LeaderID,
-	}); err != nil {
-		slog.Warn("transfer squad autopilots failed", "squad_id", uuidToString(squad.ID), "error", err)
+	// Transfer issues assigned to this squad to the leader agent.
+	if !preserveTeam {
+		if err := h.Queries.TransferSquadAssignees(r.Context(), db.TransferSquadAssigneesParams{
+			AssigneeID:   squad.ID,
+			AssigneeID_2: squad.LeaderID,
+		}); err != nil {
+			slog.Warn("transfer squad assignees failed", "squad_id", uuidToString(squad.ID), "error", err)
+		}
+
+		// Mirror the issue-assignee transfer for autopilots that target this
+		// squad. Without this, autopilot.assignee_id would still point at the
+		// archived squad row and every subsequent dispatch would skip with
+		// "assignee squad is archived" — visible to ops but useless to the
+		// owner. Rewriting to the leader keeps the autopilot semantics
+		// unchanged (Path A from MUL-2429 is leader-only execution anyway).
+		if err := h.Queries.TransferSquadAutopilotsToLeader(r.Context(), db.TransferSquadAutopilotsToLeaderParams{
+			AssigneeID:   squad.ID,
+			AssigneeID_2: squad.LeaderID,
+		}); err != nil {
+			slog.Warn("transfer squad autopilots failed", "squad_id", uuidToString(squad.ID), "error", err)
+		}
 	}
 
 	userID := requestUserID(r)
@@ -1232,6 +1246,23 @@ func commentMentionsAnyone(content string) bool {
 // same trigger set.
 // It returns true only when a leader task was actually enqueued.
 func (h *Handler) enqueueSquadLeaderTask(ctx context.Context, issue db.Issue, authorType, authorID, handoffNote string, workflowHandoff bool) bool {
+	if h.EngineeringWorker != nil {
+		routing, err := h.engineeringTeamRouting(ctx, issue)
+		if err != nil {
+			slog.WarnContext(ctx, "Team routing unavailable", "error", err)
+			return false
+		}
+		if routing.Owned {
+			if authorType != "member" {
+				return false
+			}
+			if err = h.startEngineeringTeamIssue(ctx, issue, authorID); err != nil {
+				slog.WarnContext(ctx, "Team task start waiting", "issue_id", uuidToString(issue.ID), "error", err)
+				return false
+			}
+			return true
+		}
+	}
 	squad, err := h.Queries.GetSquadInWorkspace(ctx, db.GetSquadInWorkspaceParams{
 		ID:          issue.AssigneeID,
 		WorkspaceID: issue.WorkspaceID,

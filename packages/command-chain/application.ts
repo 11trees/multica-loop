@@ -31,7 +31,7 @@ const coordinator = z.strictObject({ kind: z.literal("coordinator") });
 const actor = z.discriminatedUnion("kind", [human, task, daemon, host, coordinator, teamManager]);
 export const applicationRequestSchema = z.strictObject({
   actor,
-  action: z.enum(["team-profile", "team-bind", "team-binding", "execution-permission", "process", "process-scope", "intervention-request", "repair-source", "repair-observations", "repair-observation-ack", "configure-direct","direct-run","direct-submit","direct-scope","direct-completed","business-handoff","end-to-end-scope","business-scope","business-read","business-comment","business-comment-intent","business-comment-ack","business-comment-resolved","business-comment-protected","configure-business", "configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations", "verified-binding", "publication", "publication-ack", "delivery-policy", "activate-unit", "accept-unit", "parent-scope", "review-inputs", "configure-review", "review-ack", "begin-feedback", "cancel-feedback", "feedback-restored", "authorize-feedback-work", "prepare-feedback-verification", "prepare-feedback-report"]),
+  action: z.enum(["team-routing", "team-delivery-scope", "team-review", "team-lookup", "team-start", "team-profile", "team-bind", "team-binding", "execution-permission", "process", "process-scope", "intervention-request", "repair-source", "repair-observations", "repair-observation-ack", "configure-direct","direct-run","direct-submit","direct-scope","direct-completed","business-handoff","end-to-end-scope","business-scope","business-read","business-comment","business-comment-intent","business-comment-ack","business-comment-resolved","business-comment-protected","configure-business", "configure", "read", "start", "command", "answer", "abandon", "selection", "receipt", "completion", "bind", "overview", "prepare-run", "continuations", "verified-binding", "publication", "publication-ack", "delivery-policy", "activate-unit", "accept-unit", "parent-scope", "review-inputs", "configure-review", "review-ack", "begin-feedback", "cancel-feedback", "feedback-restored", "authorize-feedback-work", "prepare-feedback-verification", "prepare-feedback-report"]),
   payload: z.unknown().optional(),
   host_version: z.string().optional(),
 });
@@ -472,8 +472,50 @@ export class EngineeringApplication {
     return {workspace_id:record.workspaceId,issue_id:record.issueId,parent_issue_id:record.managedBy!.parentIssueId,agent_id:role.agentId,user_id:record.createdBy,task_id:`${hash.slice(0,8)}-${hash.slice(8,12)}-5${hash.slice(13,16)}-a${hash.slice(17,20)}-${hash.slice(20,32)}`,expected_revision:record.contract.binding.revision,expected_sequence:0,reason:"unit_ready"};
   }
 
+  private async startTeam(request:ApplicationRequest){
+    if(request.actor.kind!=="human")throw new Error("Team task start requires an authenticated human");
+    const actor=request.actor,input=z.strictObject({team_id:z.uuid(),team_revision:z.number().int().positive(),project_id:z.uuid(),input:text.max(40000),repository_path:text,execution_resources:z.array(z.strictObject({path:text,mode:z.enum(["in_place","worktree"])})).min(1).max(10)}).parse(request.payload);
+    if(this.interventions.pending(actor.workspaceId,actor.issueId))throw new DraftConflictError("Task surrendered to independent repair");
+    const teams=new EngineeringTeamStore(this.db),prior=teams.binding(actor.workspaceId,actor.issueId);
+    if(!prior && (this.direct.current(actor.workspaceId,actor.issueId) || this.business.current(actor.workspaceId,actor.issueId) || this.requirements.current(actor.workspaceId,actor.issueId) || this.current(actor.workspaceId,actor.issueId)))throw new DraftConflictError("Reconcile the existing execution before assigning a Team workflow");
+    const binding=teams.bind(actor.workspaceId,actor.issueId,actor.userId,{team_id:input.team_id,team_revision:input.team_revision,project_id:input.project_id,input:input.input});
+    const {definition}=binding.profile,roles=definition.roles;
+    if(definition.workflow==="direct"){
+      if(!this.direct.current(actor.workspaceId,actor.issueId))this.direct.invoke({actor,action:"configure-direct",payload:{expected_revision:0,agent_id:roles.executor,project_id:binding.projectId,repository_path:input.repository_path,input:binding.input,execution_resources:input.execution_resources}});
+    }else if(definition.workflow==="business_analysis" || definition.workflow==="end_to_end"){
+      if(!this.business.current(actor.workspaceId,actor.issueId))await this.business.invoke({actor,action:"configure-business",payload:{expected_revision:0,project_id:binding.projectId,repository_path:input.repository_path,input:binding.input,roles:Object.fromEntries(["intent","business_design","specification","review"].map(role=>[role,roles[role]])),decision_mode:definition.decision_mode,auto_continue:true,execution_resources:input.execution_resources,...(definition.workflow==="end_to_end"?{delivery:{roles:Object.fromEntries(["context","planner","analyst","developer","verifier","reviewer"].map(role=>[role,roles[role]])),maxReworks:definition.max_reworks}}:{})}});
+    }else{
+      if(!this.requirements.current(actor.workspaceId,actor.issueId))await this.requirements.invoke({actor,action:"configure",payload:{kind:"requirement",expected_revision:0,agent_id:roles.context,planner_agent_id:roles.planner,...(definition.workflow==="bug_fix"?{reproduction_agent_id:roles.reproducer}:{}),repository_path:input.repository_path,input:binding.input,item_kind:definition.workflow==="bug_fix"?"bug":"requirement",decision_mode:definition.decision_mode,auto_continue:true}});
+      this.requirements.bindTeamDelivery(binding,input.repository_path,input.execution_resources);
+    }
+    return {started:true,binding};
+  }
+
   async invoke(input: ApplicationRequest) {
     const request = applicationRequestSchema.parse(input), { actor, action } = request;
+    if(action==="team-lookup"){
+      if(actor.kind!=="coordinator")throw new Error("Only the host can resolve Team routing");
+      const scope=z.strictObject({workspace_id:z.uuid(),team_id:z.uuid()}).parse(request.payload);
+      return {profile:new EngineeringTeamStore(this.db).current(scope.workspace_id,scope.team_id)};
+    }
+    if(action==="team-routing"){
+      if(actor.kind!=="host")throw new Error("Only the host can inspect Team routing");
+      const input=z.strictObject({team_id:z.uuid().optional(),created_at:z.iso.datetime().optional()}).parse(request.payload??{}),teams=new EngineeringTeamStore(this.db),unit=this.requirements.managedUnit(actor.workspaceId,actor.issueId),binding=teams.binding(actor.workspaceId,unit?.parentIssueId??actor.issueId),profile=input.team_id?teams.current(actor.workspaceId,input.team_id):null;
+      return {owned:!!binding || !!profile && teams.appliesToCreatedTask(actor.workspaceId,profile.teamId,input.created_at),binding,profile};
+    }
+    if(action==="team-start")return this.startTeam(request);
+    if(action==="team-delivery-scope"){
+      if(actor.kind!=="host")throw new Error("Only the host can inspect Team delivery authority");
+      const input=z.strictObject({execution_resources:z.array(z.strictObject({path:text,mode:z.enum(["in_place","worktree"])})).length(6)}).optional().parse(request.payload);
+      return this.requirements.teamDeliveryScope(actor.workspaceId,actor.issueId,input?.execution_resources);
+    }
+    if(action==="team-review"){
+      if(actor.kind!=="host")throw new Error("Only the host can schedule the Team's frozen reviewer");
+      const binding=new EngineeringTeamStore(this.db).binding(actor.workspaceId,actor.issueId);if(!binding)throw new DraftConflictError("Team task binding unavailable");
+      const payload=z.strictObject({expected_revision:sequence,expected_sequence:sequence,execution_resources:z.array(z.strictObject({path:text,mode:z.enum(["in_place","worktree"])})).min(1),native_unit_ids:z.array(z.uuid()).min(1)}).parse(request.payload);
+      return this.invokeWorkflow({actor:{kind:"human",workspaceId:actor.workspaceId,issueId:actor.issueId,userId:binding.startedBy},action:"configure-review",payload:{...payload,agent_id:binding.profile.definition.roles.reviewer}});
+    }
+
     if(action === "team-profile"){
       if(actor.kind!=="team-manager")throw new Error("Only authenticated Team management can access definitions");
       const teams=new EngineeringTeamStore(this.db);
@@ -528,6 +570,10 @@ export class EngineeringApplication {
       const pending = await this.invokeWorkflow(request);
       if (!Array.isArray(pending)) throw new Error("Invalid workflow continuations");
       return pending.filter(item => !this.interventions.pending(item.workspace_id, item.issue_id));
+    }
+    if(["configure-direct","configure-business","configure","delivery-policy"].includes(action) && new EngineeringTeamStore(this.db).binding(actor.workspaceId,actor.issueId))throw new DraftConflictError("Task execution settings belong to its frozen Team");
+    if(action==="configure-review" && actor.kind==="human"){
+      const binding=new EngineeringTeamStore(this.db).binding(actor.workspaceId,actor.issueId);if(binding && binding.startedBy!==actor.userId)throw new DraftConflictError("Team review retains its original human authorization");
     }
     const pending = this.interventions.pending(actor.workspaceId, actor.issueId);
     if(action==="process"){

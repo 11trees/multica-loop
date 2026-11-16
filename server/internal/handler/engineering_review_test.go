@@ -23,6 +23,9 @@ type requirementReviewFixture struct {
 func (f *requirementReviewFixture) Call(_ context.Context, input any) (json.RawMessage, error) {
 	value := input.(map[string]any)
 	var result any
+	if value["action"] == "team-routing" {
+		return json.RawMessage(`{"owned":false,"binding":null,"profile":null}`), nil
+	}
 	switch value["action"] {
 	case "review-inputs":
 		result = map[string]any{"review_units": f.units}

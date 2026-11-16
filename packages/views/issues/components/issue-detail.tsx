@@ -1,5 +1,7 @@
 "use client";
 
+import { TeamAssignment } from "./team-assignment";
+import { engineeringOverviewOptions } from "@multica/core/issues";
 import { subIssueCreateDefaults } from "@multica/core/issues";
 import {
   issueBehavesAs,
@@ -47,7 +49,7 @@ import { IconButton } from "@multica/ui/components/common/icon-button";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@multica/ui/components/ui/resizable";
 import { Sheet, SheetContent } from "@multica/ui/components/ui/sheet";
 import { useIsMobile } from "@multica/ui/hooks/use-mobile";
-import { ContentEditor, type ContentEditorRef, TitleEditor, type TitleEditorRef, useFileDropZone, FileDropOverlay, useLazyEditor, useEditorUpload, PreviewSequenceProvider, collectPreviewSequence } from "../../editor";
+import { ReadonlyContent, ContentEditor, type ContentEditorRef, TitleEditor, type TitleEditorRef, useFileDropZone, FileDropOverlay, useLazyEditor, useEditorUpload, PreviewSequenceProvider, collectPreviewSequence } from "../../editor";
 import {
   WAKEUP_ACTIVITY_ACTIONS,
   WakeupActivityIcon,
@@ -1727,6 +1729,8 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     },
   });
   const { data: issue = null, isLoading: issueLoading, refetch: refetchIssue } = issueQuery;
+  const engineeringState=useQuery({...engineeringOverviewOptions(wsId,id),enabled:issue?.assignee_type==="squad"});
+  const teamFrozen=!!engineeringState.data?.team?.frozen;
   const issueReadState = useIssueReadState(wsId, id, issueQuery);
   useMarkIssueReadWhileViewing(wsId, issue?.id ?? "");
   useMarkIssueInboxReadWhileViewing(wsId, issue?.id ?? "", readsInbox);
@@ -3143,12 +3147,13 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
             />
           </PropRow>
           <PropRow label={t(($) => $.detail.prop_assignee)}>
-            <AssigneePicker assigneeType={issue.assignee_type} assigneeId={issue.assignee_id} onUpdate={handleUpdateField} align="start" />
+            {teamFrozen ? <span className="text-caption">{getActorName("squad",issue.assignee_id??"")}</span> : engineeringState.data?.team ? <TeamAssignment teamId={issue.assignee_id} onUpdate={handleUpdateField} /> : <AssigneePicker assigneeType={issue.assignee_type} assigneeId={issue.assignee_id} onUpdate={handleUpdateField} align="start" />}
           </PropRow>
           <PropRow label={t(($) => $.detail.prop_project)}>
             <IssueProjectPicker
               projectId={issue.project_id}
               onUpdate={handleUpdateField}
+              disabled={teamFrozen}
               issue={issue}
             />
           </PropRow>
@@ -3601,7 +3606,8 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
             }
           />
           <div id={descriptionSectionId}>
-          {titleLazy.active && (
+          {teamFrozen && <h1 className={cn("w-full leading-snug",titleSizeClass)}>{issue.title}</h1>}
+          {!teamFrozen && titleLazy.active && (
             <div className={titleLazy.ready ? undefined : "hidden"}>
               <TitleEditor
                 key={`title-${id}-${titleResetToken}`}
@@ -3632,7 +3638,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
               />
             </div>
           )}
-          {!titleLazy.ready && (
+          {!teamFrozen && !titleLazy.ready && (
             <div
               role="button"
               tabIndex={0}
@@ -3765,7 +3771,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
           )}
 
           <div
-            {...descDropZoneProps}
+            {...(!teamFrozen ? descDropZoneProps : {})}
             {...descriptionAnnotations.captureProps}
             ref={descriptionAnnotations.cardRef}
             className="relative mt-5 rounded-lg"
@@ -3782,7 +3788,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
           >
             {descriptionAnnotations.popup}
             <div data-comment-content={descriptionSourceId}>
-              <ContentEditor
+              {teamFrozen ? <ReadonlyContent content={issue.description??""} attachments={descEditorAttachments} className="min-w-0 break-words" /> : <ContentEditor
                 ref={descEditorRef}
                 key={id}
                 value={issue.description ?? ""}
@@ -3823,7 +3829,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                 currentIssueId={id}
                 selectionAction={descriptionSelectionAction}
                 attachments={descEditorAttachments}
-              />
+              />}
             </div>
 
             <div className="flex items-center gap-1 mt-3">
@@ -3833,11 +3839,11 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                 onToggle={handleToggleIssueReaction}
                 getActorName={getActorName}
               />
-              <FileUploadButton
+              {!teamFrozen && <FileUploadButton
                 size="sm"
                 multiple
                 onSelect={(file) => descEditorRef.current?.uploadFile(file)}
-              />
+              />}
             </div>
             {descDragOver && <FileDropOverlay />}
           </div>

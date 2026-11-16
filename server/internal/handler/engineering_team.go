@@ -1,10 +1,18 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
+	"github.com/multica-ai/multica/server/internal/engineering"
+	"github.com/multica-ai/multica/server/internal/issuestatus"
+	"github.com/multica-ai/multica/server/internal/projectaccess"
+	"github.com/multica-ai/multica/server/internal/util"
+	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"io"
 	"net/http"
+	"path/filepath"
 	"strings"
+	"time"
 )
 
 var engineeringTeamRoles = map[string][]string{
@@ -111,4 +119,281 @@ func (h *Handler) EngineeringTeamProfile(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+type engineeringTeamDefinition struct {
+	Workflow     string            `json:"workflow"`
+	Roles        map[string]string `json:"roles"`
+	DecisionMode string            `json:"decision_mode"`
+	MaxReworks   int               `json:"max_reworks"`
+}
+type engineeringTeamSnapshot struct {
+	TeamID      string                    `json:"teamId"`
+	WorkspaceID string                    `json:"workspaceId"`
+	Revision    int                       `json:"revision"`
+	Definition  engineeringTeamDefinition `json:"definition"`
+}
+type engineeringTeamBinding struct {
+	ID        string                  `json:"id"`
+	IssueID   string                  `json:"issueId"`
+	ProjectID string                  `json:"projectId"`
+	StartedBy string                  `json:"startedBy"`
+	Input     string                  `json:"input"`
+	Profile   engineeringTeamSnapshot `json:"profile"`
+}
+type engineeringTeamRouting struct {
+	Owned   bool                     `json:"owned"`
+	Binding *engineeringTeamBinding  `json:"binding"`
+	Profile *engineeringTeamSnapshot `json:"profile"`
+}
+
+func (h *Handler) rejectTeamTaskConfiguration(w http.ResponseWriter, r *http.Request, issue db.Issue) bool {
+	if h.EngineeringWorker == nil || issue.AssigneeType.String != "squad" {
+		return false
+	}
+	routing, err := h.engineeringTeamRouting(r.Context(), issue)
+	if err != nil {
+		engineeringControlError(w, err)
+		return true
+	}
+	if routing.Owned {
+		writeError(w, http.StatusConflict, "This task uses its Team workflow; configure roles and policy on the Team.")
+		return true
+	}
+	return false
+}
+
+func (h *Handler) requireFrozenTeamUpdate(ctx context.Context, workspaceID string, params db.UpdateIssueParams) error {
+	issue, err := h.Queries.GetIssueInWorkspace(ctx, db.GetIssueInWorkspaceParams{ID: params.ID, WorkspaceID: parseUUID(workspaceID)})
+	if err != nil {
+		return err
+	}
+	if issue.AssigneeType.String != "squad" {
+		return nil
+	}
+	routing, err := h.engineeringTeamRouting(ctx, issue)
+	if err != nil {
+		return &engineeringCompletionError{message: "Team binding lookup is unavailable", unavailable: true}
+	}
+	binding := routing.Binding
+	if binding == nil || binding.IssueID != uuidToString(issue.ID) {
+		return nil
+	}
+	title, description := issue.Title, issue.Description.String
+	if params.Title.Valid {
+		title = params.Title.String
+	}
+	if params.Description.Valid {
+		description = params.Description.String
+	}
+	if strings.TrimSpace(title+"\n\n"+description) != binding.Input || uuidToString(params.ProjectID) != binding.ProjectID || params.AssigneeType.String != "squad" || uuidToString(params.AssigneeID) != binding.Profile.TeamID {
+		return &engineeringCompletionError{message: "This task has started with a frozen Team, project and goal. Add new information in comments; create a new task to change its scope."}
+	}
+	return nil
+}
+
+func (h *Handler) engineeringTeamRouting(ctx context.Context, issue db.Issue) (engineeringTeamRouting, error) {
+	var routing engineeringTeamRouting
+	if h.EngineeringWorker == nil {
+		return routing, nil
+	}
+	payload := map[string]string{}
+	if issue.CreatedAt.Valid {
+		payload["created_at"] = issue.CreatedAt.Time.UTC().Format(time.RFC3339Nano)
+	}
+	if issue.AssigneeType.Valid && issue.AssigneeType.String == "squad" && issue.AssigneeID.Valid {
+		payload["team_id"] = uuidToString(issue.AssigneeID)
+	}
+	data, err := h.EngineeringWorker.Call(ctx, map[string]any{"action": "team-routing", "actor": map[string]string{"kind": "host", "workspaceId": uuidToString(issue.WorkspaceID), "issueId": uuidToString(issue.ID)}, "payload": payload})
+	if err != nil {
+		return routing, err
+	}
+	err = json.Unmarshal(data, &routing)
+	return routing, err
+}
+func (h *Handler) StartEngineeringTeam(w http.ResponseWriter, r *http.Request) {
+	issue, user, ok := h.loadHumanEngineeringIssue(w, r)
+	if !ok {
+		return
+	}
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
+	decoder.DisallowUnknownFields()
+	var input struct{}
+	if decoder.Decode(&input) != nil || decoder.Decode(new(any)) != io.EOF {
+		writeError(w, http.StatusBadRequest, "task start takes no per-task execution settings")
+		return
+	}
+	if err := h.startEngineeringTeamIssue(r.Context(), issue, user); err != nil {
+		engineeringControlError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"started": true})
+}
+func (h *Handler) startEngineeringTeamIssue(ctx context.Context, issue db.Issue, user string) error {
+	reject := func(message string) error { return &engineering.Rejection{Message: message, Conflict: true} }
+	if h.EngineeringWorker == nil || !issue.ProjectID.Valid || issue.TriageState.Valid || issue.AssigneeType.String != "squad" || !issue.AssigneeID.Valid {
+		return reject("choose a Team and an accepted project before starting")
+	}
+	category, err := issuestatus.CategoryWithError(ctx, h.Queries, issue.WorkspaceID, issue.Status)
+	if err != nil {
+		return err
+	}
+	if category == issuestatus.CategoryDone || category == issuestatus.CategoryClosed || issue.Status == issuestatus.Backlog {
+		return reject("start an open accepted task rather than a draft")
+	}
+	userID, err := util.ParseUUID(user)
+	if err != nil {
+		return err
+	}
+	member, err := h.Queries.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{UserID: userID, WorkspaceID: issue.WorkspaceID})
+	if err != nil {
+		return err
+	}
+	access, err := projectaccess.ForMember(ctx, h.Queries, issue.WorkspaceID, userID, member.Role)
+	if err != nil {
+		return err
+	}
+	if !access.CanSeeProject(issue.ProjectID) {
+		return reject("project is no longer accessible")
+	}
+	squad, err := h.Queries.GetSquadInWorkspace(ctx, db.GetSquadInWorkspaceParams{ID: issue.AssigneeID, WorkspaceID: issue.WorkspaceID})
+	if err != nil {
+		return err
+	}
+	if squad.ArchivedAt.Valid {
+		return reject("Team is archived")
+	}
+	routing, err := h.engineeringTeamRouting(ctx, issue)
+	if err != nil {
+		return err
+	}
+	profile := routing.Profile
+	input := strings.TrimSpace(issue.Title + "\n\n" + issue.Description.String)
+	if routing.Binding != nil {
+		binding := routing.Binding
+		if binding.Profile.TeamID != uuidToString(squad.ID) || binding.ProjectID != uuidToString(issue.ProjectID) || binding.StartedBy != user || binding.Input != input {
+			return reject("task retains its original Team, goal, project and human authorization")
+		}
+		profile = &binding.Profile
+	}
+	if profile == nil {
+		return reject("set this Team's predefined workflow before starting")
+	}
+	if profile.TeamID != uuidToString(squad.ID) || profile.WorkspaceID != uuidToString(issue.WorkspaceID) || profile.Revision < 1 || len(engineeringTeamRoles[profile.Definition.Workflow]) == 0 {
+		return reject("Team definition scope is unavailable")
+	}
+
+	members, err := h.Queries.ListSquadMembers(ctx, squad.ID)
+	if err != nil {
+		return err
+	}
+	roster := map[string]bool{uuidToString(squad.LeaderID): true}
+	for _, m := range members {
+		if m.MemberType == "agent" {
+			roster[uuidToString(m.MemberID)] = true
+		}
+	}
+	resources := []map[string]string{}
+	path := ""
+	mode := ""
+	for _, role := range engineeringTeamRoles[profile.Definition.Workflow] {
+		id, err := util.ParseUUID(profile.Definition.Roles[role])
+		if err != nil {
+			return err
+		}
+		if routing.Binding == nil && !roster[uuidToString(id)] {
+			return reject("Team workflow references an Agent outside its current members")
+		}
+		agent, err := h.Queries.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{ID: id, WorkspaceID: issue.WorkspaceID})
+		if err != nil {
+			return err
+		}
+		if agent.ArchivedAt.Valid || !h.canInvokeAgent(ctx, agent, "member", user, user, uuidToString(issue.WorkspaceID)) {
+			return reject("a frozen Team role is no longer invocable")
+		}
+		mapping, err := h.engineeringExecutionResources(ctx, issue, agent)
+		if err != nil {
+			return err
+		}
+		canonical, err := filepath.EvalSymlinks(mapping[0]["path"])
+		if err != nil {
+			return reject("project repository is unavailable")
+		}
+		if path == "" {
+			path = canonical
+			mode = mapping[0]["mode"]
+		}
+		if path != canonical || mode != mapping[0]["mode"] {
+			return reject("Team roles must map to the same project repository and mode")
+		}
+		resources = append(resources, map[string]string{"path": canonical, "mode": mode})
+	}
+	active, err := h.Queries.HasUnfinishedEngineeringIssueTask(ctx, issue.ID)
+	if err != nil {
+		return err
+	}
+	if active {
+		if routing.Binding != nil {
+			return nil
+		}
+		return reject("wait for current execution cleanup before handing this task to its Team")
+	}
+	_, err = h.EngineeringWorker.Call(ctx, map[string]any{"action": "team-start", "actor": map[string]string{"kind": "human", "workspaceId": uuidToString(issue.WorkspaceID), "issueId": uuidToString(issue.ID), "userId": user}, "payload": map[string]any{"team_id": uuidToString(squad.ID), "team_revision": profile.Revision, "project_id": uuidToString(issue.ProjectID), "input": input, "repository_path": path, "execution_resources": resources}})
+	if err != nil {
+		return err
+	}
+	data, err := h.EngineeringWorker.Call(ctx, map[string]any{"action": "continuations", "actor": map[string]string{"kind": "coordinator"}})
+	if err != nil {
+		return err
+	}
+	var pending []engineeringContinuation
+	if err = json.Unmarshal(data, &pending); err != nil {
+		return err
+	}
+	for _, item := range pending {
+		if item.WorkspaceID == uuidToString(issue.WorkspaceID) && item.IssueID == uuidToString(issue.ID) {
+			if err = h.dispatchEngineeringContinuation(ctx, item); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (h *Handler) requireFrozenTeamContinuation(ctx context.Context, item engineeringContinuation) error {
+	if h.EngineeringWorker == nil {
+		return nil
+	}
+	workspace, err := util.ParseUUID(item.WorkspaceID)
+	if err != nil {
+		return err
+	}
+	id, err := util.ParseUUID(item.IssueID)
+	if err != nil {
+		return err
+	}
+	issue, err := h.Queries.GetIssueInWorkspace(ctx, db.GetIssueInWorkspaceParams{WorkspaceID: workspace, ID: id})
+	if err != nil {
+		return err
+	}
+	routing, err := h.engineeringTeamRouting(ctx, issue)
+	if err != nil {
+		return err
+	}
+	if routing.Binding == nil {
+		return nil
+	}
+	binding := routing.Binding
+	rootID, err := util.ParseUUID(binding.IssueID)
+	if err != nil {
+		return err
+	}
+	root, err := h.Queries.GetIssueInWorkspace(ctx, db.GetIssueInWorkspaceParams{WorkspaceID: workspace, ID: rootID})
+	if err != nil {
+		return err
+	}
+	if root.AssigneeType.String != "squad" || uuidToString(root.AssigneeID) != binding.Profile.TeamID || uuidToString(root.ProjectID) != binding.ProjectID || binding.Input != strings.TrimSpace(root.Title+"\n\n"+root.Description.String) || item.UserID != binding.StartedBy {
+		return &engineering.Rejection{Message: "Team task origin or frozen human authority changed", Conflict: true}
+	}
+	return nil
 }

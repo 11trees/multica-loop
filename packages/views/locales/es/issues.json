@@ -2302,6 +2302,21 @@
     "direct_result": "Resultado Direct",
     "direct_completed": "Resultado enviado guardado; Direct ha terminado.",
     "direct_submitted": "Resultado enviado; esperando a que termine el proceso.",
-    "direct_refresh": "Actualizar Direct"
+    "direct_refresh": "Actualizar Direct",
+    "team": "Equipo",
+    "team_version": "Versión {{revision}}",
+    "team_frozen": "El equipo, proyecto y objetivo de esta tarea están fijados.",
+    "team_changed": "La tarea ya no coincide con su equipo, proyecto u objetivo fijados.",
+    "team_start": "Iniciar flujo del equipo",
+    "new_task": "Nueva tarea",
+    "task_goal": "Objetivo de la tarea",
+    "task_project": "Proyecto",
+    "select_project": "Elegir proyecto",
+    "select_team": "Elegir equipo",
+    "team_setup_required": "Configura primero el flujo de un equipo",
+    "task_materials": "Materiales y contexto",
+    "task_saved": "Tarea guardada; vuelve a intentar iniciar el flujo.",
+    "save_task_draft": "Guardar borrador",
+    "create_start": "Crear e iniciar"
   }
 }

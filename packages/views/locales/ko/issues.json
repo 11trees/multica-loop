@@ -2221,6 +2221,21 @@
     "direct_result": "Direct 결과",
     "direct_completed": "제출된 결과가 저장되었으며 Direct가 완료되었습니다.",
     "direct_submitted": "결과가 제출되었습니다. 실행 프로세스가 끝나기를 기다립니다.",
-    "direct_refresh": "Direct 새로 고침"
+    "direct_refresh": "Direct 새로 고침",
+    "team": "팀",
+    "team_version": "버전 {{revision}}",
+    "team_frozen": "이 작업의 팀, 프로젝트와 목표가 고정되었습니다.",
+    "team_changed": "작업이 고정된 팀, 프로젝트 또는 목표와 일치하지 않습니다.",
+    "team_start": "팀 워크플로 시작",
+    "new_task": "새 작업",
+    "task_goal": "작업 목표",
+    "task_project": "프로젝트",
+    "select_project": "프로젝트 선택",
+    "select_team": "팀 선택",
+    "team_setup_required": "먼저 팀 워크플로를 설정하세요",
+    "task_materials": "자료 및 맥락",
+    "task_saved": "작업이 저장되었습니다. 워크플로 시작을 다시 시도하세요.",
+    "save_task_draft": "초안 저장",
+    "create_start": "만들고 시작"
   }
 }
