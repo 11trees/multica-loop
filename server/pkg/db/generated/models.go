@@ -801,6 +801,32 @@ type DingtalkGroupRoute struct {
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 }
 
+type EngineeringHistoryPreparation struct {
+	ID              pgtype.UUID        `json:"id"`
+	WorkspaceID     pgtype.UUID        `json:"workspace_id"`
+	SourceNamespace string             `json:"source_namespace"`
+	SourceProjectID string             `json:"source_project_id"`
+	SourceTaskID    string             `json:"source_task_id"`
+	Revision        int32              `json:"revision"`
+	ArchiveHash     string             `json:"archive_hash"`
+	PacketHash      string             `json:"packet_hash"`
+	ProjectID       pgtype.UUID        `json:"project_id"`
+	TeamID          pgtype.UUID        `json:"team_id"`
+	TeamRevision    int32              `json:"team_revision"`
+	PreparedBy      pgtype.UUID        `json:"prepared_by"`
+	Payload         []byte             `json:"payload"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+}
+
+type EngineeringHistoryProject struct {
+	WorkspaceID     pgtype.UUID        `json:"workspace_id"`
+	SourceNamespace string             `json:"source_namespace"`
+	SourceProjectID string             `json:"source_project_id"`
+	ProjectID       pgtype.UUID        `json:"project_id"`
+	CreatedBy       pgtype.UUID        `json:"created_by"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+}
+
 type EngineeringRepairFence struct {
 	WorkspaceID      pgtype.UUID        `json:"workspace_id"`
 	ProjectID        pgtype.UUID        `json:"project_id"`

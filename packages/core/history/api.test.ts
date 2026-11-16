@@ -2,7 +2,7 @@
 import {afterEach,expect,it,vi} from "vitest";
 import {ApiClient} from "../api/client";
 import {historyKeys} from "./queries";
-import {HistoryPacketSchema,historyPacketTables} from "./schema";
+import {HistoryPacketSchema,historyPacketTables,HistoryPreparationSchema} from "./schema";
 const source={hash:"a".repeat(64),commit:"original-source",captured_at:"2026-11-17T00:00:00Z",name:"LoopWork"};
 afterEach(()=>vi.unstubAllGlobals());
 it("pins request workspace, encodes original non-UUID IDs and rejects an unproven historical response",async()=>{
@@ -13,6 +13,14 @@ it("pins request workspace, encodes original non-UUID IDs and rejects an unprove
  fetch.mockResolvedValue(new Response(JSON.stringify({historical_only:false,source,task:null,documents:[]}),{status:200}));await expect(client.historyTask("local-workspace","original")).rejects.toThrow(/Invalid historical/);
  fetch.mockResolvedValue(new Response(JSON.stringify({enabled:"yes"}),{status:200}));expect(await client.historyAvailability("local-workspace")).toEqual({enabled:false});
  expect(historyKeys.all("workspace-a","user-a")).not.toEqual(historyKeys.all("workspace-b","user-a"));expect(historyKeys.all("workspace-a","user-a")).not.toEqual(historyKeys.all("workspace-a","user-b"));
+});
+it("prepares only an explicitly scoped source version and rejects execution authority in the response",async()=>{
+ const uuid='11111111-1111-4111-8111-111111111111',saved={id:uuid,revision:1,archive_hash:'a'.repeat(64),packet_hash:'b'.repeat(64),project_id:uuid,team_id:uuid,team_revision:2,prepared_by:uuid,created_at:'2026-11-17T00:00:00Z',current:true,source_owner:'LoopWork',execution_authorized:false};
+ const fetch=vi.fn().mockResolvedValue(new Response(JSON.stringify(saved),{status:200}));vi.stubGlobal('fetch',fetch);const client=new ApiClient('https://history.test'),input={expectedRevision:0,expectedPacketHash:saved.packet_hash,teamId:uuid,expectedTeamRevision:2,createProject:true};
+ expect(await client.prepareHistoryTask('workspace','source/task',input)).toMatchObject({revision:1,teamRevision:2,executionAuthorized:false});expect(fetch.mock.calls[0]![0]).toContain('/tasks/source%2Ftask/preparation');expect(new Headers(fetch.mock.calls[0]![1]?.headers).get('X-Workspace-ID')).toBe('workspace');expect(JSON.parse(fetch.mock.calls[0]![1]?.body)).toEqual({expected_revision:0,expected_packet_hash:saved.packet_hash,team_id:uuid,expected_team_revision:2,create_project:true});
+ const state={source_owner:'LoopWork',execution_authorized:false,source_task_id:'source/task',packet_hash:saved.packet_hash,archive_hash:saved.archive_hash,mapped_project_id:uuid,projects:[{id:uuid,title:'Original project'}],teams:[{id:uuid,name:'Development',revision:2,workflow:'develop'}],blockers:[],preparations:[saved]};
+ expect(HistoryPreparationSchema.safeParse(state).success).toBe(true);expect(HistoryPreparationSchema.safeParse({...state,preparations:[{...saved,created_at:'2026-11-17T08:00:00+08:00'}]}).success).toBe(true);for(const bad of [{...state,execution_authorized:true},{...state,source_owner:'Multica'},{...state,preparations:[{...saved,team_revision:0}]},{...state,mapped_project_id:'unscoped project'}])expect(HistoryPreparationSchema.safeParse(bad).success).toBe(false);
+ fetch.mockResolvedValue(new Response(JSON.stringify({...saved,packet_hash:'c'.repeat(64)}),{status:200}));await expect(client.prepareHistoryTask('workspace','source/task',input)).rejects.toThrow(/Invalid saved migration/);
 });
 it("validates frozen material coverage and source ownership before exposing a package",async()=>{
  const packet={format:"loopwork-task-handoff-v1",hash:"b".repeat(64),source,source_task_id:"original/task",source_project:{id:"project",name:"Original",workspace_root:"/source",deleted_at:null},source_task_terminal:false,schema_complete:true,sections:[{table:"acceptances",status:"included",columns:["revision","statement"],missing_columns:[],omitted_columns:[],rows:[{revision:{sqlite_integer:"9223372036854775807"},statement:"Exact original obligation"}]}],ownership:{source_owner:"LoopWork",native_execution_authorized:false},exclusions:["External files are not migrated"]};

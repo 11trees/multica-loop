@@ -312,6 +312,26 @@
       "download": "Download JSON",
       "download_failed": "Could not download the package. Please retry.",
       "counts": "Counts show source records. The same obligation may appear in several materials."
+    },
+    "preparation": {
+      "title": "Migration preparation",
+      "boundary": "Save the native project and Team for later handoff. This does not create an issue or start a run. Source release and resource checks are still required.",
+      "project": "Native project",
+      "create_project": "Create the original project",
+      "save": "Save preparation",
+      "saving": "Saving…",
+      "saved": "Preparation revision {{revision}} saved",
+      "stale": "Needs review",
+      "error": "Preparation changed or could not be saved. Reload the material and try again.",
+      "deleted": "The source project was deleted; its tasks remain historical.",
+      "terminal": "This source task is already terminal.",
+      "incomplete": "Some original material is unavailable; reconcile it before preparing migration.",
+      "unsupported": "This task kind requires explicit workflow reconciliation.",
+      "no_team": "No compatible Team workflow is available.",
+      "project_unavailable": "The mapped native project is no longer available.",
+      "team": "Team",
+      "unsaved": "Unsaved changes",
+      "team_revision": "Team revision {{revision}}"
     }
   }
 }

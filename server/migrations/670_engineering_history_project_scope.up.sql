@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX CONCURRENTLY engineering_history_project_scope_idx ON engineering_history_project (workspace_id, source_namespace, source_project_id);

@@ -302,6 +302,26 @@
       "download": "下载 JSON",
       "download_failed": "下载失败，请重试。",
       "counts": "按来源记录计数，同一事项可能出现在多份材料中。"
+    },
+    "preparation": {
+      "title": "迁移准备",
+      "boundary": "保存接管时使用的原生项目和 Team。此操作不会创建任务或启动运行；接管前仍需释放源系统执行权并核对资源。",
+      "project": "原生项目",
+      "create_project": "新建原项目",
+      "save": "保存准备记录",
+      "saving": "正在保存…",
+      "saved": "已保存准备版本 {{revision}}",
+      "stale": "需要重新核对",
+      "error": "准备内容已变化或保存失败，请重新加载材料后重试。",
+      "deleted": "源项目已删除，其中的任务继续保留为历史。",
+      "terminal": "这个源任务已经结束。",
+      "incomplete": "部分原始材料不可用，请先核对补齐。",
+      "unsupported": "这个任务类型需要先确认工作流对应关系。",
+      "no_team": "没有可用且匹配的 Team 工作流。",
+      "project_unavailable": "已对应的原生项目已不可用。",
+      "team": "Team",
+      "unsaved": "有未保存更改",
+      "team_revision": "Team 版本 {{revision}}"
     }
   }
 }

@@ -65,6 +65,8 @@ Use `Makefile`, workspace `package.json` files, and `pnpm-workspace.yaml` for cu
 
 - Historical task handoff packets use explicit task/project/draft/session/feedback projections and retain original source text, lossless SQLite values and unavailable-schema coverage. Bind their canonical digest to the exact archive and task; retain deleted-project provenance and source ownership. Packet export grants no native execution, Team binding, evidence or reading authority. Keep unprojected history and unmigrated file references explicit before any later cutover.
 
+- History migration preparation is local-human-only and separate from native issue admission. Persist the exact source packet and proposed Team version in append-only native records. Serialize source-project correspondence with preparation creation; identical acknowledgement retries reuse the saved identity, and a missing mapped project must not be recreated. Deleted/terminal/unsupported source work cannot silently become active. A prepared record grants no source release, runtime configuration, task binding or completion; revalidate all of those before later exclusive-owner activation.
+
 Run these from the repository root:
 
 | Scope | Checks |

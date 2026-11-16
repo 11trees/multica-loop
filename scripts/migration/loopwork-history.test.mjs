@@ -104,6 +104,16 @@ test("native browsing pins the archive, scopes documents to their original task 
  await assert.rejects(browseArchive(h.output,'0'.repeat(64),{action:'list'}),/configured identity/);assert.deepEqual(await readFile(join(h.output,'loop-ui.db')),before);
 });
 
+test("preparation source identity survives a new capture without changing the original packet contract",async(t)=>{
+ const h=await fixture(t),first=await createArchive(h);
+ const packet=await browseArchive(h.output,first.hash,{action:'packet',task_id:'旧任务-2'}),source=await browseArchive(h.output,first.hash,{action:'preparation-source',task_id:'旧任务-2'});
+ assert.match(source.namespace,/^[a-f0-9]{64}$/);assert.deepEqual(source.packet,packet.packet);assert.equal(packet.namespace,undefined);
+ h.business.exec("UPDATE tasks SET title='A changed original task' WHERE task_id='旧任务-2'");
+ const nextPath=h.output+'-next',next=await createArchive({...h,output:nextPath}),updated=await browseArchive(nextPath,next.hash,{action:'preparation-source',task_id:'旧任务-2'});
+ assert.equal(updated.namespace,source.namespace);assert.notEqual(next.hash,first.hash);assert.notEqual(updated.packet.hash,packet.packet.hash);
+ assert.deepEqual((await browseArchive(h.output,first.hash,{action:'packet',task_id:'旧任务-2'})).packet,packet.packet);
+});
+
 test("handoff packets freeze original contracts, scoped draft content and lossless source versions without transferring authority",async(t)=>{
  const h=await fixture(t);
  h.business.exec(`

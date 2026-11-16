@@ -4,6 +4,7 @@ import {useQuery} from "@tanstack/react-query";
 import {historyPacketOptions} from "@multica/core/history/queries";
 import {Button} from "@multica/ui/components/ui/button";
 import {useT} from "../i18n";
+import {HistoryPreparation} from "./history-preparation";
 
 export function HistoryPacket({wsId,userId,taskId}:{wsId:string;userId:string;taskId:string}){
  const {t}=useT("layout"),[opened,setOpened]=useState(false),[downloadFailed,setDownloadFailed]=useState(false);
@@ -40,6 +41,7 @@ export function HistoryPacket({wsId,userId,taskId}:{wsId:string;userId:string;ta
     <details><summary className="cursor-pointer text-caption">{t($=>$.history.packet.fingerprint)}</summary><p className="mt-2 break-all font-mono text-caption">{packet.hash}</p></details>
     <Button variant="outline" className="w-fit" onClick={download}>{t($=>$.history.packet.download)}</Button>
     {downloadFailed&&<p role="alert">{t($=>$.history.packet.download_failed)}</p>}
+    <HistoryPreparation key={`${taskId}:${packet.hash}`} wsId={wsId} userId={userId} taskId={taskId} packetHash={packet.hash}/>
    </>}
   </div>}
  </section>;

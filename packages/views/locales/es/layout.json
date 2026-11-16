@@ -312,6 +312,26 @@
       "download": "Descargar JSON",
       "download_failed": "No se pudo descargar. Vuelve a intentarlo.",
       "counts": "Se cuentan los registros de origen. Un mismo requisito puede aparecer en varios materiales."
+    },
+    "preparation": {
+      "title": "Preparación de la migración",
+      "boundary": "Guarda el proyecto de destino y el Team para el traspaso. Esto no crea tareas ni inicia ejecuciones. Aún hay que liberar el sistema de origen y comprobar los recursos.",
+      "project": "Proyecto de destino",
+      "create_project": "Crear el proyecto original",
+      "save": "Guardar preparación",
+      "saving": "Guardando…",
+      "saved": "Revisión {{revision}} guardada",
+      "stale": "Requiere revisión",
+      "error": "La preparación cambió o no se pudo guardar. Recarga el material e inténtalo de nuevo.",
+      "deleted": "El proyecto de origen se eliminó. Sus tareas se conservan como historial.",
+      "terminal": "Esta tarea de origen ya terminó.",
+      "incomplete": "Parte del material original no está disponible. Revísalo antes de preparar la migración.",
+      "unsupported": "Este tipo de tarea requiere confirmar su correspondencia con un flujo de trabajo.",
+      "no_team": "No hay ningún flujo de trabajo de Team compatible.",
+      "project_unavailable": "El proyecto de destino asociado ya no está disponible.",
+      "team": "Team",
+      "unsaved": "Cambios sin guardar",
+      "team_revision": "Revisión del Team {{revision}}"
     }
   }
 }

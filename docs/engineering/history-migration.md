@@ -117,8 +117,9 @@ these settings. The archive remains outside managed environment expiry.
 In Web and shared Desktop routing, open **Work → LoopWork history**, select a
 source project or search its tasks, then open the task and its original document.
 Task/document selection is in the URL, so refresh, direct links and browser Back
-retain the source identity. Native project/issue correspondence and task adoption
-are still separate work. Installed Desktop acceptance remains outstanding.
+retain the source identity. Project/Team preparation is a separate native write
+below the frozen material; issue adoption and exclusive execution handoff remain
+incomplete. Installed Desktop acceptance remains outstanding.
 
 The authenticated native routes are:
 
@@ -193,7 +194,7 @@ lexicographically and preserving array order. No generation timestamp is added;
 repeating a read of the same archive produces the same package identity.
 The downloaded, API-validated representation preserves this canonical digest.
 
-This material does not create a native project, issue, Team binding or run.
+Exporting this material does not create a native project, issue, Team binding or run.
 Old approvals, answers and completed drafts remain historical facts; they do not
 authorize a new native workflow or Done. Execution receipts, attempts,
 process/repair ownership and reading records remain in the complete archive,
@@ -208,7 +209,8 @@ project/task/material rows across 31 sections per task. All projected fields
 match and archive bytes remain unchanged. Four of the eight unfinished source
 tasks belong to the active project; the other four belong to deleted projects.
 Those deleted-project tasks remain history, without automatic reactivation.
-This is frozen migration preparation material; native correspondence, exclusive
+This is frozen migration preparation material. Native project/Team proposals
+can now be saved separately, while native issue correspondence, exclusive
 ownership transfer and end-to-end cutover remain incomplete.
 
 Controlled browser checks cover material expansion, 1280/390-pixel layouts,
@@ -219,11 +221,79 @@ The screenshots below contain fixture material only:
 
 ![Frozen material on a narrow screen](assets/history-packet-narrow.png)
 
+## Native project and Team preparation
+
+On **Work → LoopWork history → original task → View material**, use
+**Migration preparation** to choose a native project and compatible Team, then
+**Save preparation**. Creating the original project copies its name into a new
+native metadata record; it does not copy repository paths into native resources
+or discover/configure a runtime. Once a source project is mapped, its sibling
+tasks reuse that project. A missing or unavailable target blocks preparation
+instead of silently creating a replacement.
+
+The local-owner routes are:
+
+- `GET /api/engineering/history/tasks/{original-id}/preparation`
+- `POST /api/engineering/history/tasks/{original-id}/preparation`
+
+The write accepts only the expected preparation revision, packet hash, Team ID
+and revision, plus a native project or an explicit create-project choice. It does
+not accept per-task Agent/policy overrides, a caller-selected archive, a source
+namespace or an execution owner. Source lookup is host-pinned and revalidates
+the archive. A separate readonly worker action derives the source namespace
+from the captured repository/data-root identity; moving the archive preserves
+it, and a later capture of the same source can create a new preparation version
+without duplicating project correspondence. Moving the source roots requires
+explicit reconciliation rather than name-based matching. The existing v1 packet
+and its digest remain unchanged by this lookup.
+
+Native PostgreSQL stores one project correspondence per workspace/source/project
+and append-only preparation versions per original task. A source-project lock,
+project creation, correspondence and initial preparation commit together.
+Concurrent siblings and unchanged acknowledgement retries reuse the project and
+preparation IDs. Stale material, Team versions and preparation revisions are
+rejected. Each preparation keeps the exact packet, native human and proposed
+Team profile; later Team edits never rewrite that saved snapshot. Only the latest
+matching proposal is labelled current. This describes proposal freshness, not
+execution readiness. Deleting a native project or Team retains historical
+provenance and makes the proposal unavailable/stale.
+
+Current source-kind correspondences are `feature → develop`,
+`business-analysis → business_analysis`, `end-to-end → end_to_end`, and
+`bug → bug_fix`. Only compatible configured Teams are offered. Deleted source
+projects, terminal tasks, incomplete material and other source kinds require
+reconciliation; they do not fall back to Direct. The task selects a Team without
+choosing its individual Agents.
+
+Preparation always retains `source_owner: LoopWork` and
+`execution_authorized: false`. It creates no native issue, run, Team task binding
+or completion/reading record. Future activation must establish source release
+and physical/resource ownership, reconcile the original material and required
+external files, then freshly validate the native human, project, Team and
+runtime. A historical answer or successful old execution is not new authority.
+
+The actual pinned capture now has one native project correspondence and four
+version-1 task preparations, using the Develop Team. The other four unfinished
+tasks belong to deleted source projects and remain excluded. An authenticated
+API/database audit compared every saved packet and Team profile, replayed the
+same writes, and checked unchanged native issue/run counts and archive bytes.
+Its private report is
+`~/.multica/migrations/loopwork/20261117-01-native-preparation-correspondence.json`.
+Isolated PostgreSQL tests cover sibling concurrency, replay, immutable versions,
+stale scope, rejection rollback and missing targets; browser checks cover the
+project/Team form and a real saved preparation. Provider and installed-client
+acceptance remain outstanding. Screenshots contain fixture data only:
+
+![Saved migration preparation](assets/history-preparation.png)
+
+![Saved preparation on a narrow screen](assets/history-preparation-narrow.png)
+
 ## Remaining cutover work
 
-1. Establish explicit source-project/task to native workspace/project/issue
-   correspondence and authenticated human/Team ownership. Historical statuses,
-   answers and read acknowledgements cannot authorize a new workflow or Done.
+1. Reconcile and activate the saved source-task/project/Team preparations into
+   native issues only after exclusive-owner cutover prerequisites pass.
+   Historical statuses, answers and read acknowledgements cannot authorize a
+   new workflow or Done; the preparation record is not execution authority.
 2. Drain or explicitly reconcile every unfinished source task. Source database
    rows reporting stopped/exited do not independently establish physical exit;
    retain process/resource ownership gates before assigning work to Multica.

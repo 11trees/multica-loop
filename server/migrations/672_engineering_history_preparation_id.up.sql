@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX CONCURRENTLY engineering_history_preparation_id_idx ON engineering_history_preparation (id);

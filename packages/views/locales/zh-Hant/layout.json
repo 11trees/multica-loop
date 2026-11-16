@@ -302,6 +302,26 @@
       "download": "下載 JSON",
       "download_failed": "下載失敗，請重試。",
       "counts": "依來源記錄計數，同一事項可能出現在多份資料中。"
+    },
+    "preparation": {
+      "title": "遷移準備",
+      "boundary": "儲存接管時使用的原生專案與 Team。此操作不會建立任務或啟動執行；接管前仍需釋放來源系統執行權並核對資源。",
+      "project": "原生專案",
+      "create_project": "建立原專案",
+      "save": "儲存準備記錄",
+      "saving": "正在儲存…",
+      "saved": "已儲存準備版本 {{revision}}",
+      "stale": "需要重新核對",
+      "error": "準備內容已變更或儲存失敗，請重新載入資料後重試。",
+      "deleted": "來源專案已刪除，其中的任務繼續保留為歷史。",
+      "terminal": "此來源任務已經結束。",
+      "incomplete": "部分原始資料無法使用，請先核對補齊。",
+      "unsupported": "此任務類型需要先確認工作流程的對應關係。",
+      "no_team": "沒有可用且相符的 Team 工作流程。",
+      "project_unavailable": "已對應的原生專案已無法使用。",
+      "team": "Team",
+      "unsaved": "有未儲存的變更",
+      "team_revision": "Team 版本 {{revision}}"
     }
   }
 }

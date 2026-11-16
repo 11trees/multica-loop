@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX CONCURRENTLY engineering_history_preparation_scope_idx ON engineering_history_preparation (workspace_id, source_namespace, source_task_id, revision);

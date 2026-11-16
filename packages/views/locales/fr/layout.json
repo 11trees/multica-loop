@@ -312,6 +312,26 @@
       "download": "Télécharger le JSON",
       "download_failed": "Téléchargement impossible. Réessayez.",
       "counts": "Les nombres comptent les enregistrements sources. Une même exigence peut figurer dans plusieurs documents."
+    },
+    "preparation": {
+      "title": "Préparation de la migration",
+      "boundary": "Enregistrez le projet cible et la Team pour le transfert. Cela ne crée aucune tâche et ne lance aucune exécution. La libération du système source et le contrôle des ressources restent requis.",
+      "project": "Projet cible",
+      "create_project": "Créer le projet d’origine",
+      "save": "Enregistrer la préparation",
+      "saving": "Enregistrement…",
+      "saved": "Révision {{revision}} enregistrée",
+      "stale": "À vérifier",
+      "error": "La préparation a changé ou n’a pas pu être enregistrée. Rechargez les documents et réessayez.",
+      "deleted": "Le projet source a été supprimé. Ses tâches restent dans l’historique.",
+      "terminal": "Cette tâche source est déjà terminée.",
+      "incomplete": "Certains documents sources sont indisponibles. Vérifiez-les avant la préparation.",
+      "unsupported": "Ce type de tâche exige une correspondance explicite de workflow.",
+      "no_team": "Aucun workflow de Team compatible n’est disponible.",
+      "project_unavailable": "Le projet cible associé n’est plus disponible.",
+      "team": "Team",
+      "unsaved": "Modifications non enregistrées",
+      "team_revision": "Révision de Team {{revision}}"
     }
   }
 }

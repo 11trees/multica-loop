@@ -184,7 +184,7 @@ export async function browseArchive(archive, expectedHash, input) {
       const tasks=db.prepare(`SELECT task_id AS id,project_id,title,item_type,agile_status AS status,run_state,closure_status,updated_at FROM tasks ${where} ORDER BY updated_at DESC,task_id LIMIT ? OFFSET ?`).all(...params,limit,offset);
       return {historical_only:true,source,projects,tasks,total,offset,limit};
     }
-    if(input.action==="packet") return {historical_only:true,source,packet:sealTaskPacket(taskPacket(db,entry.summary.tables,input.task_id),source)};
+    if(input.action==="packet"||input.action==="preparation-source") return {historical_only:true,source,...(input.action==="preparation-source"?{namespace:digest({format:"loopwork-source-v1",repository:manifest.source.repository,data_root:manifest.source.data_root})}:{}),packet:sealTaskPacket(taskPacket(db,entry.summary.tables,input.task_id),source)};
     const task=db.prepare("SELECT task_id AS id,project_id,title,item_type,description,agile_status AS status,run_state,closure_status,current_subagent,next_step,blocked_reason,created_at,updated_at,completed_at FROM tasks WHERE task_id=?").get(input.task_id);
     if(!task)return input.action==="document"?{historical_only:true,source,document:null}:{historical_only:true,source,task:null,documents:[]};
     if(input.action==="task") {

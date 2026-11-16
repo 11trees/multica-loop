@@ -6,5 +6,6 @@ const request=z.discriminatedUnion("action",[
  z.strictObject({action:z.literal("task"),expected_hash:z.string().regex(/^[a-f0-9]{64}$/),task_id:text}),
  z.strictObject({action:z.literal("document"),expected_hash:z.string().regex(/^[a-f0-9]{64}$/),task_id:text,document_id:text}),
  z.strictObject({action:z.literal("packet"),expected_hash:z.string().regex(/^[a-f0-9]{64}$/),task_id:text}),
+ z.strictObject({action:z.literal("preparation-source"),expected_hash:z.string().regex(/^[a-f0-9]{64}$/),task_id:text}),
 ]);
 export function readHistory(archive:string,input:unknown){const value=request.parse(input);return browseArchive(archive,value.expected_hash,value);}
