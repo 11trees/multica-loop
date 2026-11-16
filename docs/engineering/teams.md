@@ -16,8 +16,9 @@ the Team; tasks select only their Team, goal, project and materials.
 
 Keep native Squad IDs and permissions as the underlying Team identity, with no
 extra user-facing entity. Preserve existing Team edits and frozen task versions.
-Prioritize the visible Team-to-task path and controlled browser acceptance before
-continuing the remaining migration checklist. Do not treat protocol initialization
+The built-in Team entry and controlled create/start browser acceptance are
+connected. Continue migration by accepting complete Team task lifecycles, then
+feedback, human intervention, recovery and historical/cutover requirements. Do not treat protocol initialization
 tests as evidence of an already delivered built-in Team list.
 
 ## Built-in Teams in local mode

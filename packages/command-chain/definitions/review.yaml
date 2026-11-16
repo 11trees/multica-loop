@@ -14,7 +14,7 @@ artifacts:
         writable: false
         required: true
         fields:
-          kind: { type: enum, required: true, values: [intent, target, impact, acceptance, delivery_unit, feedback_acceptance], label: 主题类型 }
+          kind: { type: enum, required: true, values: [intent, target, expected, impact, acceptance, delivery_unit, feedback_acceptance], label: 主题类型 }
           content: { type: string, required: true, label: 内容 }
           sourceRef: { type: string, label: 来源引用 }
           contractRef: { type: string, label: 契约引用 }

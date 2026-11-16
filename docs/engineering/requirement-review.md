@@ -3,7 +3,10 @@
 The fork imports LoopWork's actual `command-chains/default/review-agent.yaml`
 as `packages/command-chain/definitions/review.yaml`. Its phase order is unchanged:
 inputs → fact reconciliation → closure assessment → report or forward delivery
-units → finalize. The reviewer reconciles existing authoritative facts; it does
+units → finalize. The fork's subject enum additionally accepts `expected`, matching
+the host contract for reliable Existing Expected. Without that enum value, a Bug
+Fix can finish delivery and still fail when Review projects its readonly subjects.
+This does not turn reproduction into independent delivery verification. The reviewer reconciles existing authoritative facts; it does
 not run another Test pass or manufacture delivery evidence.
 
 ## Authorization and frozen inputs
@@ -163,3 +166,22 @@ its independent interface.
 ![Current report before authenticated reading](assets/requirement-closure-report.png)
 
 ![Report reading action after scrolling on a narrow viewport](assets/requirement-closure-report-narrow.png)
+
+## Bug Fix Team protocol acceptance
+
+The integrated Team scenario in `application-requirement.test.ts` runs context
+with an authenticated human choice, reproduction against frozen Existing Expected,
+planning, two dependent managed delivery units, separate analysis/development/Test,
+final Team review and exact authenticated report reading. It runs in both in-place
+and worktree delivery modes, reopens SQLite between handoffs and edits the live
+Team to verify that the original task keeps its frozen roles. In worktree mode
+the registered repository stays on its original commit while Review binds the
+combined delivered commit. Early completion, reviewer override and Agent-owned
+reading acknowledgement remain rejected.
+
+This is a protocol integration test with fixture-supplied conclusions and command
+receipts, real temporary Git repositories and SQLite. It does not establish native
+PostgreSQL scheduling/Done for the entire Bug Fix path, model diagnosis quality or
+actual browser truth of the declared delivery evidence. Those acceptance items
+remain separate. Existing frozen Review sources are not rewritten by updating the
+default YAML.
