@@ -17,13 +17,60 @@ controller before preparing a workdir, with its actual daemon PID, birth marker,
 host boot identity and exact native runtime/dispatch claim. PostgreSQL freezes the
 project and original issue or chat scope. A unique live scope prevents replacement
 claims from preparing another workspace until the old controller is quiesced.
-Independent issues and chats can still run concurrently.
+Local project execution additionally shares a durable admission slot across
+issues, chats and runtimes. Different projects remain independent; ordinary
+native coordination leaders do not occupy this repository execution slot.
 
 Once preparation finishes, the controller binds the actual directory and execution
 mode before native StartTask. Its final receipt runs after worktree finalization,
 environment cleanup and path-lock release. A provider exit receipt alone cannot
 close that controller. Missing cleanup acknowledgements produce a blocked native
 result with `cleanup_unconfirmed`.
+
+## Local project execution admission
+
+For engineering-enabled local project runs, a controller first records its real
+daemon identity in `waiting`, before preparing a directory. Admission atomically
+moves it to `preparing` under a PostgreSQL unique project slot. Contention rolls
+back only that attempted transition, preserving the original waiting controller
+without inventing a provider allocation, command receipt or Agent view. Repeated
+requests reuse its exact native claim/controller identity. Inactive claims and
+changed controller identities are rejected.
+
+The API returns `admitted: false, waiting_repository: true` during contention.
+The updated daemon parks the run in the existing resource-wait state, renews its
+native preparation claim, and retries within the normal cancellable preparation
+deadline. It resolves no provider executable, prepares no workdir/context and
+delivers no prompt before admission. A cancellation or closed permission ends the
+wait; an unadmitted controller can still acknowledge exact no-spawn cleanup.
+Older daemons treat this acknowledgement as failed admission rather than running
+without the slot; use the updated daemon for waiting and resumption.
+
+The slot belongs to one physical run, including worktree execution and project
+chat turns that bypass the daemon's ordinary in-memory directory mutex. It stays
+occupied until **both** the controller's complete physical/workspace cleanup is
+acknowledged and its exact native dispatch claim is settled. Cancellation alone,
+provider exit alone, or cleanup while the native run is still active cannot
+admit a peer. Native terminal state or relinquishing that exact runtime/dispatch
+claim settles it monotonically; a later queue retry cannot reopen an older claim.
+Unknown cleanup retains admission independently of native task status.
+
+The host derives the serialized scope from the native local runtime and task;
+request bodies cannot disable it. Ordinary native coordination leaders keep
+their separate managed workspace and are observed without owning a repository
+slot, so they can coordinate downstream runs. This is not an exemption based on
+a model declaring itself readonly.
+
+This barrier does not reserve a repository for an entire parent workflow across
+stage gaps, serialize a shared filesystem path attached to different projects,
+establish source-system quiescence, or grant migration activation. Those remain
+separate requirements. Unrecorded external writers and other provider lifecycle
+adapters still need independent acceptance.
+
+The concurrent admission index refuses an upgrade with conflicting retained
+controllers. Quiesce the recorded old cohort before upgrading; preserve unknown
+cleanup rather than deleting ownership rows to force the index build. Migration
+retry cleanup drops an interrupted invalid index before rebuilding it.
 
 Protocol admission is checked through a readonly host operation before preparation
 or reservation and after persisting a real PID. Original terminal interventions
@@ -105,12 +152,21 @@ claim binding, project chats, replacement claims, immutable PID/cleanup facts,
 no-spawn receipts, missing physical exit, completion after final controller cleanup,
 and project mutation guards. A concurrency fixture observes the actual PostgreSQL
 lock wait and proves admission rejects a fence committed while it waited.
+Additional PostgreSQL concurrency cases prove one local project execution is
+admitted while its peer remains recorded in waiting, a different project remains
+independent, chat cannot bypass admission, and cancelled/no-spawn waiters cannot
+release another owner's slot. Independent physical-exit, workspace-cleanup and
+native-claim-settlement steps are checked separately, including later queue retry.
 
 The native daemon fixture runs a test-created Codex executable through the real SDK
 and bundled worker. It checks controller admission, actual-workspace binding,
 pre-prompt PID acknowledgement, rejected reservations/bindings and lost exit/final
 cleanup acknowledgements. SDK fixtures separately test process-group shutdown and
 callback ordering. No installed provider or account is resolved by these fixtures.
+The controlled fake-provider fixture also waits for admission, proves context and
+prompt absence during that wait, renews the native preparation lease, then runs
+the normal bound process/exit/cleanup lifecycle. Separate admission cases cover
+cancellation, preparation deadlines and closed permission without provider launch.
 The existing browser intervention scenarios exercise the retained public process
 API with known no-spawn allocations; they do not run a provider or prove Admin
 workspace takeover.

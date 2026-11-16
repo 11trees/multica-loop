@@ -26,7 +26,7 @@ type engineeringProcessJournal struct {
 	invoked         atomic.Bool
 }
 
-func (j *engineeringProcessJournal) begin() error {
+func (j *engineeringProcessJournal) begin(ctx context.Context) error {
 	j.controllerID = uuid.NewString()
 	host, err := processidentity.HostID()
 	if err != nil {
@@ -37,7 +37,43 @@ func (j *engineeringProcessJournal) begin() error {
 	if err != nil {
 		return err
 	}
-	return j.control(j.ctx, map[string]any{"operation": "begin", "provider": j.provider, "pid": os.Getpid(), "marker": marker}, "admitted")
+	waitRecorded := false
+	for {
+		var response struct {
+			Admitted          bool `json:"admitted"`
+			WaitingRepository bool `json:"waiting_repository"`
+		}
+		payload := map[string]any{"operation": "begin", "controller_id": j.controllerID, "dispatched_at": j.task.DispatchedAt, "host_id": j.hostID, "provider": j.provider, "pid": os.Getpid(), "marker": marker}
+		if err := j.client.postJSON(ctx, fmt.Sprintf("/api/daemon/tasks/%s/engineering-controller", j.task.ID), payload, &response); err != nil {
+			return err
+		}
+		if response.Admitted {
+			return nil
+		}
+		if !response.WaitingRepository {
+			return fmt.Errorf("Native controller admission was not acknowledged")
+		}
+		reason := j.task.ProjectTitle
+		if reason == "" {
+			reason = "project repository"
+		}
+		if !waitRecorded {
+			// This is a display hint and may already be recorded by the local
+			// path waiter. The next admission still validates the exact claim.
+			_ = j.client.MarkTaskWaitingLocalDirectory(ctx, j.task.ID, reason)
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			waitRecorded = true
+		}
+		timer := time.NewTimer(500 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
 }
 func (j *engineeringProcessJournal) workspace(path, mode string) error {
 	return j.control(j.ctx, map[string]any{"operation": "workspace", "workspace_path": path, "mode": mode}, "bound")

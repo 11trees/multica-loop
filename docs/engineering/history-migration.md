@@ -297,6 +297,11 @@ acceptance remain outstanding. Screenshots contain fixture data only:
 2. Drain or explicitly reconcile every unfinished source task. Source database
    rows reporting stopped/exited do not independently establish physical exit;
    retain process/resource ownership gates before assigning work to Multica.
+   The source's ordinary update-silence lifecycle can clear that mode during
+   restart, so it is not a durable migration-release protocol. The target's
+   [local project execution barrier](process-ownership.md#local-project-execution-admission)
+   now prevents concurrent physical runs within one project; it neither freezes
+   the old source nor authorizes adoption of the prepared tasks.
 3. Materialize external run/evidence files and attachments with their source
    references, and classify remaining historical database copies. Database
    archives alone do not include those external files.

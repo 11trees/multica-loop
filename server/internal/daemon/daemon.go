@@ -7912,10 +7912,18 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		return TaskResult{}, fmt.Errorf("refusing to spawn agent: task has no workspace_id (task_id=%s)", task.ID)
 	}
 
+	prepareTimeout := d.effectiveTaskPrepareTimeout()
+	prepareCtx, cancelPrepare := context.WithTimeoutCause(ctx, prepareTimeout, errTaskPrepareTimeout)
+	defer cancelPrepare()
+	stopPrepareLease := d.startTaskPrepareLeaseExtender(prepareCtx, task, taskLog)
+	defer stopPrepareLease()
 	var ownershipJournal *engineeringProcessJournal
 	if task.EngineeringOwnership {
 		ownershipJournal = &engineeringProcessJournal{client: d.client, task: task, ctx: ctx, provider: provider}
-		if err := ownershipJournal.begin(); err != nil {
+		if err := ownershipJournal.begin(prepareCtx); err != nil {
+			if errors.Is(context.Cause(prepareCtx), errTaskPrepareTimeout) {
+				err = fmt.Errorf("%w while waiting for repository ownership: %v", errTaskPrepareTimeout, err)
+			}
 			_ = ownershipJournal.end()
 			return TaskResult{}, asEnvironmentSetupFailure(err)
 		}
@@ -7929,8 +7937,6 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 			}
 		}()
 	}
-	prepareTimeout := d.effectiveTaskPrepareTimeout()
-	prepareCtx, cancelPrepare := context.WithTimeoutCause(ctx, prepareTimeout, errTaskPrepareTimeout)
 	prepareComplete := false
 	defer func() {
 		cancelPrepare()
@@ -7999,9 +8005,6 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	if !ok {
 		return TaskResult{}, fmt.Errorf("no agent configured for provider %q", provider)
 	}
-
-	stopPrepareLease := d.startTaskPrepareLeaseExtender(prepareCtx, task, taskLog)
-	defer stopPrepareLease()
 
 	if err := d.ensureTaskSkillBundles(prepareCtx, &task); err != nil {
 		return TaskResult{}, err

@@ -12,8 +12,8 @@ JOIN project p ON p.id=COALESCE(i.project_id,c.project_id)
 WHERE t.id = @task_id AND p.workspace_id = @workspace_id;
 
 -- name: CreateEngineeringRunGuard :one
-INSERT INTO engineering_run_guard(controller_id,workspace_id,project_id,task_id,runtime_id,claim_at,provider,host_id,controller_pid,controller_marker,scope_kind,scope_id)
-SELECT @controller_id,p.workspace_id,p.id,t.id,t.runtime_id,t.dispatched_at,@provider,@host_id,@controller_pid,@controller_marker,CASE WHEN t.issue_id IS NOT NULL THEN 'issue' ELSE 'chat' END,COALESCE(t.issue_id,t.chat_session_id)
+INSERT INTO engineering_run_guard(controller_id,workspace_id,project_id,task_id,runtime_id,claim_at,provider,host_id,controller_pid,controller_marker,scope_kind,scope_id,phase)
+SELECT @controller_id,p.workspace_id,p.id,t.id,t.runtime_id,t.dispatched_at,@provider,@host_id,@controller_pid,@controller_marker,CASE WHEN t.issue_id IS NOT NULL THEN 'issue' ELSE 'chat' END,COALESCE(t.issue_id,t.chat_session_id),'waiting'
 FROM agent_task_queue t
 LEFT JOIN issue i ON i.id=t.issue_id
 LEFT JOIN chat_session c ON c.id=t.chat_session_id
@@ -22,6 +22,12 @@ WHERE t.id = @task_id AND p.workspace_id = @workspace_id AND t.runtime_id = @run
  AND t.dispatched_at = @claim_at AND t.status IN ('dispatched','waiting_local_directory','running')
 ON CONFLICT(controller_id) DO NOTHING
 RETURNING *;
+
+-- name: AdmitEngineeringRunGuard :one
+UPDATE engineering_run_guard g SET phase='preparing',updated_at=now(),project_serialized=(
+    SELECT NOT t.is_leader_task AND runtime.runtime_mode='local' FROM agent_task_queue t JOIN agent_runtime runtime ON runtime.id=t.runtime_id WHERE t.id=g.task_id
+)
+WHERE g.controller_id = @controller_id AND g.workspace_id = @workspace_id AND g.phase='waiting' RETURNING *;
 
 -- name: GetEngineeringRunGuard :one
 SELECT * FROM engineering_run_guard WHERE controller_id = @controller_id AND workspace_id = @workspace_id;

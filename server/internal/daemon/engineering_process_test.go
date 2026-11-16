@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -30,7 +31,7 @@ func TestEngineeringNativeCodexPhysicalLifecycle(t *testing.T) {
 	if _, err = os.Stat(worker); err != nil {
 		t.Skip("Build command-chain before the bundled-worker integration")
 	}
-	for _, failure := range []string{"none", "reserve", "bind", "exit", "end"} {
+	for _, failure := range []string{"none", "admission-wait", "reserve", "bind", "exit", "end"} {
 		t.Run(failure, func(t *testing.T) {
 			home := t.TempDir()
 			for _, key := range []string{"HOME", "USERPROFILE", "CODEX_HOME"} {
@@ -72,10 +73,14 @@ while read line;do :;done
 			parsed, _ := time.Parse(time.RFC3339Nano, claim)
 			nativeActor["attemptId"] = taskID + ":" + strconv.FormatInt(parsed.UnixMicro(), 10)
 			operations := make(chan string, 20)
+			var admissionAttempts, prepareRenewals atomic.Int32
 			processPhase, controllerID := "", ""
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				switch {
+				case strings.Contains(r.URL.Path, "/prepare-lease"):
+					prepareRenewals.Add(1)
+					_, _ = w.Write([]byte(`{}`))
 				case strings.HasSuffix(r.URL.Path, "/engineering-repository"):
 					var payload map[string]any
 					if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -110,6 +115,16 @@ while read line;do :;done
 					}
 					switch op {
 					case "begin":
+						if failure == "admission-wait" && admissionAttempts.Add(1) <= 2 {
+							if _, err := os.Stat(capture); !os.IsNotExist(err) {
+								t.Error("waiting delivered a provider prompt")
+							}
+							if _, err := os.Stat(filepath.Join(repo, "AGENTS.md")); !os.IsNotExist(err) {
+								t.Error("waiting prepared repository context")
+							}
+							_, _ = w.Write([]byte(`{"admitted":false,"waiting_repository":true}`))
+							return
+						}
 						if payload["provider"] != "codex" || payload["pid"] != float64(os.Getpid()) || payload["marker"] == "" {
 							t.Error("Missing native controller identity")
 						}
@@ -171,6 +186,9 @@ while read line;do :;done
 			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 			d := &Daemon{client: NewClient(server.URL), logger: logger, localPathLocks: NewLocalPathLocker(), workspaces: make(map[string]*workspaceState), activeEnvRoots: make(map[string]int), activeStores: make(map[string]int), deletingStores: make(map[string]bool), cfg: Config{DaemonID: "fixture-daemon", WorkspacesRoot: t.TempDir(), AgentTimeout: 15 * time.Second, ServerBaseURL: server.URL, Agents: map[string]AgentEntry{"codex": {Path: fake}}}}
 			d.activeStoresCond = sync.NewCond(&d.activeStoresMu)
+			if failure == "admission-wait" {
+				d.prepareLeaseRefresh = 20 * time.Millisecond
+			}
 			resource, _ := json.Marshal(localDirectoryRef{LocalPath: repo, DaemonID: d.cfg.DaemonID, ExecutionMode: localDirectoryModeInPlace})
 			task := Task{ID: taskID, WorkspaceID: workspaceID, IssueID: issueID, RuntimeID: runtimeID, AgentID: agentID, AuthToken: "mat_fixture", EngineeringOwnership: true, EngineeringChain: "direct", EngineeringRepository: repo, EngineeringCommit: strings.TrimSpace(string(commit)), DispatchedAt: claim, Agent: &AgentData{ID: agentID, Name: "Fixture", CustomEnv: map[string]string{"PHYSICAL_BINDING_ACK": marker, "PROMPT_CAPTURE": capture}}, ProjectResources: []ProjectResourceData{{ID: uuid.NewString(), ResourceType: localDirectoryResourceType, ResourceRef: resource}}}
 			result, runErr := d.runTask(ctx, task, "codex", 0, logger)
@@ -199,6 +217,12 @@ while read line;do :;done
 				}
 			}
 			want := []string{"begin", "workspace", "process-reserve", "process-bind", "process-exit", "end"}
+			if failure == "admission-wait" {
+				want = append([]string{"begin", "begin"}, want...)
+				if prepareRenewals.Load() == 0 {
+					t.Fatal("waiting did not renew its native preparation claim")
+				}
+			}
 			if failure == "reserve" {
 				want = []string{"begin", "workspace", "process-reserve", "process-exit", "end"}
 			}

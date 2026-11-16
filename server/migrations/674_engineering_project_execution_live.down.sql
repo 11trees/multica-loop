@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS engineering_project_execution_live_idx;

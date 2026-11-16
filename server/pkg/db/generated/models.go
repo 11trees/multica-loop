@@ -886,6 +886,8 @@ type EngineeringRunGuard struct {
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 	ScopeKind         pgtype.Text        `json:"scope_kind"`
 	ScopeID           pgtype.UUID        `json:"scope_id"`
+	ProjectSerialized bool               `json:"project_serialized"`
+	ClaimSettled      bool               `json:"claim_settled"`
 }
 
 type EngineeringRunProcess struct {

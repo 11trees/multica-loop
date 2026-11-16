@@ -11,6 +11,46 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const admitEngineeringRunGuard = `-- name: AdmitEngineeringRunGuard :one
+UPDATE engineering_run_guard g SET phase='preparing',updated_at=now(),project_serialized=(
+    SELECT NOT t.is_leader_task AND runtime.runtime_mode='local' FROM agent_task_queue t JOIN agent_runtime runtime ON runtime.id=t.runtime_id WHERE t.id=g.task_id
+)
+WHERE g.controller_id = $1 AND g.workspace_id = $2 AND g.phase='waiting' RETURNING controller_id, workspace_id, project_id, task_id, runtime_id, claim_at, provider, host_id, controller_pid, controller_marker, phase, workspace_path, execution_mode, no_provider_started, created_at, updated_at, scope_kind, scope_id, project_serialized, claim_settled
+`
+
+type AdmitEngineeringRunGuardParams struct {
+	ControllerID pgtype.UUID `json:"controller_id"`
+	WorkspaceID  pgtype.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) AdmitEngineeringRunGuard(ctx context.Context, arg AdmitEngineeringRunGuardParams) (EngineeringRunGuard, error) {
+	row := q.db.QueryRow(ctx, admitEngineeringRunGuard, arg.ControllerID, arg.WorkspaceID)
+	var i EngineeringRunGuard
+	err := row.Scan(
+		&i.ControllerID,
+		&i.WorkspaceID,
+		&i.ProjectID,
+		&i.TaskID,
+		&i.RuntimeID,
+		&i.ClaimAt,
+		&i.Provider,
+		&i.HostID,
+		&i.ControllerPid,
+		&i.ControllerMarker,
+		&i.Phase,
+		&i.WorkspacePath,
+		&i.ExecutionMode,
+		&i.NoProviderStarted,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ScopeKind,
+		&i.ScopeID,
+		&i.ProjectSerialized,
+		&i.ClaimSettled,
+	)
+	return i, err
+}
+
 const bindEngineeringRunProcess = `-- name: BindEngineeringRunProcess :one
 UPDATE engineering_run_process SET phase='running',pid = $1,marker = $2,group_id = $3,updated_at=now()
 WHERE allocation_id = $4 AND controller_id = $5 AND workspace_id = $6
@@ -184,8 +224,8 @@ func (q *Queries) CreateEngineeringRepairPublication(ctx context.Context, arg Cr
 }
 
 const createEngineeringRunGuard = `-- name: CreateEngineeringRunGuard :one
-INSERT INTO engineering_run_guard(controller_id,workspace_id,project_id,task_id,runtime_id,claim_at,provider,host_id,controller_pid,controller_marker,scope_kind,scope_id)
-SELECT $1,p.workspace_id,p.id,t.id,t.runtime_id,t.dispatched_at,$2,$3,$4,$5,CASE WHEN t.issue_id IS NOT NULL THEN 'issue' ELSE 'chat' END,COALESCE(t.issue_id,t.chat_session_id)
+INSERT INTO engineering_run_guard(controller_id,workspace_id,project_id,task_id,runtime_id,claim_at,provider,host_id,controller_pid,controller_marker,scope_kind,scope_id,phase)
+SELECT $1,p.workspace_id,p.id,t.id,t.runtime_id,t.dispatched_at,$2,$3,$4,$5,CASE WHEN t.issue_id IS NOT NULL THEN 'issue' ELSE 'chat' END,COALESCE(t.issue_id,t.chat_session_id),'waiting'
 FROM agent_task_queue t
 LEFT JOIN issue i ON i.id=t.issue_id
 LEFT JOIN chat_session c ON c.id=t.chat_session_id
@@ -193,7 +233,7 @@ JOIN project p ON p.id=COALESCE(i.project_id,c.project_id)
 WHERE t.id = $6 AND p.workspace_id = $7 AND t.runtime_id = $8
  AND t.dispatched_at = $9 AND t.status IN ('dispatched','waiting_local_directory','running')
 ON CONFLICT(controller_id) DO NOTHING
-RETURNING controller_id, workspace_id, project_id, task_id, runtime_id, claim_at, provider, host_id, controller_pid, controller_marker, phase, workspace_path, execution_mode, no_provider_started, created_at, updated_at, scope_kind, scope_id
+RETURNING controller_id, workspace_id, project_id, task_id, runtime_id, claim_at, provider, host_id, controller_pid, controller_marker, phase, workspace_path, execution_mode, no_provider_started, created_at, updated_at, scope_kind, scope_id, project_serialized, claim_settled
 `
 
 type CreateEngineeringRunGuardParams struct {
@@ -240,6 +280,8 @@ func (q *Queries) CreateEngineeringRunGuard(ctx context.Context, arg CreateEngin
 		&i.UpdatedAt,
 		&i.ScopeKind,
 		&i.ScopeID,
+		&i.ProjectSerialized,
+		&i.ClaimSettled,
 	)
 	return i, err
 }
@@ -285,7 +327,7 @@ func (q *Queries) EngineeringRequireProjectAvailable(ctx context.Context, projec
 
 const finishEngineeringRunGuard = `-- name: FinishEngineeringRunGuard :one
 UPDATE engineering_run_guard SET phase = $1,no_provider_started = $2,updated_at=now()
-WHERE controller_id = $3 AND workspace_id = $4 AND phase<>'quiesced' RETURNING controller_id, workspace_id, project_id, task_id, runtime_id, claim_at, provider, host_id, controller_pid, controller_marker, phase, workspace_path, execution_mode, no_provider_started, created_at, updated_at, scope_kind, scope_id
+WHERE controller_id = $3 AND workspace_id = $4 AND phase<>'quiesced' RETURNING controller_id, workspace_id, project_id, task_id, runtime_id, claim_at, provider, host_id, controller_pid, controller_marker, phase, workspace_path, execution_mode, no_provider_started, created_at, updated_at, scope_kind, scope_id, project_serialized, claim_settled
 `
 
 type FinishEngineeringRunGuardParams struct {
@@ -322,6 +364,8 @@ func (q *Queries) FinishEngineeringRunGuard(ctx context.Context, arg FinishEngin
 		&i.UpdatedAt,
 		&i.ScopeKind,
 		&i.ScopeID,
+		&i.ProjectSerialized,
+		&i.ClaimSettled,
 	)
 	return i, err
 }
@@ -560,7 +604,7 @@ func (q *Queries) GetEngineeringRepairPublication(ctx context.Context, targetHas
 }
 
 const getEngineeringRunGuard = `-- name: GetEngineeringRunGuard :one
-SELECT controller_id, workspace_id, project_id, task_id, runtime_id, claim_at, provider, host_id, controller_pid, controller_marker, phase, workspace_path, execution_mode, no_provider_started, created_at, updated_at, scope_kind, scope_id FROM engineering_run_guard WHERE controller_id = $1 AND workspace_id = $2
+SELECT controller_id, workspace_id, project_id, task_id, runtime_id, claim_at, provider, host_id, controller_pid, controller_marker, phase, workspace_path, execution_mode, no_provider_started, created_at, updated_at, scope_kind, scope_id, project_serialized, claim_settled FROM engineering_run_guard WHERE controller_id = $1 AND workspace_id = $2
 `
 
 type GetEngineeringRunGuardParams struct {
@@ -590,6 +634,8 @@ func (q *Queries) GetEngineeringRunGuard(ctx context.Context, arg GetEngineering
 		&i.UpdatedAt,
 		&i.ScopeKind,
 		&i.ScopeID,
+		&i.ProjectSerialized,
+		&i.ClaimSettled,
 	)
 	return i, err
 }
@@ -753,7 +799,7 @@ func (q *Queries) ListEngineeringProjectActiveTasks(ctx context.Context, arg Lis
 }
 
 const listEngineeringProjectControllers = `-- name: ListEngineeringProjectControllers :many
-SELECT controller_id, workspace_id, project_id, task_id, runtime_id, claim_at, provider, host_id, controller_pid, controller_marker, phase, workspace_path, execution_mode, no_provider_started, created_at, updated_at, scope_kind, scope_id FROM engineering_run_guard WHERE workspace_id = $1 AND project_id = $2 ORDER BY created_at,controller_id
+SELECT controller_id, workspace_id, project_id, task_id, runtime_id, claim_at, provider, host_id, controller_pid, controller_marker, phase, workspace_path, execution_mode, no_provider_started, created_at, updated_at, scope_kind, scope_id, project_serialized, claim_settled FROM engineering_run_guard WHERE workspace_id = $1 AND project_id = $2 ORDER BY created_at,controller_id
 `
 
 type ListEngineeringProjectControllersParams struct {
@@ -789,6 +835,8 @@ func (q *Queries) ListEngineeringProjectControllers(ctx context.Context, arg Lis
 			&i.UpdatedAt,
 			&i.ScopeKind,
 			&i.ScopeID,
+			&i.ProjectSerialized,
+			&i.ClaimSettled,
 		); err != nil {
 			return nil, err
 		}
@@ -1149,7 +1197,7 @@ func (q *Queries) LockEngineeringRepairFence(ctx context.Context, arg LockEngine
 }
 
 const lockEngineeringRunGuard = `-- name: LockEngineeringRunGuard :one
-SELECT controller_id, workspace_id, project_id, task_id, runtime_id, claim_at, provider, host_id, controller_pid, controller_marker, phase, workspace_path, execution_mode, no_provider_started, created_at, updated_at, scope_kind, scope_id FROM engineering_run_guard WHERE controller_id = $1 AND workspace_id = $2 FOR UPDATE
+SELECT controller_id, workspace_id, project_id, task_id, runtime_id, claim_at, provider, host_id, controller_pid, controller_marker, phase, workspace_path, execution_mode, no_provider_started, created_at, updated_at, scope_kind, scope_id, project_serialized, claim_settled FROM engineering_run_guard WHERE controller_id = $1 AND workspace_id = $2 FOR UPDATE
 `
 
 type LockEngineeringRunGuardParams struct {
@@ -1179,6 +1227,8 @@ func (q *Queries) LockEngineeringRunGuard(ctx context.Context, arg LockEngineeri
 		&i.UpdatedAt,
 		&i.ScopeKind,
 		&i.ScopeID,
+		&i.ProjectSerialized,
+		&i.ClaimSettled,
 	)
 	return i, err
 }
@@ -1439,7 +1489,7 @@ func (q *Queries) SetEngineeringRepairFenceState(ctx context.Context, arg SetEng
 
 const setEngineeringRunWorkspace = `-- name: SetEngineeringRunWorkspace :one
 UPDATE engineering_run_guard SET workspace_path = $1,execution_mode = $2,phase='executing',updated_at=now()
-WHERE controller_id = $3 AND workspace_id = $4 AND phase IN ('preparing','executing') RETURNING controller_id, workspace_id, project_id, task_id, runtime_id, claim_at, provider, host_id, controller_pid, controller_marker, phase, workspace_path, execution_mode, no_provider_started, created_at, updated_at, scope_kind, scope_id
+WHERE controller_id = $3 AND workspace_id = $4 AND phase IN ('preparing','executing') RETURNING controller_id, workspace_id, project_id, task_id, runtime_id, claim_at, provider, host_id, controller_pid, controller_marker, phase, workspace_path, execution_mode, no_provider_started, created_at, updated_at, scope_kind, scope_id, project_serialized, claim_settled
 `
 
 type SetEngineeringRunWorkspaceParams struct {
@@ -1476,6 +1526,8 @@ func (q *Queries) SetEngineeringRunWorkspace(ctx context.Context, arg SetEnginee
 		&i.UpdatedAt,
 		&i.ScopeKind,
 		&i.ScopeID,
+		&i.ProjectSerialized,
+		&i.ClaimSettled,
 	)
 	return i, err
 }
