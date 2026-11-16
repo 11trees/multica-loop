@@ -84,7 +84,9 @@ A read-only capture of the pinned LoopWork baseline
 - Original content includes 197 documents, 30 command-chain drafts, 12,113
   execution receipts, 280 execution attempts and 107 runs.
 - Four already merged legacy project sources are identified; twelve other
-  database files remain unclassified. No native task was created.
+  database files were initially unclassified. The [supplement](#supplementary-databases-and-files)
+  below now records their observed schema and disposition. This original capture
+  created no native task.
 
 The archive manifest is content identity
 `6d2fef8e221d3dfc1b46c61201c41b265febc2715e73184b98bce4cdb0420d62`.
@@ -596,6 +598,76 @@ The actual four local tasks remain staged and held. Their six Develop roles
 still have no runtime binding; no actual activation, project resource or model
 run is claimed by these controlled tests.
 
+## Supplementary databases and files
+
+The immutable primary archive remains unchanged. A separate local supplement
+binds its own digest to that primary identity:
+
+```sh
+make env-exec ARGS="-- node scripts/migration/loopwork-supplement.mjs capture --output ABSOLUTE_NEW_OUTPUT"
+make env-exec ARGS="-- node scripts/migration/loopwork-supplement.mjs verify --supplement ABSOLUTE_OUTPUT --expected-hash SAVED_SUPPLEMENT_SHA256"
+make env-exec ARGS="-- node scripts/migration/loopwork-supplement.mjs record --supplement ABSOLUTE_OUTPUT --expected-hash SAVED_SUPPLEMENT_SHA256 --database ORIGINAL_RELATIVE_DATABASE --table tasks --id ORIGINAL_TASK_ID"
+```
+
+Capture derives candidate databases and run/profile identities from the pinned
+primary archive. It never opens an original SQLite database: only byte copies
+touch those sources, with WAL integrity/checkpointing confined to private copies.
+The entire secondary database/WAL cohort and selected file set are rechecked
+before publication. Output must stay outside the source, every archived project
+and primary archive; existing output is never overwritten. Symlinks, path
+escapes, changing files, unexpected payloads and altered fingerprints are refused.
+Directories are private and copied files are mode 0600.
+
+Business backups retain their original schemas, complete database contents and
+database-scoped task/document identities. Current-primary task-ID overlap is
+an inventory fact, not record equality. The four already merged sources remain
+backups; their records are not imported again. Application/configuration and
+unrecognized database payloads are excluded, retaining table/column/count and
+source fingerprint inventory. Exact task/document lookup uses parameters,
+lossless integers/blobs and the same top-level credential-column exclusion as
+the primary operator reader.
+
+Named files include existing runner PID/start-gate and stderr diagnostics for
+archived runs, the management host log, and generated Prompt/Memory files for
+archived project/Agent pairs. Their content-addressed blobs retain the original
+relative path and run/project/Agent association. Old PID/gate files and private
+log/prompt content are opaque history, with no native process, credential,
+configuration, Team, reading or delivery authority. Files are not executed or
+installed. Shared blobs are verified against every original reference, and the
+verifier rejects files not named in the manifest.
+
+The actual local supplement is stored alongside the primary archive as
+`20261117-01-supplement-01`, with digest
+`f71bc1cce75b83ad7b3e2ca3447d2f5e018fefee7e2ca7a239440715021905e7`.
+It classifies all sixteen originally listed secondary files:
+
+| Observed source | Disposition |
+| --- | --- |
+| Four already merged business sources | Preserved as separate backups; no reimport |
+| Eight previously unclassified business databases | Preserved as historical database snapshots |
+| Two zero-byte files | Explicit empty-file inventory; no records |
+| `dji/loopwork.db` | Application configuration payload excluded |
+| `dji/task-state.db` | Unmapped legacy `task_states` schema with zero rows; catalog/fingerprint retained, payload excluded |
+
+The twelve retained business snapshots contain five task IDs absent from the
+primary archive. Their source database is required for lookup; none has become
+a native task or joined the existing four-task cutover cohort. Same-ID backup
+versions remain distinct, rather than replacing primary material.
+
+The supplement also retains 198 files (5,145,768 bytes): 158 generated
+Prompt/Memory files, their inventory manifest, 19 old runner PID files, 19 empty
+stderr diagnostic files, and one management host log. An independent check
+confirmed the secondary source preimages, private permissions and all five
+additional historical task lookups. Original primary/task-packet identities and
+native correspondence remain unchanged.
+
+This is a persistent operator-readable archive. Native history-page navigation
+for supplemental databases/files is still pending. Task/document file and image
+references, repository evidence trees, unregistered run/profile directories and
+remote resources remain outside this capture. No remote references are fetched,
+and no installed provider/account is consulted. These gaps remain part of the
+full migration objective.
+
 ## Remaining cutover work
 
 1. Activate the actual staged native Team tasks against their saved
@@ -612,9 +684,11 @@ run is claimed by these controlled tests.
    now prevents concurrent physical runs within one project. The separate
    pre-activation protocol above can freeze the known source databases and hold
    native execution, but neither mechanism authorizes task adoption.
-3. Materialize external run/evidence files and attachments with their source
-   references, and classify remaining historical database copies. Database
-   archives alone do not include those external files.
+3. Materialize remaining task/document references, repository evidence trees
+   and attachments with their source references. The named run/profile files
+   and sixteen secondary database dispositions are now retained in the
+   supplement above; that bounded capture does not establish external-file
+   completeness.
 4. Extend task/document browsing to other history surfaces and establish
    source-project/task correspondence with native records. Verify the selected
    correspondence before adopting tasks; a historical record is not a native
