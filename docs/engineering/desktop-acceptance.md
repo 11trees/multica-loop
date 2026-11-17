@@ -5,6 +5,12 @@ scenario against the managed API. This is a locally built, ad-hoc signed app,
 not a notarized installer or acceptance of model execution, every workflow,
 updating, external protocol registration, other operating systems or Mobile.
 
+The controlled scenarios below used `0.8.2-234-gcec625b1c`. The newer local fork
+candidate `0.8.2-238-gc88b74ba5` has the separate bundle identity, no advertised
+upstream protocol and a valid ad-hoc signature, but its standalone launch exits
+before showing a window. That candidate's startup is not accepted. The managed
+local Web entry is available while this desktop startup issue is investigated.
+
 ## Isolated local profile
 
 Initialize a **new** absolute directory before launching the packaged executable:
