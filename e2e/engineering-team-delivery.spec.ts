@@ -7,7 +7,7 @@ import { pathToFileURL } from "node:url";
 import { TestApiClient } from "./fixtures";
 // Native queue claims and role conclusions are controlled; the API, Git,
 // browser observations, publication, independent verification and Done are real.
-for (const mode of ["in_place", "worktree"] as const) test(`Bug Fix Team ${mode} advances a native task from human reproduction facts through verified repair and report reading`, async ({ baseURL }, testInfo) => {
+for (const workflow of ["develop", "bug_fix"] as const) for (const mode of ["in_place", "worktree"] as const) test(`${workflow === "develop" ? "Development" : "Bug Fix"} Team ${mode} advances a native task from human facts through verified delivery and report reading`, async ({ baseURL }, testInfo) => {
   test.setTimeout(600000);
   test.skip(process.env.MULTICA_ENGINEERING_ENABLED !== "true" || !process.env.MULTICA_ENGINEERING_CLI || !process.env.MULTICA_ENGINEERING_BROWSER, "Requires managed engineering, a test-built CLI and an explicit browser");
   const api = new TestApiClient();
@@ -15,7 +15,7 @@ for (const mode of ["in_place", "worktree"] as const) test(`Bug Fix Team ${mode}
   const workspace = (await api.getWorkspaces()).find(item => item.slug === "loopwork-local")!;
   api.setWorkspaceId(workspace.id);
   api.setWorkspaceSlug(workspace.slug);
-  const directory = await realpath(await mkdtemp(join(tmpdir(), "team-bug-fix-"))), registeredRepository = join(directory, "repository");
+  const directory = await realpath(await mkdtemp(join(tmpdir(), `team-${workflow}-`))), registeredRepository = join(directory, "repository");
   let repository = registeredRepository;
   execFileSync("git", ["init", "-q", repository]);
   const git = (...args: string[]) => execFileSync("git", ["-C", repository, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
@@ -34,25 +34,21 @@ for (const mode of ["in_place", "worktree"] as const) test(`Bug Fix Team ${mode}
   await context.addInitScript(() => localStorage.setItem("multica:chat:isOpen", "false"));
   try {
     const seed = await api.seedEngineeringRun(), runs = [seed];
-    for (let i = 0; i < 6; i++)
+    for (let i = 0; i < (workflow === "bug_fix" ? 6 : 5); i++)
       runs.push(await api.seedEngineeringRun(seed.issueId));
-    const [backlog, reproducer, planner, analyst, developer, verifier, reviewer] = runs as [
-      typeof seed,
-      typeof seed,
-      typeof seed,
-      typeof seed,
-      typeof seed,
-      typeof seed,
-      typeof seed
+    const [backlog, planner, analyst, developer, verifier, reviewer] = runs as [
+      typeof seed, typeof seed, typeof seed, typeof seed, typeof seed, typeof seed,
     ];
-    const project = await api.createProject(`Bug Fix Team ${seed.issueId}`), team = await api.createWorkflowTeamFixture(backlog.agentId);
+    const reproducer = workflow === "bug_fix" ? runs[6]! : undefined;
+    const roles = { context: backlog.agentId, planner: planner.agentId, analyst: analyst.agentId, developer: developer.agentId, verifier: verifier.agentId, reviewer: reviewer.agentId, ...(reproducer ? { reproducer: reproducer.agentId } : {}) };
+    const project = await api.createProject(`${workflow} Team ${seed.issueId}`), team = await api.createWorkflowTeamFixture(backlog.agentId);
     for (const run of runs) {
       await api.finishEngineeringRun(run.taskId);
       await api.attachEngineeringProject(run.taskId, project.id, registeredRepository, mode);
       if (run.agentId !== backlog.agentId)
         await api.addWorkflowTeamAgentFixture(team.id, run.agentId);
     }
-    await api.configureWorkflowTeamDefinitionFixture(team.id, { workflow: "bug_fix", roles: { context: backlog.agentId, reproducer: reproducer.agentId, planner: planner.agentId, analyst: analyst.agentId, developer: developer.agentId, verifier: verifier.agentId, reviewer: reviewer.agentId }, decision_mode: "balanced", max_reworks: 1 });
+    await api.configureWorkflowTeamDefinitionFixture(team.id, { workflow, roles, decision_mode: "balanced", max_reworks: 1 });
     const page = await context.newPage();
     await page.goto(`${baseURL}/`);
     await expect(page).toHaveURL(new RegExp(`/${workspace.slug}/issues`));
@@ -83,7 +79,7 @@ for (const mode of ["in_place", "worktree"] as const) test(`Bug Fix Team ${mode}
       console.info("Native queue checkpoint", JSON.stringify({ requestedAgent: agentId, runs: await api.engineeringRunStates(issueId), chain: checkpoint.chain, status: checkpoint.status, active: checkpoint.has_active_run, review: checkpoint.requirement?.review?.agent_id }));
       throw error;
     } const id = (await api.queuedEngineeringRun(issueId, agentId))!; return api.claimEngineeringRun(id); };
-    const begin = async (issueId: string, agentId: string, commit = originalCommit) => { console.info("Bug Fix Team awaiting native role", Object.entries({ context: backlog.agentId, reproducer: reproducer.agentId, planner: planner.agentId, analyst: analyst.agentId, developer: developer.agentId, verifier: verifier.agentId, reviewer: reviewer.agentId }).find(([, id]) => id === agentId)?.[0]); owner = await next(issueId, agentId);
+    const begin = async (issueId: string, agentId: string, commit = originalCommit) => { console.info(workflow + " Team awaiting native role", Object.entries(roles).find(([, id]) => id === agentId)?.[0]); owner = await next(issueId, agentId);
       if (mode === "worktree") {
         repository = join(directory, owner.taskId);
         registeredGit("worktree", "add", "-qb", `team-${owner.taskId}`, repository, commit);
@@ -120,9 +116,31 @@ for (const mode of ["in_place", "worktree"] as const) test(`Bug Fix Team ${mode}
     put("requirement-context.intent", "Restore the existing Continue behavior");
     put("requirement-context.assertions", { perspective: "actual", statement: "Continue sometimes produces no output", evidence: "reported", source: "Original bug report" }, "actual");
     put("requirement-context.assertions", { perspective: "expected", statement: expected, evidence: "reported", source: "Existing reader contract" }, "expected");
-    for (let i = 0; i < 3; i++)
+    const contextDraft = state.draft.id;
+    command({ type: "phase.complete" });
+    if (workflow === "develop") {
+      command({ type: "decision.propose", decision: { key: "state", type: "business", title: "Required reader states", question: "Which states must Continue support?", impact: "Determines the delivery scope", options: [{ id: "both", label: "Both states", consequence: "Continue works in fresh and saved states" }, { id: "fresh", label: "Fresh only", consequence: "Leave saved state outside this delivery" }], recommendation: { option: "both", reason: "Preserve the original reader contract", authority: "user" }, dependencies: [] } });
       command({ type: "phase.complete" });
-    put("requirement-context.answer-review", "Expected is fixed; affected conditions require reproduction");
+      command({ type: "decision.ask", key: "state" });
+      command({ type: "phase.complete" });
+      expect(state.draft.status).toBe("waiting_for_answers");
+      await finish();
+      expect(await api.queuedEngineeringRun(issue.id, planner.agentId)).toBeNull();
+      await panel.getByRole("button", { name: "Refresh engineering delivery" }).click();
+      await panel.getByRole("combobox", { name: "Your choice", exact: true }).click();
+      await page.getByRole("option", { name: /Both states.*Continue works/ }).click();
+      await page.screenshot({ path: testInfo.outputPath("team-development-human-choice.png") });
+      await panel.getByRole("button", { name: "Submit answer", exact: true }).click();
+      await begin(issue.id, backlog.agentId);
+      expect(state.draft.id).toBe(contextDraft);
+      expect(state.draft.runtimeInputs[0].answer).toMatchObject({ selectedOption: "both", userId: seed.userId });
+      command({ type: "decision.resolve", key: "state", option: "both", authority: "user", decision: "Both reader states", rationale: "Authenticated delivery scope", evidence: state.draft.runtimeInputs[0].id });
+      command({ type: "phase.complete" });
+    } else {
+      command({ type: "phase.complete" });
+      command({ type: "phase.complete" });
+    }
+    put("requirement-context.answer-review", "Expected and authenticated delivery scope agree");
     command({ type: "phase.complete" });
     put("requirement-context.assertions", { perspective: "target", statement: expected, evidence: "decided", source: "Existing reader contract" }, "target");
     command({ type: "phase.complete" });
@@ -135,51 +153,54 @@ for (const mode of ["in_place", "worktree"] as const) test(`Bug Fix Team ${mode}
     command({ type: "phase.complete" });
     command({ type: "phase.complete" });
     await finish();
-    console.info("Bug Fix Team: native context handed off");
-    await begin(issue.id, reproducer.agentId);
-    expect(state.chain).toBe("reproduction");
-    expect(state.contract.expectedBehavior).toBe(expected);
-    const reproductionDraft = state.draft.id;
-    const record = (reproduced: boolean, actual: string) => { put("reproduction.verdict", { status: reproduced ? "reproduced" : "not_reproduced", expectedBehavior: expected, actualBehavior: actual || "Empty output after Continue", environment: reproduced ? "Saved state #saved" : "Fresh state", stability: "Explicit Chromium activation", impactScope: "Continue control" }); put("reproduction.steps", { action: "Activate Continue", expected: "Continued", actual: actual || "Empty output" }, "activate"); put("reproduction.evidence", { kind: "observation", content: `Chromium output: ${JSON.stringify(actual)}`, source: `index.html${reproduced ? "#saved" : ""}` }, "browser"); };
-    record(false, await observe(false, "Continued"));
-    command({ type: "phase.complete" });
-    command({ type: "decision.propose", decision: { key: "state", type: "technical", title: "Affected reader state", question: "Which state triggers this failure?", impact: "Changes reproduction conditions", options: [{ id: "saved", label: "Saved state", consequence: "Open saved reader state" }, { id: "fresh", label: "Fresh state", consequence: "Open fresh reader state" }], recommendation: { option: "saved", reason: "Fresh state works", authority: "user" }, dependencies: [] } });
-    command({ type: "phase.complete" });
-    command({ type: "decision.ask", key: "state" });
-    command({ type: "phase.complete" });
-    expect(state.draft.status).toBe("waiting_for_answers");
-    await finish();
-    expect(await api.queuedEngineeringRun(issue.id, planner.agentId)).toBeNull();
-    await panel.getByRole("button", { name: "Refresh engineering delivery" }).click();
-    await expect(panel.getByText("Not reproduced under the recorded conditions. Delivery planning remains blocked.", { exact: true })).toBeVisible();
-    await page.setViewportSize({ width: 390, height: 1200 });
-    await expect(panel.getByRole("combobox", { name: "Your choice", exact: true })).toBeVisible();
-    await page.screenshot({ path: testInfo.outputPath("team-bug-awaiting-human-390.png") });
-    await panel.getByRole("combobox", { name: "Your choice", exact: true }).click();
-    await page.getByRole("option", { name: /Saved state.*Open saved/ }).click();
-    await panel.getByRole("button", { name: "Submit answer", exact: true }).click();
-    await begin(issue.id, reproducer.agentId);
-    expect(state.draft.id).toBe(reproductionDraft);
-    expect(state.draft.runtimeInputs[0].answer.userId).toBe(seed.userId);
-    command({ type: "decision.resolve", key: "state", option: "saved", authority: "user", decision: "Use saved state", rationale: "Authenticated human fact", evidence: state.draft.runtimeInputs[0].id });
-    command({ type: "phase.complete" });
-    put("reproduction.answer-review", "Changed conditions require a fresh observation");
-    command({ type: "phase.complete" });
-    command({ type: "phase.rewind", to: "investigation", reason: "Observe saved-state condition" });
-    record(true, await observe(true, "", "team-bug-reproduced.png"));
-    for (let i = 0; i < 3; i++)
+    console.info(workflow + " Team: native context handed off");
+    if (reproducer) {
+      await begin(issue.id, reproducer.agentId);
+      expect(state.chain).toBe("reproduction");
+      expect(state.contract.expectedBehavior).toBe(expected);
+      const reproductionDraft = state.draft.id;
+      const record = (reproduced: boolean, actual: string) => { put("reproduction.verdict", { status: reproduced ? "reproduced" : "not_reproduced", expectedBehavior: expected, actualBehavior: actual || "Empty output after Continue", environment: reproduced ? "Saved state #saved" : "Fresh state", stability: "Explicit Chromium activation", impactScope: "Continue control" }); put("reproduction.steps", { action: "Activate Continue", expected: "Continued", actual: actual || "Empty output" }, "activate"); put("reproduction.evidence", { kind: "observation", content: `Chromium output: ${JSON.stringify(actual)}`, source: `index.html${reproduced ? "#saved" : ""}` }, "browser"); };
+      record(false, await observe(false, "Continued"));
       command({ type: "phase.complete" });
-    put("reproduction.answer-review", "Saved-state browser observation reproduces failure against unchanged Expected");
-    command({ type: "phase.complete" });
-    command({ type: "phase.complete" });
-    expect(state.conclusion.history).toHaveLength(1);
-    expect(git("rev-parse", "HEAD")).toBe(originalCommit);
-    expect(git("status", "--porcelain")).toBe("");
-    await finish();
-    console.info("Bug Fix Team: authenticated facts and renewed reproduction retained");
+      command({ type: "decision.propose", decision: { key: "state", type: "technical", title: "Affected reader state", question: "Which state triggers this failure?", impact: "Changes reproduction conditions", options: [{ id: "saved", label: "Saved state", consequence: "Open saved reader state" }, { id: "fresh", label: "Fresh state", consequence: "Open fresh reader state" }], recommendation: { option: "saved", reason: "Fresh state works", authority: "user" }, dependencies: [] } });
+      command({ type: "phase.complete" });
+      command({ type: "decision.ask", key: "state" });
+      command({ type: "phase.complete" });
+      expect(state.draft.status).toBe("waiting_for_answers");
+      await finish();
+      expect(await api.queuedEngineeringRun(issue.id, planner.agentId)).toBeNull();
+      await panel.getByRole("button", { name: "Refresh engineering delivery" }).click();
+      await expect(panel.getByText("Not reproduced under the recorded conditions. Delivery planning remains blocked.", { exact: true })).toBeVisible();
+      await page.setViewportSize({ width: 390, height: 1200 });
+      await expect(panel.getByRole("combobox", { name: "Your choice", exact: true })).toBeVisible();
+      await page.screenshot({ path: testInfo.outputPath("team-bug-awaiting-human-390.png") });
+      await panel.getByRole("combobox", { name: "Your choice", exact: true }).click();
+      await page.getByRole("option", { name: /Saved state.*Open saved/ }).click();
+      await panel.getByRole("button", { name: "Submit answer", exact: true }).click();
+      await begin(issue.id, reproducer.agentId);
+      expect(state.draft.id).toBe(reproductionDraft);
+      expect(state.draft.runtimeInputs[0].answer.userId).toBe(seed.userId);
+      command({ type: "decision.resolve", key: "state", option: "saved", authority: "user", decision: "Use saved state", rationale: "Authenticated human fact", evidence: state.draft.runtimeInputs[0].id });
+      command({ type: "phase.complete" });
+      put("reproduction.answer-review", "Changed conditions require a fresh observation");
+      command({ type: "phase.complete" });
+      command({ type: "phase.rewind", to: "investigation", reason: "Observe saved-state condition" });
+      record(true, await observe(true, "", "team-bug-reproduced.png"));
+      for (let i = 0; i < 3; i++)
+        command({ type: "phase.complete" });
+      put("reproduction.answer-review", "Saved-state browser observation reproduces failure against unchanged Expected");
+      command({ type: "phase.complete" });
+      command({ type: "phase.complete" });
+      expect(state.conclusion.history).toHaveLength(1);
+      expect(git("rev-parse", "HEAD")).toBe(originalCommit);
+      expect(git("status", "--porcelain")).toBe("");
+      await finish();
+      console.info(workflow + " Team: authenticated facts and renewed reproduction retained");
+    }
     await begin(issue.id, planner.agentId);
     expect(state.chain).toBe("planning");
-    expect(state.contract.reproduction.report).toContain("Prior investigation observations");
+    if (reproducer) expect(state.contract.reproduction.report).toContain("Prior investigation observations");
+    else expect(state.contract.reproduction).toBeUndefined();
     expect(state.contract.sources.find((source: any) => source.key === "acceptance:continue").oracle).toBe(expected);
     command({ type: "phase.complete" });
     put("delivery-plan.rationale", "Restore Continue against the original Expected");
@@ -244,16 +265,16 @@ for (const mode of ["in_place", "worktree"] as const) test(`Bug Fix Team ${mode}
     command({ type: "phase.complete" });
     await finish();
     await expect.poll(() => api.publishedEngineeringIssues(issue.id).then(items => items[0]?.status), { timeout: 70000 }).toBe("done");
-    console.info("Bug Fix Team: native unit accepted against real commit and browser observations");
+    console.info(workflow + " Team: native unit accepted against real commit and browser observations");
     const beforeReview = await api.engineeringOverview(issue.id);
-    console.info("Bug Fix Team review checkpoint", JSON.stringify({ chain: beforeReview.chain, status: beforeReview.status, accepted: Object.keys(beforeReview.requirement.accepted), review: !!beforeReview.requirement.review, active: beforeReview.has_active_run }));
+    console.info(workflow + " Team review checkpoint", JSON.stringify({ chain: beforeReview.chain, status: beforeReview.status, accepted: Object.keys(beforeReview.requirement.accepted), review: !!beforeReview.requirement.review, active: beforeReview.has_active_run }));
     // Review creation and native enqueue are separate persisted scheduler turns.
     await expect.poll(() => api.engineeringOverview(issue.id).then(value => value.requirement.review?.agent_id), { timeout: 70000 }).toBe(reviewer.agentId);
     await begin(issue.id, reviewer.agentId, repairedCommit);
     expect(state.chain).toBe("review");
     expect(state.contract.binding.codeVersion).toBe(repairedCommit);
-    expect(state.contract.subjects).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "expected", content: expected })]));
-    expect(state.contract.evidence.some((item: any) => item.kind === "reproduction")).toBe(true);
+    expect(state.contract.subjects).toEqual(expect.arrayContaining([expect.objectContaining({ kind: workflow === "bug_fix" ? "expected" : "target", content: expected })]));
+    expect(state.contract.evidence.some((item: any) => item.kind === "reproduction")).toBe(!!reproducer);
     const reviewContract = state.contract;
     command({ type: "phase.complete" });
     for (const [index, subject] of reviewContract.subjects.entries())
@@ -262,7 +283,7 @@ for (const mode of ["in_place", "worktree"] as const) test(`Bug Fix Team ${mode}
     put("review.assessment", { summary: "Original saved-state defect is repaired", evidenceBoundary: "Exact local commit and independent Chromium observations; model conclusions are controlled", residualRisk: "No real-provider or packaged-client acceptance" });
     command({ type: "phase.complete" });
     for (const kind of ["outcome", "scope", "implementation", "verification", "risks"])
-      put("review.report-sections", { kind, content: `Bug Fix ${kind}: the original Continue result is preserved in fresh and saved states at ${repairedCommit}. Authenticated human conditions and earlier observations remain retained.` }, kind);
+      put("review.report-sections", { kind, content: `${workflow} ${kind}: the original Continue result is preserved in fresh and saved states at ${repairedCommit}. Authenticated human conditions and earlier observations remain retained.` }, kind);
     command({ type: "phase.complete" });
     command({ type: "phase.complete" });
     expect(state.conclusion.verdict).toBe("report_ready");
@@ -274,7 +295,7 @@ for (const mode of ["in_place", "worktree"] as const) test(`Bug Fix Team ${mode}
     const refreshed = page.waitForResponse(response => response.request().method() === "GET" && new URL(response.url()).pathname === `/api/issues/${issue.id}/engineering`);
     await panel.getByRole("button", { name: "Refresh engineering delivery" }).click();
     const fresh = await (await refreshed).json();
-    console.info("Bug Fix Team reading checkpoint", JSON.stringify({ active: fresh.has_active_run, report: !!fresh.requirement.review?.report_hash, intervention: !!fresh.intervention }));
+    console.info(workflow + " Team reading checkpoint", JSON.stringify({ active: fresh.has_active_run, report: !!fresh.requirement.review?.report_hash, intervention: !!fresh.intervention }));
     await expect(panel.getByRole("heading", { name: "Requirement closure report", exact: true })).toBeVisible();
     const reading = panel.getByRole("button", { name: "I have read it; close requirement", exact: true });
     await expect(reading).toBeEnabled({ timeout: 15000 });
@@ -296,7 +317,7 @@ for (const mode of ["in_place", "worktree"] as const) test(`Bug Fix Team ${mode}
     expect(registeredGit("rev-parse", deliveryBranch)).toBe(repairedCommit);
     expect(registeredGit("show", `${repairedCommit}:index.html`)).toBe(fixed);
     expect(git("status", "--porcelain")).toBe("");
-    expect((await api.engineeringRunStates(issue.id)).map(run => run.agent_id).sort()).toEqual([backlog.agentId, reproducer.agentId, reproducer.agentId, planner.agentId, reviewer.agentId].sort());
+    expect((await api.engineeringRunStates(issue.id)).map(run => run.agent_id).sort()).toEqual([backlog.agentId, ...(reproducer ? [reproducer.agentId, reproducer.agentId] : [backlog.agentId]), planner.agentId, reviewer.agentId].sort());
   }
   finally {
     await context.close();

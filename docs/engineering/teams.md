@@ -155,8 +155,26 @@ second authorization form is needed for a Team's predefined feedback workflow.
 
 ## Verification and remaining boundary
 
+The [Development delivery lifecycle scenario](../../e2e/engineering-team-delivery.spec.ts)
+uses an owned six-role Team with the `develop` definition. A task chooses only its
+project and Team; context asks an authenticated human question and resumes the
+same draft before automatic planning. Planning publishes one native child;
+analysis, development and an independent verifier run as separate native roles.
+The developer creates a real Git commit and captured check receipt, the verifier
+observes fresh/saved page behavior in Chrome, and final Review reconciles the
+original obligations. Premature parent/child Done is refused and the parent can
+close only after reading the exact report. Both in-place and reclaimed-worktree
+modes passed the controlled native acceptance. Queue claims and role conclusions are controlled; no model
+provider or actual historical task is started. The scenario preserves the user's retained Development
+Team and its six runtime bindings.
+
+![Authenticated Development scope choice](assets/development-human-choice.png)
+
+![Development delivery report before human reading](assets/development-report.png)
+
 The built-in Team browser scenario reads the real native list, requires only
-Development delivery and its stored definition, checks their visibility at wide/narrow sizes, checks that
+Development delivery and its stored definition, checks their visibility at
+wide/narrow sizes, checks that
 the predefined workflow is already set and locked, and creates a native Backlog
 task by selecting an existing built-in Team. Missing runtime keeps initial start
 disabled and links to Team settings. Empty runtime settings link to runtime

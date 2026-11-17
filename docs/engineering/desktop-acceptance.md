@@ -6,8 +6,8 @@ not a notarized installer or acceptance of model execution, every workflow,
 updating, external protocol registration, other operating systems or Mobile.
 
 The current local fork `0.8.2-241-gdf08ef700` has passed independent native
-launch and displays all five Teams, with its separate bundle identity and no
-advertised upstream protocol. Its 44,768 packed files passed integrity checks
+launch and displays the Development delivery Team, with its separate bundle
+identity and no advertised upstream protocol. Its 44,768 packed files passed integrity checks
 both before and after ad-hoc signing. The prior `0.8.2-238-gc88b74ba5` archive
 was corrupt and is superseded by this build.
 
@@ -83,7 +83,8 @@ real provider executable. The scenario:
 
 1. Enters the existing local workspace without email or OAuth and confirms the
    isolated Electron data directory.
-2. Navigates **Team → Teams**, showing the five actual predefined Teams.
+2. Navigates **Team → Teams**, showing Development delivery as the only active
+   predefined Team.
 3. Opens **Development delivery → Team settings**, confirms the fixed workflow
    and inherited role/context settings, then cancels without changing the Team.
 4. Creates an owned fixture project and opens **New Issue**. The task asks for
@@ -93,8 +94,8 @@ real provider executable. The scenario:
 5. Saves a Backlog draft assigned to the Develop Team, closes and relaunches the
    same packaged app, and finds the retained task/session again.
 6. Confirms the daemon stayed stopped, no provider sentinel was invoked, no
-   daemon PID/port file was created, the native config is private, and all five
-   Team definitions remain unchanged. `TestApiClient` removes only the owned
+   daemon PID/port file was created, the native config is private, and the
+   Development delivery definition remains unchanged. `TestApiClient` removes only the owned
    draft/project fixtures. The private Desktop profile is retained for inspection.
 
 ```sh
@@ -109,7 +110,7 @@ arguments the test skips; a skipped test is not acceptance. The test's English
 locale is saved only in its isolated renderer; it does not change the shared
 local user's language.
 
-![Five Teams in packaged Desktop](assets/desktop-five-teams.png)
+![Development delivery in packaged Desktop](assets/desktop-development-team.png)
 
 ![Team-owned workflow, roles and context](assets/desktop-team-settings.png)
 

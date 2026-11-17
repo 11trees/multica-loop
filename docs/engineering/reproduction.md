@@ -109,7 +109,7 @@ remote execution and a complete model-driven Bug Fix remain unaccepted.
 
 ## Controlled native Bug Fix Team acceptance
 
-The separate [Team lifecycle scenario](../../e2e/engineering-team-bug-fix.spec.ts)
+The separate [Team lifecycle scenario](../../e2e/engineering-team-delivery.spec.ts)
 creates a native task through the browser with only project/Team selection. An
 isolated fixture-owned Team uses the `bug_fix` preset and seven separate roles;
 the five built-in user Teams and their runtime settings are preserved.

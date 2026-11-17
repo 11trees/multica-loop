@@ -24,8 +24,8 @@ test("packaged local Desktop retains the Development Team and drafts without sta
     let page = await useEnglishDesktop(application, sandbox.profile.directory);
     currentPage = page;
     await page.getByRole("link", {name: "Team", exact: true}).click();
-    await expect(page.getByRole("link", {name: "Teams", exact: true})).toBeVisible({timeout: 25000});
-    await page.getByRole("link", {name: "Teams", exact: true}).click();
+    await expect(page.getByRole("link", {name: /^Teams(?:\s*\d+)?$/})).toBeVisible({timeout: 25000});
+    await page.getByRole("link", {name: /^Teams(?:\s*\d+)?$/}).click();
     for (const team of teams) await expect(page.getByText(team.name, {exact: true}).first()).toBeVisible();
     await page.screenshot({path: testInfo.outputPath("desktop-development-team.png")});
     await page.getByText(develop.name, {exact: true}).first().click();
@@ -59,7 +59,7 @@ test("packaged local Desktop retains the Development Team and drafts without sta
     currentPage = page;
     await expect(page.getByTestId("content").getByRole("button", {name: title, exact: true})).toBeVisible({timeout: 25000});
     await page.getByRole("link", {name: "Team", exact: true}).click();
-    await expect(page.getByRole("link", {name: "Teams", exact: true})).toBeVisible({timeout: 25000});
+    await expect(page.getByRole("link", {name: /^Teams(?:\s*\d+)?$/})).toBeVisible({timeout: 25000});
     expect(await page.evaluate(() => window.daemonAPI.getStatus())).toMatchObject({state: "stopped"});
     await sandbox.expectStopped(page);
     expect((await api.builtinEngineeringTeams())).toEqual(teams);
