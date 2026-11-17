@@ -605,8 +605,10 @@ controls to historical material. Screenshots contain fixture data only:
 
 The actual four local tasks have now passed the local activation protocol with
 the reviewed workspace hash above and six existing local Codex role bindings.
-The source guards remain installed. Only the selected task has started a native run and is running its new context
-stage; the remaining three have no runs. No old
+The source guards remain installed. Only the selected task has started a native run. Its first real Codex context
+run completed at the structured human-answer checkpoint with ten unresolved
+business choices; its provider process exited and its controller is quiesced.
+The remaining three tasks have no runs. No old
 execution status, answer or verification is reused as authority.
 
 The original workspace has uncommitted material, so its included current bytes
