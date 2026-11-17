@@ -5,11 +5,16 @@ scenario against the managed API. This is a locally built, ad-hoc signed app,
 not a notarized installer or acceptance of model execution, every workflow,
 updating, external protocol registration, other operating systems or Mobile.
 
-The controlled scenarios below used `0.8.2-234-gcec625b1c`. The newer local fork
-candidate `0.8.2-238-gc88b74ba5` has the separate bundle identity, no advertised
-upstream protocol and a valid ad-hoc signature, but its standalone launch exits
-before showing a window. That candidate's startup is not accepted. The managed
-local Web entry is available while this desktop startup issue is investigated.
+The current local fork `0.8.2-241-gdf08ef700` has passed independent native
+launch and displays all five Teams, with its separate bundle identity and no
+advertised upstream protocol. Its 44,768 packed files passed integrity checks
+both before and after ad-hoc signing. The prior `0.8.2-238-gc88b74ba5` archive
+was corrupt and is superseded by this build.
+
+One controlled draft scenario restored a blank renderer after relaunch; its
+two fresh-profile reruns passed, including a final run of both Desktop scenarios. Treat this intermittent restore failure as unresolved;
+a passing rerun does not establish restart reliability. The managed local Web
+entry and the independently launched Desktop window are available.
 
 ## Isolated local profile
 
@@ -93,7 +98,7 @@ real provider executable. The scenario:
    draft/project fixtures. The private Desktop profile is retained for inspection.
 
 ```sh
-MULTICA_ENGINEERING_DESKTOP_EXECUTABLE=/absolute/path/Multica.app/Contents/MacOS/Multica \
+MULTICA_ENGINEERING_DESKTOP_EXECUTABLE="/absolute/path/Multica Loop.app/Contents/MacOS/Multica Loop" \
 MULTICA_ENGINEERING_DESKTOP_PROFILE_NEW=/absolute/new/private/acceptance-profile \
 make env-exec ARGS="-- pnpm exec playwright test engineering-desktop.spec.ts"
 ```
@@ -130,7 +135,7 @@ requires both primary and supplemental archive hashes in addition to the
 executable, local authentication and a new profile directory. It never changes
 the saved preparation or activates a historical task.
 
-The local acceptance used packaged version `0.8.2-234-gcec625b1c`, the primary
+The current history acceptance used packaged version `0.8.2-241-gdf08ef700`, the primary
 archive `6d2fef8e221d3dfc1b46c61201c41b265febc2715e73184b98bce4cdb0420d62`
 and supplemental archive
 `9092980eb3a829cac74764db1e831049556d7e8619f8dd53b7823e08d0441235`:
@@ -166,7 +171,7 @@ repository's committed screenshots.
 Run the two Desktop scenarios together with a **new** profile prefix:
 
 ```sh
-MULTICA_ENGINEERING_DESKTOP_EXECUTABLE=/absolute/path/Multica.app/Contents/MacOS/Multica \
+MULTICA_ENGINEERING_DESKTOP_EXECUTABLE="/absolute/path/Multica Loop.app/Contents/MacOS/Multica Loop" \
 MULTICA_ENGINEERING_DESKTOP_PROFILE_NEW=/absolute/new/private/acceptance-profile \
 make env-exec ARGS="-- pnpm exec playwright test engineering-desktop.spec.ts engineering-desktop-history.spec.ts"
 ```
