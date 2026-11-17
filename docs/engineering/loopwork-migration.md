@@ -9,6 +9,10 @@ an email or OAuth login, through the direct-loopback bootstrap described in
 Local identity must remain explicit so issues, runs, decisions, permissions,
 and audit records retain their ownership.
 
+The current rollout keeps only the **Development delivery** Team and accepts
+its complete task lifecycle first. Other predefined Teams are deferred; retain
+their existing archived configuration and history. See [Team scope](teams.md).
+
 The [coverage audit](migration-status.md) maps every source command chain and
 user pipeline to current target evidence and remaining work.
 [Historical record capture](history-migration.md) now preserves the current shared

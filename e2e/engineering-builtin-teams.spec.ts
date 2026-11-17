@@ -2,15 +2,15 @@ import {chromium,expect,test} from "@playwright/test";
 import {randomUUID} from "node:crypto";
 import {TestApiClient} from "./fixtures";
 
-test("local users directly see five real Teams and can draft a task without per-task workflow configuration",async({baseURL},testInfo)=>{
+test("local users directly see the Development Team and can draft a task without per-task workflow configuration",async({baseURL},testInfo)=>{
  test.setTimeout(150000);
  test.skip(process.env.MULTICA_ENGINEERING_ENABLED!=="true" || !process.env.MULTICA_ENGINEERING_BROWSER,"Managed engineering and an explicit browser are required");
  const api=new TestApiClient();await api.loginLocally();
  const workspace=(await api.getWorkspaces()).find(item=>item.slug==="loopwork-local")!;
  api.setWorkspaceId(workspace.id);api.setWorkspaceSlug(workspace.slug);
  const teams=await api.builtinEngineeringTeams();
- expect(teams.map(team=>team.builtin_workflow).sort()).toEqual(["direct","business_analysis","end_to_end","develop","bug_fix"].sort());
- const direct=teams.find(team=>team.builtin_workflow==="direct")!;
+ expect(teams.map(team=>team.builtin_workflow)).toEqual(["develop"]);
+ const develop=teams[0]!;
  const browser=await chromium.launch({executablePath:process.env.MULTICA_ENGINEERING_BROWSER});
  const context=await browser.newContext({viewport:{width:1280,height:1100}});
  context.setDefaultTimeout(20000);await context.addInitScript(()=>localStorage.setItem("multica:chat:isOpen","false"));
@@ -21,7 +21,7 @@ test("local users directly see five real Teams and can draft a task without per-
   await page.goto(`${baseURL}/${workspace.slug}/squads`);
   for(const team of teams)await expect(page.getByText(team.name,{exact:true}).first()).toBeVisible();
   for(const width of [1280,390]){await page.setViewportSize({width,height:1100});await page.screenshot({path:testInfo.outputPath(`builtin-teams-${width}.png`)})}
-  await page.goto(`${baseURL}/${workspace.slug}/squads/${direct.id}`);
+  await page.goto(`${baseURL}/${workspace.slug}/squads/${develop.id}`);
   const section=page.locator("section").filter({has:page.getByRole("heading",{name:"Team settings",exact:true})});
   await expect(section.getByText("Applies to every role Agent in this Team.",{exact:true})).toBeVisible();
   await expect(section.getByRole("button",{name:"Set workflow",exact:true})).toHaveCount(0);
@@ -37,7 +37,7 @@ test("local users directly see five real Teams and can draft a task without per-
   await dialog.getByRole("combobox",{name:"Project",exact:true}).click();await page.getByRole("option",{name:project.title,exact:true}).click();
   await dialog.getByRole("combobox",{name:"Team",exact:true}).click();
   for(const team of teams)await expect(page.getByRole("option",{name:team.name,exact:true})).toBeVisible();
-  await page.getByRole("option",{name:direct.name,exact:true}).click();
+  await page.getByRole("option",{name:develop.name,exact:true}).click();
   await expect(dialog.getByRole("combobox")).toHaveCount(2);
   if(await dialog.getByRole("link",{name:"Configure the Team runtime before starting.",exact:true}).count())await expect(dialog.getByRole("button",{name:"Create and start",exact:true})).toBeDisabled();
   await page.setViewportSize({width:390,height:1100});
@@ -46,6 +46,6 @@ test("local users directly see five real Teams and can draft a task without per-
   await dialog.getByRole("button",{name:"Save draft",exact:true}).click();
   const response=await saved;expect(response.status()).toBe(201);
   const issue=await response.json();await api.trackBuiltinTeamDraft(issue.id);
-  await expect(dialog).toHaveCount(0);expect(issue.assignee_id).toBe(direct.id);expect(issue.status).toBe("backlog");
+  await expect(dialog).toHaveCount(0);expect(issue.assignee_id).toBe(develop.id);expect(issue.status).toBe("backlog");
  }finally{await context.close();await browser.close();await api.cleanup()}
 });

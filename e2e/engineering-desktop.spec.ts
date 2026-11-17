@@ -3,7 +3,7 @@ import {randomUUID} from "node:crypto";
 import {createDesktopSandbox, useEnglishDesktop} from "./desktop-fixture";
 import {TestApiClient} from "./fixtures";
 
-test("packaged local Desktop retains five Teams and drafts without starting a provider", async ({}, testInfo) => {
+test("packaged local Desktop retains the Development Team and drafts without starting a provider", async ({}, testInfo) => {
   test.setTimeout(180000);
   const executable = process.env.MULTICA_ENGINEERING_DESKTOP_EXECUTABLE;
   const directory = process.env.MULTICA_ENGINEERING_DESKTOP_PROFILE_NEW;
@@ -14,7 +14,7 @@ test("packaged local Desktop retains five Teams and drafts without starting a pr
   const workspace = (await api.getWorkspaces()).find(item => item.slug === "loopwork-local")!;
   api.setWorkspaceId(workspace.id); api.setWorkspaceSlug(workspace.slug);
   const teams = await api.builtinEngineeringTeams();
-  expect(teams.map(team => team.builtin_workflow).sort()).toEqual(["direct", "business_analysis", "end_to_end", "develop", "bug_fix"].sort());
+  expect(teams.map(team => team.builtin_workflow)).toEqual(["develop"]);
   const develop = teams.find(team => team.builtin_workflow === "develop")!;
   let application: Awaited<ReturnType<typeof _electron.launch>> | undefined;
   let currentPage: Awaited<ReturnType<Awaited<ReturnType<typeof _electron.launch>>["firstWindow"]>> | undefined;
@@ -27,7 +27,7 @@ test("packaged local Desktop retains five Teams and drafts without starting a pr
     await expect(page.getByRole("link", {name: "Teams", exact: true})).toBeVisible({timeout: 25000});
     await page.getByRole("link", {name: "Teams", exact: true}).click();
     for (const team of teams) await expect(page.getByText(team.name, {exact: true}).first()).toBeVisible();
-    await page.screenshot({path: testInfo.outputPath("desktop-five-teams.png")});
+    await page.screenshot({path: testInfo.outputPath("desktop-development-team.png")});
     await page.getByText(develop.name, {exact: true}).first().click();
     const settings = page.locator("section").filter({has: page.getByRole("heading", {name: "Team settings", exact: true})});
     await expect(settings).toBeVisible();

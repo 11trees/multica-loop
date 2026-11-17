@@ -11,7 +11,7 @@ import (
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
-func TestEngineeringBuiltinTeamsAreActualIndependentTeamsAndPreserveEdits(t *testing.T) {
+func TestEngineeringBuiltinDevelopmentTeamPreservesIndependentRolesAndEdits(t *testing.T) {
 	ctx := context.Background()
 	h := *testHandler
 	worker, err := filepath.Abs("../../../packages/command-chain/dist/worker.mjs")
@@ -38,6 +38,19 @@ func TestEngineeringBuiltinTeamsAreActualIndependentTeamsAndPreserveEdits(t *tes
 	for err := range errors {
 		if err != nil {
 			t.Fatal(err)
+		}
+	}
+	for workflow, roles := range engineeringTeamRoles {
+		if workflow == "develop" {
+			continue
+		}
+		if count := dbfx.Count(t, "SELECT count(*) FROM squad WHERE id=$1", builtinEngineeringID(testWorkspaceID, workflow)); count != 0 {
+			t.Fatalf("bootstrap created a deferred Team: %s", workflow)
+		}
+		for _, role := range roles {
+			if count := dbfx.Count(t, "SELECT count(*) FROM agent WHERE id=$1", builtinEngineeringID(testWorkspaceID, workflow+":"+role)); count != 0 {
+				t.Fatalf("bootstrap created a deferred Team role: %s %s", workflow, role)
+			}
 		}
 	}
 	for _, preset := range builtinEngineeringTeams {
@@ -69,7 +82,7 @@ func TestEngineeringBuiltinTeamsAreActualIndependentTeamsAndPreserveEdits(t *tes
 				t.Fatal("preset must create real unbound role Agents")
 			}
 		}
-		if preset.workflow == "direct" {
+		if preset.workflow == "develop" {
 			definition := state.Profile.Definition
 			definition.MaxReworks = 4
 			if _, err = h.EngineeringWorker.Call(ctx, map[string]any{"action": "team-profile", "actor": actor, "payload": map[string]any{"expected_revision": 1, "definition": definition}}); err != nil {
@@ -77,7 +90,7 @@ func TestEngineeringBuiltinTeamsAreActualIndependentTeamsAndPreserveEdits(t *tes
 			}
 		}
 	}
-	id := builtinEngineeringID(testWorkspaceID, "direct")
+	id := builtinEngineeringID(testWorkspaceID, "develop")
 	if _, err := testPool.Exec(ctx, "UPDATE squad SET name='My Team', archived_at=now() WHERE id=$1", id); err != nil {
 		t.Fatal(err)
 	}

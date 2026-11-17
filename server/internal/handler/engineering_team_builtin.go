@@ -10,11 +10,7 @@ import (
 )
 
 var builtinEngineeringTeams = []struct{ workflow, name string }{
-	{"direct", "直接执行"},
-	{"business_analysis", "业务分析"},
-	{"end_to_end", "端到端交付"},
 	{"develop", "开发交付"},
-	{"bug_fix", "问题修复"},
 }
 
 func builtinEngineeringID(workspace, key string) string {
@@ -25,9 +21,10 @@ func builtinEngineeringWorkflow(workspace, team string) string {
 	if workspace != localWorkspaceID {
 		return ""
 	}
-	for _, preset := range builtinEngineeringTeams {
-		if team == builtinEngineeringID(workspace, preset.workflow) {
-			return preset.workflow
+	// Retained Teams keep their identity even when no longer bootstrapped.
+	for workflow := range engineeringTeamRoles {
+		if team == builtinEngineeringID(workspace, workflow) {
+			return workflow
 		}
 	}
 	return ""

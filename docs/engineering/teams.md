@@ -7,12 +7,17 @@ Projects retain repository/runtime resources.
 
 ## Current delivery goal
 
-Ship five actual built-in Teams in the confirmed local single-user deployment:
-Direct execution, Business analysis, End to End delivery, Development delivery
-and Bug fix. They appear without creating a Squad, choosing a template or
-setting a workflow. Each owns a predefined workflow, independent role Agents
-and balanced policy with two reworks. A missing runtime is configured once on
-the Team; tasks select only their Team, goal, project and materials.
+The current rollout keeps one built-in Team: **Development delivery**. Accept its
+complete task lifecycle first: context, planning, delivery analysis, development,
+independent verification and final review with human reading. Direct execution,
+Business analysis, End to End delivery and Bug fix are deferred. Their existing
+local Teams are archived without deleting role settings, versioned definitions or
+history; no task is transferred to a different Team.
+
+Development delivery appears without creating a Squad, choosing a template or
+setting a workflow. Its six independent role Agents use balanced policy with two
+reworks. A missing runtime is configured once on the Team; tasks select only
+the Team, goal, project and materials.
 
 Keep native Squad IDs and permissions as the underlying Team identity, with no
 extra user-facing entity. Preserve existing Team edits and frozen task versions.
@@ -23,8 +28,8 @@ tests as evidence of an already delivered built-in Team list.
 
 ## Built-in Teams in local mode
 
-With local authentication and engineering enabled, local login initializes five
-real native Teams and their independent native role Agents. Existing local
+With local authentication and engineering enabled, local login initializes the
+Development delivery Team and its six independent native role Agents. Existing local
 sessions receive the same initialization when their owner opens the Team list.
 The IDs are stable per workspace and workflow; retries and simultaneous browser
 entries do not duplicate Teams. Bootstrap creates only missing identities and
@@ -150,8 +155,8 @@ second authorization form is needed for a Team's predefined feedback workflow.
 
 ## Verification and remaining boundary
 
-The built-in Team browser scenario reads the real native list and all five
-stored definitions, checks their visibility at wide/narrow sizes, checks that
+The built-in Team browser scenario reads the real native list, requires only
+Development delivery and its stored definition, checks their visibility at wide/narrow sizes, checks that
 the predefined workflow is already set and locked, and creates a native Backlog
 task by selecting an existing built-in Team. Missing runtime keeps initial start
 disabled and links to Team settings. Empty runtime settings link to runtime
@@ -180,7 +185,7 @@ also covers browser create/start, authenticated reproduction conditions, a real
 repair commit, one published native child, independent Chrome verification,
 automatic final Review and exact reading before native parent Done. Its isolated
 Team uses the same `bug_fix` preset; role conclusions and queue claims are
-controlled, and the user's five built-in Teams remain unconfigured. Both directory
+controlled, and the user's Development delivery Team remains unconfigured. Both directory
 modes are covered; worktree attempts use separate named directories, reclaimed
 before continuation or reading, with the original registered HEAD preserved.
 The final reviewer retains its exact draft/branch proof for reading after cleanup.
@@ -207,7 +212,7 @@ shared-repository ownership retain their own migration requirements.
 
 ![Task Feedback comment selection](assets/team-feedback-capture-390.png)
 
-![Five built-in Teams](assets/builtin-teams-1280.png)
+![Development delivery Team](assets/builtin-teams-1280.png)
 
 ![Built-in Team settings](assets/builtin-team-settings-390.png)
 
