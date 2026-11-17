@@ -203,7 +203,8 @@ also covers browser create/start, authenticated reproduction conditions, a real
 repair commit, one published native child, independent Chrome verification,
 automatic final Review and exact reading before native parent Done. Its isolated
 Team uses the same `bug_fix` preset; role conclusions and queue claims are
-controlled, and the user's Development delivery Team remains unconfigured. Both directory
+controlled. That earlier acceptance left the user's Development delivery Team
+unconfigured; the later authorized rollout binds its six roles to local Codex. Both directory
 modes are covered; worktree attempts use separate named directories, reclaimed
 before continuation or reading, with the original registered HEAD preserved.
 The final reviewer retains its exact draft/branch proof for reading after cleanup.

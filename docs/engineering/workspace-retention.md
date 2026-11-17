@@ -72,7 +72,7 @@ unchanged. The source working directory was never reset, cleaned or committed.
 
 This accepts reconstruction of that acknowledged scope. Ignored/external data,
 other source repositories, live restoration and code/business verification need
-separate acceptance. The four staged native tasks remain inactive.
+separate acceptance. The restore drill itself does not change native task ownership or activity.
 
 ## Local environment retention
 
@@ -88,3 +88,19 @@ binary/untracked/newline paths, modes, deletions, symbolic links, refs, detached
 HEAD, a shallow history with a missing parent, changed scope/content, altered
 payloads and protected destinations. They use local fixtures and never discover
 or launch installed provider CLIs.
+
+## Separately authorized execution checkout
+
+The Development rollout reverified the acknowledged source content and restored
+a fresh checkout from the retained archive. All 296 present working files match
+the source, with its 73 previously untracked paths and one deletion preserved.
+The restored index and history were verified before creating an execution-only
+branch and baseline commit. The original source files, index bytes and Git refs
+stayed unchanged. The live native project resource was then explicitly pointed
+at this clean checkout before any workflow contract or Agent run was created.
+
+The restore receipt still grants no execution authority. The separate human
+request, native history activation, role/runtime bindings and normal task start
+authorize the selected task. Its code version is the new checkout's commit, not
+the old source HEAD. Subsequent implementation and verification must pass their
+ordinary independent evidence and exact report-reading gates.

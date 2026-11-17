@@ -89,8 +89,9 @@ real provider executable. The scenario:
    and inherited role/context settings, then cancels without changing the Team.
 4. Creates an owned fixture project and opens **New Issue**. The task asks for
    its goal, project, Team and materials; its two selectors are Project and Team.
-   With no Team runtime bound, **Create and start** is disabled while **Save
-   draft** remains available.
+   When a Team runtime is missing, **Create and start** is disabled. **Save
+   draft** remains available with either bound or unbound roles; the scenario
+   always saves a draft and never starts the user's runtime.
 5. Saves a Backlog draft assigned to the Develop Team, closes and relaunches the
    same packaged app, and finds the retained task/session again.
 6. Confirms the daemon stayed stopped, no provider sentinel was invoked, no
@@ -123,10 +124,10 @@ events cannot trigger a cold provider probe. The complete Desktop suite passed
 `tab-content.tsx` hook warning). Root script checks passed 152 tests with two
 unrelated gated skips.
 
-The actual four historical tasks remain staged under the source freeze. This
-scenario neither activates them nor binds their six Develop roles. Real model
-quality, full Desktop workflow/recovery lifecycles and final cutover remain
-separate pending acceptance.
+The historical cohort and six Develop role runtimes have since been activated
+and configured through the separately authorized local rollout. This Desktop
+entry scenario does not change their ownership or start a model. Real model
+quality and full Desktop workflow/recovery acceptance remain separate.
 
 ## Historical material and native downloads
 

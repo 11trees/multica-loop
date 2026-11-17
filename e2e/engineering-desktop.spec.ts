@@ -44,7 +44,9 @@ test("packaged local Desktop retains the Development Team and drafts without sta
     for (const team of teams) await expect(page.getByRole("option", {name: team.name, exact: true})).toBeVisible();
     await page.getByRole("option", {name: develop.name, exact: true}).click();
     await expect(dialog.getByRole("combobox")).toHaveCount(2);
-    await expect(dialog.getByRole("button", {name: "Create and start", exact: true})).toBeDisabled();
+    if (await dialog.getByRole("link", {name: "Configure the Team runtime before starting.", exact: true}).count())
+      await expect(dialog.getByRole("button", {name: "Create and start", exact: true})).toBeDisabled();
+    await expect(dialog.getByRole("button", {name: "Save draft", exact: true})).toBeEnabled();
     await dialog.screenshot({path: testInfo.outputPath("desktop-team-draft.png")});
     const saved = page.waitForResponse(response => response.url().endsWith("/api/issues") && response.request().method() === "POST");
     await dialog.getByRole("button", {name: "Save draft", exact: true}).click();

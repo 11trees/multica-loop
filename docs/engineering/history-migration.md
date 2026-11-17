@@ -603,9 +603,23 @@ controls to historical material. Screenshots contain fixture data only:
 
 ![Activated correspondence on a narrow screen](assets/history-activated-task-narrow.png)
 
-The actual four local tasks remain staged and held. Their six Develop roles
-still have no runtime binding; no actual activation, project resource or model
-run is claimed by these controlled tests.
+The actual four local tasks have now passed the local activation protocol with
+the reviewed workspace hash above and six existing local Codex role bindings.
+The source guards remain installed. Only the selected task has started a native run and is running its new context
+stage; the remaining three have no runs. No old
+execution status, answer or verification is reused as authority.
+
+The original workspace has uncommitted material, so its included current bytes
+were reconstructed from the pinned [workspace retention](workspace-retention.md)
+into a new execution checkout. A baseline commit exists only in that checkout,
+whose content matches all retained working bytes, including the untracked files
+and deletion. The existing native project's directory resource was separately
+updated before any configured workflow or Agent run; its original activation
+receipt and the source mapping remain retained. The original working contents,
+index and Git refs were preserved. The native task now uses the clean checkout
+and frozen Team, with normal independent verification and report-reading gates.
+Activation, setup and an initial context run do not accept the feature, all
+real-provider stages or final migration cutover.
 
 ## Supplementary databases and files
 
