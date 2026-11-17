@@ -1,5 +1,6 @@
 import { homedir } from "os";
 import { join } from "path";
+import { desktopProfileSuffix } from "./desktop-profile";
 
 // Keep the Go impl in sync: server/cmd/multica/cmd_daemon.go healthPortForProfile.
 export const DEFAULT_HEALTH_PORT = 19514;
@@ -29,8 +30,9 @@ export function deriveProfileName(targetUrl: string): string {
   try {
     const url = new URL(targetUrl);
     const host = url.host.replace(/:/g, "-").toLowerCase();
-    return `desktop-${host}`;
+    return `desktop-${host}${desktopProfileSuffix()}`;
   } catch {
+    if (desktopProfileSuffix()) throw new Error("An isolated Desktop profile requires a valid target API URL");
     return "desktop";
   }
 }

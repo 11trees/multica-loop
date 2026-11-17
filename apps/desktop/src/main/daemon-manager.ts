@@ -14,8 +14,8 @@ import {
   unwatchFile,
   type StatsListener,
 } from "fs";
-import { join } from "path";
-import { homedir, hostname } from "os";
+import { dirname, join } from "path";
+import { hostname } from "os";
 import type {
   DaemonStatus,
   DaemonPrefs,
@@ -59,10 +59,14 @@ import {
   type AuthProbeResult,
 } from "./daemon-auth-probe";
 import { daemonSpawnEnv } from "./daemon-spawn-env";
+import {
+  desktopDaemonDefaultPreferences,
+  desktopDaemonPreferencesPath,
+} from "./desktop-profile";
 import { focusEnvironmentAt, type FocusEnvironmentResult } from "./environment-focus";
 
 const POLL_INTERVAL_MS = 5_000;
-const PREFS_PATH = join(homedir(), ".multica", "desktop_prefs.json");
+const PREFS_PATH = desktopDaemonPreferencesPath();
 const LOG_TAIL_RETRY_MS = 2_000;
 const LOG_TAIL_MAX_RETRIES = 5;
 // How long a start may sit in "starting" (with no /health) before we probe the
@@ -82,7 +86,7 @@ const HEALTH_PROBE_TIMEOUT_MS = 2_000;
 // misses this second independent window is no longer treated as merely busy.
 const RECOVERY_HEALTH_PROBE_TIMEOUT_MS = 10_000;
 
-const DEFAULT_PREFS: DaemonPrefs = { autoStart: true, autoStop: false };
+const DEFAULT_PREFS: DaemonPrefs = desktopDaemonDefaultPreferences();
 
 // Always a resolved Desktop-owned profile. "Not resolved yet" is represented by
 // `null` at every call site, never by an empty name — see daemon-profile.ts.
@@ -292,11 +296,11 @@ async function writeProfileConfig(
   cfg: Record<string, unknown>,
 ): Promise<void> {
   const op = async () => {
-    await mkdir(profileDir(profile), { recursive: true });
+    await mkdir(profileDir(profile), { recursive: true, mode: 0o700 });
     await writeFile(
       profileConfigPath(profile),
       JSON.stringify(cfg, null, 2),
-      "utf-8",
+      { encoding: "utf-8", mode: 0o600 },
     );
   };
   const next = configWriteChain.catch(() => {}).then(op);
@@ -828,9 +832,9 @@ async function loadPrefs(): Promise<DaemonPrefs> {
 }
 
 async function savePrefs(prefs: DaemonPrefs): Promise<void> {
-  const dir = join(homedir(), ".multica");
+  const dir = dirname(PREFS_PATH);
   await mkdir(dir, { recursive: true });
-  await writeFile(PREFS_PATH, JSON.stringify(prefs, null, 2), "utf-8");
+  await writeFile(PREFS_PATH, JSON.stringify(prefs, null, 2), { encoding: "utf-8", mode: 0o600 });
 }
 
 async function clearToken(): Promise<void> {
@@ -923,62 +927,9 @@ async function probeLocalRuntimes(): Promise<LocalRuntimeProbe> {
     return successfulRuntimeProbe(health.agents ?? [], true);
   }
 
-  const bin = await resolveCliBinary();
-  if (!bin) return { probeResult: "error" };
-  const active = await ensureActiveProfile();
-  if (!active) return { probeResult: "error" };
-  return new Promise((resolve) => {
-    execFile(
-      bin,
-      ["daemon", "probe-runtimes", ...profileArgs(active.name)],
-      { timeout: 15_000, env: desktopSpawnEnv(), maxBuffer: 64 * 1024 },
-      (error, stdout) => {
-        if (error) {
-          resolve({ probeResult: "error" });
-          return;
-        }
-        try {
-          const parsed = JSON.parse(stdout) as {
-            probe_result?: unknown;
-            runtime_count?: unknown;
-            provider_summary?: unknown;
-          };
-          if (
-            parsed.probe_result !== "success" ||
-            typeof parsed.runtime_count !== "number" ||
-            !parsed.provider_summary ||
-            typeof parsed.provider_summary !== "object" ||
-            Array.isArray(parsed.provider_summary)
-          ) {
-            resolve({ probeResult: "error" });
-            return;
-          }
-          const providers: string[] = [];
-          for (const [provider, count] of Object.entries(
-            parsed.provider_summary as Record<string, unknown>,
-          )) {
-            if (
-              !Number.isInteger(count) ||
-              (count as number) < 0 ||
-              (count as number) > 1000
-            ) {
-              resolve({ probeResult: "error" });
-              return;
-            }
-            providers.push(...Array<string>(count as number).fill(provider));
-          }
-          const probe = successfulRuntimeProbe(providers, false);
-          resolve(
-            probe.runtimeCount === parsed.runtime_count
-              ? probe
-              : { probeResult: "error" },
-          );
-        } catch {
-          resolve({ probeResult: "error" });
-        }
-      },
-    );
-  });
+  // Background usage reporting observes a running daemon; it never discovers
+  // installed provider CLIs or accounts just because a client logged in.
+  return { probeResult: "error" };
 }
 
 // Env passed to every CLI child so the daemon process knows it was spawned

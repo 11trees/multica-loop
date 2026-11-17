@@ -96,6 +96,16 @@ describe("desktop quit uses the CLI lifecycle", () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
     vi.spyOn(console, "warn").mockImplementation(() => {});
   });
+
+  it("observes running runtime metadata without discovering providers when stopped", async () => {
+    await setup();
+    context.health.mockResolvedValue(null);
+    expect(await context.handlers.get("daemon:probe-runtimes")!({})).toEqual({probeResult:"error"});
+    expect(context.exec).not.toHaveBeenCalled();
+    context.health.mockResolvedValue({status:"running",agents:["codex","codex","invalid provider"]});
+    expect(await context.handlers.get("daemon:probe-runtimes")!({})).toEqual({probeResult:"success",runtimeCount:2,providerSummary:{codex:2},onlineCount:2,offlineCount:0});
+    expect(context.exec).not.toHaveBeenCalled();
+  });
   afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); vi.restoreAllMocks(); });
 
   it("leaves an already prevented quit to the Windows updater", async () => {

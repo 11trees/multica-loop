@@ -9,6 +9,8 @@ import {
   screen,
 } from "electron";
 import { homedir } from "os";
+import { mkdirSync } from "node:fs";
+import { desktopProfileDirectory } from "./desktop-profile";
 import { join } from "path";
 import { pathToFileURL } from "url";
 import { electronApp, optimizer, is } from "@electron-toolkit/utils";
@@ -138,7 +140,7 @@ const BUNDLED_ICON_PATH = join(__dirname, "../../resources/icon.png").replace(
 // before any child_process.spawn / execFile call in the main process —
 // ES module imports are hoisted, so this block executes before createMainWindow
 // or any daemon-manager spawn.
-if (process.platform !== "win32") {
+if (process.platform !== "win32" && desktopProfileDirectory() === null) {
   fixPath();
   // Fallback: ensure common install locations are on PATH when fix-path came
   // up short (broken shell rc, non-interactive $SHELL, missing entries).
@@ -707,6 +709,8 @@ const DEV_APP_NAME = process.env.DESKTOP_APP_SUFFIX
   ? `Multica Canary ${process.env.DESKTOP_APP_SUFFIX}`
   : "Multica Canary";
 
+const isolatedProfileDirectory = desktopProfileDirectory();
+
 if (is.dev) {
   app.setName(DEV_APP_NAME);
   app.setPath("userData", join(app.getPath("appData"), DEV_APP_NAME));
@@ -719,15 +723,20 @@ if (is.dev) {
   // productName / the build pipeline. Must run before requestSingleInstanceLock().
   app.setName("Multica");
 }
+if (isolatedProfileDirectory) {
+  const userData = join(isolatedProfileDirectory, "electron");
+  mkdirSync(userData, { recursive: true, mode: 0o700 });
+  app.setPath("userData", userData);
+}
 
 // --- Protocol registration -----------------------------------------------
 
-if (process.defaultApp) {
+if (!isolatedProfileDirectory && process.defaultApp) {
   // In dev, register with the path to the electron binary + app path
   app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [
     app.getAppPath(),
   ]);
-} else {
+} else if (!isolatedProfileDirectory) {
   app.setAsDefaultProtocolClient(PROTOCOL);
 }
 

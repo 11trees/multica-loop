@@ -2,15 +2,23 @@
 import { mkdtemp, writeFile } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("electron", () => ({
   app: { getPath: () => tmpdir() },
 }));
 
 import { loadRuntimeConfig } from "./runtime-config-loader";
+afterEach(()=>vi.unstubAllEnvs());
 
 describe("loadRuntimeConfig", () => {
+  it("requires isolated production config rather than falling back to the cloud",async()=>{
+    const dir=await mkdtemp(join(tmpdir(),"desktop-isolated-config-"));
+    vi.stubEnv("MULTICA_DESKTOP_PROFILE_DIR",dir);
+    const missing=await loadRuntimeConfig({isDev:false,env:{}});expect(missing.ok).toBe(false);
+    await writeFile(join(dir,"desktop.json"),JSON.stringify({schemaVersion:1,apiUrl:"http://localhost:18729",appUrl:"http://localhost:13649"}));
+    const configured=await loadRuntimeConfig({isDev:false,env:{}});expect(configured).toMatchObject({ok:true,config:{apiUrl:"http://localhost:18729",appUrl:"http://localhost:13649",wsUrl:"ws://localhost:18729/ws"}});
+  });
   it("uses dev env and ignores desktop.json during electron-vite dev", async () => {
     const dir = await mkdtemp(join(tmpdir(), "multica-desktop-config-"));
     const configPath = join(dir, "desktop.json");

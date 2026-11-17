@@ -37,6 +37,7 @@ export function DesktopClientUsageReporter({ apiUrl }: { apiUrl: string }) {
     inFlight.current = true;
     try {
       await window.daemonAPI.setTargetApiUrl(apiUrl);
+      if ((await window.daemonAPI.getStatus()).state !== "running") return;
       const installID = getOrCreateInstallId(defaultStorage);
       const probe = await window.daemonAPI.probeRuntimes();
       if (userIDRef.current !== activeUserID) {

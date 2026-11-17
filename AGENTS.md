@@ -148,6 +148,7 @@ Workspace-scoped queries filter by `workspace_id`; membership gates access and `
 
 ## Desktop Rules
 
+- Explicit `MULTICA_DESKTOP_PROFILE_DIR` isolates Electron session/preferences and runtime configuration, with a directory-hashed Desktop-owned native CLI profile. Initialize new loopback profiles through `apps/desktop/scripts/local-profile.mjs`; keep daemon auto-start and automatic updates disabled for local acceptance, require explicit runtime config and launch PATH, and do not change `HOME` or register the isolated app as the system protocol handler. Background login/focus usage reporting may summarize running-daemon metadata but must not discover installed provider tools/accounts. See [local packaged acceptance](docs/engineering/desktop-acceptance.md).
 - Workspace session routes are tab destinations. Pre-workspace one-shot flows (create workspace, accept invite) use `WindowOverlay` in `apps/desktop/src/renderer/src/stores/window-overlay-store.ts`, not new routes. Stale workspace tabs heal by dropping stale tab groups.
 - Workspace route layouts own `setCurrentWorkspace(slug, uuid)` from `@multica/core/platform`; leaving workspace context calls `setCurrentWorkspace(null, null)`.
 - Cross-workspace navigation uses the adapter's `switchWorkspace(slug, targetPath)` flow; do not bypass it with direct router navigation.

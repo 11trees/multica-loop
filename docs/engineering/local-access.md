@@ -1,7 +1,7 @@
 # Local single-user access
 
 The confirmed deployment target is one user on their own machine. Web, CLI,
-and development Desktop share that local identity and workspace.
+and Desktop share that local identity and workspace.
 
 Set `MULTICA_LOCAL_AUTH=true` in the checkout's ignored `.env`, then restart it
 through `make down` followed by `make up C=api,web`. Open the local Web address
@@ -53,8 +53,10 @@ for a passing integration run.
 
 Frontend coverage: strict capability parsing, malformed credential rejection,
 cookie/token storage, automatic entry, retryable errors, and root navigation.
-The shared component/store tests cover the Desktop code path; an installed
-Desktop build remains a separate acceptance check.
+The shared component/store tests cover the Desktop code path. A local packaged
+macOS arm64 app also passed the isolated Team/draft/relaunch scenario described
+in [Desktop acceptance](desktop-acceptance.md); notarized installers and model
+execution remain separate acceptance checks.
 
 `e2e/local-auth.spec.ts` is enabled only when `MULTICA_LOCAL_AUTH=true`. Run it
 against the managed environment:
@@ -67,5 +69,5 @@ It starts a browser context with no credentials, enters from `/`, creates an
 issue through the UI (exercising the cookie/CSRF write path), reloads the issue,
 and checks that the browser called only `/auth/local`. `TestApiClient` removes
 the test issue afterwards. The test attaches a screenshot of the running app.
-This workflow has passed on the local Web environment; packaged Desktop and
-remote/LAN access are not included in that evidence.
+This workflow has passed on the local Web environment. Packaged Desktop has its
+own bounded evidence above; remote/LAN access is not included.

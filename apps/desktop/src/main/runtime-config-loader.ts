@@ -1,6 +1,6 @@
 import { app } from "electron";
 import { readFile } from "fs/promises";
-import { join } from "path";
+import { desktopProfileDirectory, desktopRuntimeConfigPath } from "./desktop-profile";
 import {
   DEFAULT_RUNTIME_CONFIG,
   parseRuntimeConfig,
@@ -29,6 +29,12 @@ export async function loadRuntimeConfig(options: {
     return { ok: true, config: parseRuntimeConfig(raw) };
   } catch (err) {
     if (isMissingFileError(err)) {
+      if (desktopProfileDirectory()) {
+        return {
+          ok: false,
+          error: { message: `Missing ${configPath}: isolated Desktop profiles require their own runtime configuration` },
+        };
+      }
       return { ok: true, config: { ...DEFAULT_RUNTIME_CONFIG } };
     }
     return {
@@ -41,7 +47,7 @@ export async function loadRuntimeConfig(options: {
 }
 
 export function desktopConfigPath(): string {
-  return join(app.getPath("home"), ".multica", "desktop.json");
+  return desktopRuntimeConfigPath(app.getPath("home"));
 }
 
 function isMissingFileError(err: unknown): boolean {
