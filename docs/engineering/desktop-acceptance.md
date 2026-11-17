@@ -94,3 +94,60 @@ The actual four historical tasks remain staged under the source freeze. This
 scenario neither activates them nor binds their six Develop roles. Real model
 quality, full Desktop workflow/recovery lifecycles and final cutover remain
 separate pending acceptance.
+
+## Historical material and native downloads
+
+`e2e/engineering-desktop-history.spec.ts` exercises the current host-pinned
+archives through the same packaged app, using the isolated Desktop fixture. It
+requires both primary and supplemental archive hashes in addition to the
+executable, local authentication and a new profile directory. It never changes
+the saved preparation or activates a historical task.
+
+The local acceptance used packaged version `0.8.2-234-gcec625b1c`, the primary
+archive `6d2fef8e221d3dfc1b46c61201c41b265febc2715e73184b98bce4cdb0420d62`
+and supplemental archive
+`9092980eb3a829cac74764db1e831049556d7e8619f8dd53b7823e08d0441235`:
+
+- **Work → LoopWork history** displayed the 38-record primary catalog. An
+  original-ID search opened one of the four staged tasks and an original
+  document. Its source text matched the native API exactly, and the same
+  document remained selected after a renderer reload.
+- **View material** retained the exact frozen packet, saved preparation and
+  staged native-task link. Opening that link reached its corresponding native
+  task with the migration-pending notice. The Desktop Back button returned to
+  its original historical task. The preparation offered no start/run/Done/save
+  action and remained unchanged after the walk-through.
+- **Download JSON** completed through Electron's native download session. The
+  downloaded package matched the pinned API packet, including its source,
+  sections and original ownership.
+- **Supplementary history** showed the catalog of twelve available historical
+  databases and 225 files. One database-scoped task marked as additional to the
+  primary archive opened with its original description and survived a renderer
+  reload; it supplied no migration-preparation surface.
+- An original reference-inventory file downloaded through the same native
+  session. Its byte count and independently computed SHA-256 matched the
+  catalog. Its retained `execution_authorized` field stayed false. The private
+  profile retains both downloaded files and `history-acceptance.json`.
+
+The harness supplies the two download destinations inside its own private
+profile through Electron's `will-download` hook. This verifies native download
+completion and original bytes; it does not accept manual interaction with the
+operating system's Save dialog. Original task/document/file contents and failure
+screenshots stay in private local profiles or ignored test output, outside the
+repository's committed screenshots.
+
+Run the two Desktop scenarios together with a **new** profile prefix:
+
+```sh
+MULTICA_ENGINEERING_DESKTOP_EXECUTABLE=/absolute/path/Multica.app/Contents/MacOS/Multica \
+MULTICA_ENGINEERING_DESKTOP_PROFILE_NEW=/absolute/new/private/acceptance-profile \
+make env-exec ARGS="-- pnpm exec playwright test engineering-desktop.spec.ts engineering-desktop-history.spec.ts"
+```
+
+The Team scenario uses the given directory; the history scenario appends
+`-history`, so their sessions/native profiles remain separate. The shared
+fixture rejects existing profiles and occupied native health ports, installs
+only test-owned provider sentinels, and checks stopped-daemon state. No real
+provider is discovered or launched. This is bounded desktop access to retained
+history, not acceptance of every record, external reference, original model
+judgment or final native ownership transfer.
