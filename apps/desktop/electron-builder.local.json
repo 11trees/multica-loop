@@ -1,0 +1,9 @@
+{
+  "extends": "./electron-builder.yml",
+  "appId": "ai.loopwork.multica.local",
+  "productName": "Multica Loop",
+  "extraMetadata": {"productName": "Multica Loop"},
+  "protocols": [],
+  "publish": null,
+  "mac": {"notarize": false, "identity": null}
+}

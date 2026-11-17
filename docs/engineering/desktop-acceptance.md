@@ -16,7 +16,7 @@ node apps/desktop/scripts/local-profile.mjs \
   --app-url http://127.0.0.1:13649
 
 MULTICA_DESKTOP_PROFILE_DIR=/absolute/new/private/desktop-profile \
-  apps/desktop/dist/mac-arm64/Multica.app/Contents/MacOS/Multica
+  "apps/desktop/dist/mac-arm64/Multica Loop.app/Contents/MacOS/Multica Loop"
 ```
 
 Use the current managed environment's ports. The initializer only accepts
@@ -25,6 +25,19 @@ private configuration files, disables daemon auto-start and automatic updates,
 and places Electron preferences/session data under `electron/`. Missing runtime
 configuration in an explicitly isolated profile is an error; it never silently
 connects that profile to the cloud default.
+
+The fork's local build uses its own macOS bundle identity and **Multica Loop**
+product name so it can coexist with an installed upstream Multica app. Build it
+from the Desktop workspace with the local builder configuration:
+
+```sh
+CSC_IDENTITY_AUTO_DISCOVERY=false pnpm -C apps/desktop package -- \
+  --mac --arm64 --dir --publish never --config electron-builder.local.json
+codesign --force --deep --sign - "apps/desktop/dist/mac-arm64/Multica Loop.app"
+```
+
+This configuration declares no upstream `multica://` protocol or publishing
+channel. Continue using the explicit isolated profile when launching it.
 
 The native Multica CLI profile remains under
 `~/.multica/profiles/desktop-<api-host>-<profile-directory-hash>/`. It has a
