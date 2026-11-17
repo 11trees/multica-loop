@@ -45,6 +45,14 @@ codesign --force --deep --sign - "apps/desktop/dist/mac-arm64/Multica Loop.app"
 This configuration declares no upstream `multica://` protocol or publishing
 channel. Continue using the explicit isolated profile when launching it.
 
+Keep included source and build output unchanged while packaging. ASAR records
+file sizes before streaming payloads; a concurrent edit can shift later file
+offsets even though electron-builder exits successfully. The local build excludes
+development configs/scripts and runs an after-pack gate that parses the actual
+entry/version and checks the SHA-256 of every packed file against the archive
+manifest. A mismatch fails the package before it can be treated as launchable.
+Unpacked native executables can change during signing and are checked separately.
+
 The native Multica CLI profile remains under
 `~/.multica/profiles/desktop-<api-host>-<profile-directory-hash>/`. It has a
 separate name and private local authentication file. It is not a model-provider

@@ -318,6 +318,9 @@ importers:
       '@electron-toolkit/tsconfig':
         specifier: ^2.0.0
         version: 2.0.0(@types/node@25.5.0)
+      '@electron/asar':
+        specifier: 3.4.1
+        version: 3.4.1
       '@multica/eslint-config':
         specifier: workspace:*
         version: link:../../packages/eslint-config
