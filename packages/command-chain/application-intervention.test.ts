@@ -527,13 +527,14 @@ it("round-trips a bound continuation hold through the private worker without a q
  expect(await invoke(host,"execution-permission")).toEqual({allowed:false});
 },15000);
 
-for(const stage of ["analysis","development"] as const)it(`settles an interrupted ${stage} handoff from the original completed draft`,async()=>{
+for(const stage of ["analysis","development"] as const)for(const reclaimed of stage==="analysis"?[false,true]:[false])it(`settles an interrupted ${stage} handoff from the original completed draft: reclaimed=${reclaimed}`,async()=>{
  const development=await readFile(new URL("./definitions/development.yaml",import.meta.url),"utf8"),analysis=await readFile(new URL("./definitions/analysis.yaml",import.meta.url),"utf8");app.close();app=new EngineeringApplication(database,definition,development,analysis);
  const source={key:"original",kind:"acceptance",description:"Original reader behavior",oracle:"Observe original reader entry",sourceRef:"README.md"},unit={key:"reader",title:"Reader",actor:"Reader",trigger:"Open entry",observableOutcome:"Original content",acceptance:"Original content",sourceRefs:[{key:source.key,kind:source.kind,content:source.description,sourceRef:source.sourceRef}],dependsOn:[]};
  await invoke(human,"configure",{expected_revision:0,agent_id:randomUUID(),developer_agent_id:stage==="development"?agentId:randomUUID(),...(stage==="analysis"?{analyst_agent_id:agentId,unit}:{implementation_guidance:"Preserve original reader outcome"}),repository_path:repository,sources:[source]});
  await invoke({...owner,kind:"daemon"},"bind",{work_dir:repository,mode:"in_place",overlays:[]});await invoke(owner,"start");await invoke(owner,"intervention-request",body);
  const target=await handoffTarget(),reservation=hostHandoffReservationFixture(target,await invoke(host,"repair-handoff-prepare",target)),application=handoffApplicationSchema.parse(await invoke(host,"repair-handoff-stage",reservation)),ready=handoffReadySchema.parse(await invoke(host,"repair-handoff-ready",application)),successor={...owner,attemptId:`${ready.continuation.task_id}:999999`};
- await invoke({...successor,kind:"daemon"},"bind",{work_dir:repository,mode:"in_place",overlays:[]});let state=z.object({draft:draftSchema}).parse(await invoke(successor,"start"));const command=async(command:unknown)=>{state=z.object({draft:draftSchema}).parse(await invoke(successor,"command",{expected_sequence:state.draft.sequence,command}));};
+ const worktree=join(directory,"analysis-settlement");if(reclaimed)execFileSync("git",["-C",repository,"worktree","add","-qb","analysis-settlement",worktree]);
+ await invoke({...successor,kind:"daemon"},"bind",{work_dir:reclaimed?worktree:repository,mode:reclaimed?"worktree":"in_place",overlays:[]});let state=z.object({draft:draftSchema}).parse(await invoke(successor,"start"));const command=async(command:unknown)=>{state=z.object({draft:draftSchema}).parse(await invoke(successor,"command",{expected_sequence:state.draft.sequence,command}));};
  await command({type:"phase.complete"});
  if(stage==="analysis"){
   await command({type:"artifact.put",ref:"delivery-analysis.impacts",key:"reader",content:"area: Reader\nfinding: Preserve original entry\ndisposition: preserve\nevidence: README.md:1"});await command({type:"phase.complete"});await command({type:"phase.complete"});await command({type:"phase.complete"});
@@ -549,6 +550,7 @@ for(const stage of ["analysis","development"] as const)it(`settles an interrupte
  db.exec("CREATE TRIGGER interrupted_owner_settlement BEFORE UPDATE ON engineering_contract BEGIN SELECT RAISE(ABORT,'owner write interrupted'); END");
  await expect(command({type:"phase.complete",confirmation:"Original evidence checked"})).rejects.toThrow(/owner write interrupted/);db.exec("DROP TRIGGER interrupted_owner_settlement");
  const saved=String(db.prepare("SELECT payload FROM chain_drafts WHERE id=?").get(state.draft.id)!.payload);expect(draftSchema.parse(JSON.parse(saved)).status).toBe("completed");expect(db.prepare("SELECT payload FROM engineering_contract").get()!.payload).toBe(root);
+ if(reclaimed)execFileSync("git",["-C",repository,"worktree","remove",worktree]);
  app.close();app=new EngineeringApplication(database,definition,development,analysis);
  const pin={target_hash:ready.target_hash,application_hash:ready.application_hash,ready_hash:ready.hash},observed=z.object({settlement:repairBusinessSettlementSchema}).parse(await invoke(host,"repair-business-progress",pin));
  expect(observed.settlement.chain).toBe(stage==="analysis"?"delivery-analysis":"development");
@@ -571,22 +573,58 @@ it("settles an interrupted failed Test without converting its verdict into succe
  expect(await invoke(human,"overview")).toMatchObject({result:{verdict:"failed"},rework:{stop_reason:"manual"}});db.close();
 });
 
-for(const reclaimed of [false,true])it(`settles a retained execution worktree and refuses a reclaimed one: reclaimed=${reclaimed}`,async()=>{
- const h=await recoveredProgress("verification",false),worktree=join(directory,"completed-tree");execFileSync("git",["-C",repository,"worktree","add","-qb","completed-settlement",worktree]);
- await invoke(h.daemon,"bind",{work_dir:worktree,mode:"worktree",overlays:[]});const completed=await finishRecoveredVerification(h.successor),db=new DatabaseSync(database),root=JSON.parse(String(db.prepare("SELECT payload FROM engineering_contract").get()!.payload));delete root.verificationExecution;db.prepare("UPDATE engineering_contract SET payload=?").run(JSON.stringify(root));
- const observed=z.object({settlement:repairBusinessSettlementSchema}).parse(await invoke(host,"repair-business-progress",h.pin)),saved=String(db.prepare("SELECT payload FROM chain_drafts WHERE id=?").get(completed.id)!.payload);
- if(reclaimed){
-  execFileSync("git",["-C",repository,"worktree","remove",worktree]);await expect(invoke(host,"repair-business-settle",observed)).rejects.toThrow();
-  expect(db.prepare("SELECT payload FROM engineering_contract").get()!.payload).toBe(JSON.stringify(root));expect(db.prepare("SELECT count(*) AS n FROM engineering_repair_business_settlement").get()!.n).toBe(0);
+for(const state of ["present","reclaimed-passed","reclaimed-failed","changed-ref","changed-during-write","deleted-ref","process-active"] as const)it(`settles only an unchanged completed readonly worktree: ${state}`,async()=>{
+ const h=await recoveredProgress("verification",false),worktree=join(directory,"completed-tree"),branch="refs/heads/completed-settlement";
+ execFileSync("git",["-C",repository,"worktree","add","-qb","completed-settlement",worktree]);
+ const executionPath=await realpath(worktree);
+ await invoke(h.daemon,"bind",{work_dir:worktree,mode:"worktree",overlays:[]});
+ const db=new DatabaseSync(database),root=String(db.prepare("SELECT payload FROM engineering_contract").get()!.payload);
+ db.exec("CREATE TRIGGER interrupted_tree_settlement BEFORE UPDATE ON engineering_contract BEGIN SELECT RAISE(ABORT,'readonly owner write interrupted'); END");
+ await expect(finishRecoveredVerification(h.successor,state==="reclaimed-failed"?"failed":"passed")).rejects.toThrow(/readonly owner write interrupted/);
+ db.exec("DROP TRIGGER interrupted_tree_settlement");
+ const completed=draftSchema.parse(JSON.parse(String(db.prepare("SELECT payload FROM chain_drafts WHERE id=?").get(h.application.draft_id!)!.payload))),saved=JSON.stringify(completed);
+ expect(completed.status).toBe("completed");expect(db.prepare("SELECT payload FROM engineering_contract").get()!.payload).toBe(root);
+ const observed=z.object({settlement:repairBusinessSettlementSchema}).parse(await invoke(host,"repair-business-progress",h.pin));
+ if(state!=="present")execFileSync("git",["-C",repository,"worktree","remove",worktree]);
+ if(state==="changed-ref"){
+  const commit=execFileSync("git",["-C",repository,"commit-tree",`${completed.binding.codeVersion}^{tree}`,"-p",completed.binding.codeVersion,"-m","Different retained commit"],{encoding:"utf8"}).trim();
+  execFileSync("git",["-C",repository,"update-ref",branch,commit]);
+ }else if(state==="deleted-ref")execFileSync("git",["-C",repository,"update-ref","-d",branch]);
+ else if(state==="process-active")db.prepare("INSERT INTO engineering_process VALUES(?,?,?,?,?,?)").run(randomUUID(),human.workspaceId,human.issueId,h.successor.attemptId,"running","{}");
+ app.close();app=new EngineeringApplication(database,definition);
+ if(state==="changed-during-write"){
+  const changed=execFileSync("git",["-C",repository,"commit-tree",`${completed.binding.codeVersion}^{tree}`,"-p",completed.binding.codeVersion,"-m","Moved during owner settlement"],{encoding:"utf8"}).trim();
+  const injected=(app as unknown as {db:DatabaseSync}).db;
+  injected.function("moveReadonlyBranch",()=>{execFileSync("git",["-C",repository,"update-ref",branch,changed]);return 0;});
+  injected.exec("CREATE TRIGGER move_readonly_branch AFTER UPDATE ON engineering_contract BEGIN SELECT moveReadonlyBranch(); END");
+ }
+ if(["changed-ref","changed-during-write","deleted-ref","process-active"].includes(state)){
+  await expect(invoke(host,"repair-business-settle",observed)).rejects.toThrow();
+  expect(db.prepare("SELECT payload FROM engineering_contract").get()!.payload).toBe(root);expect(db.prepare("SELECT count(*) AS n FROM engineering_repair_business_settlement").get()!.n).toBe(0);
  }else{
   expect(await invoke(host,"repair-business-settle",observed)).toEqual({settled:true});expect(await invoke(host,"repair-business-progress",h.pin)).toMatchObject({progress:{applied:true}});
+  expect(await invoke(host,"repair-business-settle",observed)).toEqual({settled:true});
+  const applied=JSON.parse(String(db.prepare("SELECT payload FROM engineering_contract").get()!.payload));
+  expect(applied.verificationExecution).toMatchObject({repositoryPath:executionPath,mode:"worktree",branchRef:branch,attemptId:h.successor.attemptId});
+  if(state==="reclaimed-failed"){expect(applied.failure.decision).toBe("manual");await expect(invoke(host,"completion")).rejects.toThrow(/verification failed/);}
+  else if(state==="reclaimed-passed"){
+   expect(await invoke(host,"completion")).toMatchObject({allowed:true});
+   const changed=execFileSync("git",["-C",repository,"commit-tree",`${completed.binding.codeVersion}^{tree}`,"-p",completed.binding.codeVersion,"-m","Moved after settlement"],{encoding:"utf8"}).trim();
+   execFileSync("git",["-C",repository,"update-ref",branch,changed]);
+   await expect(invoke(host,"completion")).rejects.toThrow(/Retained readonly branch/);
+   execFileSync("git",["-C",repository,"update-ref",branch,completed.binding.codeVersion]);
+  }
  }
  expect(db.prepare("SELECT payload FROM chain_drafts WHERE id=?").get(completed.id)!.payload).toBe(saved);db.close();
 });
 
-it("round-trips completed settlement through the private worker and retains its acknowledgement",async()=>{
- const h=await recoveredProgress("verification"),completed=await finishRecoveredVerification(h.successor),db=new DatabaseSync(database),root=JSON.parse(String(db.prepare("SELECT payload FROM engineering_contract").get()!.payload));delete root.verificationExecution;db.prepare("UPDATE engineering_contract SET payload=?").run(JSON.stringify(root));
+for(const reclaimed of [false,true])it(`round-trips completed settlement through the private worker: reclaimed=${reclaimed}`,async()=>{
+ const h=await recoveredProgress("verification",false),worktree=join(directory,"worker-settlement");
+ if(reclaimed)execFileSync("git",["-C",repository,"worktree","add","-qb","worker-settlement",worktree]);
+ await invoke(h.daemon,"bind",{work_dir:reclaimed?worktree:repository,mode:reclaimed?"worktree":"in_place",overlays:[]});
+ const completed=await finishRecoveredVerification(h.successor),db=new DatabaseSync(database),root=JSON.parse(String(db.prepare("SELECT payload FROM engineering_contract").get()!.payload));delete root.verificationExecution;db.prepare("UPDATE engineering_contract SET payload=?").run(JSON.stringify(root));
  const saved=String(db.prepare("SELECT payload FROM chain_drafts WHERE id=?").get(completed.id)!.payload);db.close();app.close();
+ if(reclaimed)execFileSync("git",["-C",repository,"worktree","remove",worktree]);
  try{
   const worker=new URL("./dist/worker.mjs",import.meta.url).pathname,call=(action:ApplicationRequest["action"],payload:unknown)=>{const response=JSON.parse(execFileSync(process.execPath,[worker,database],{input:JSON.stringify({actor:host,action,payload}),encoding:"utf8",stdio:["pipe","pipe","ignore"]}));if(response.error)throw new Error(response.error);return response.result;};
   const observed=z.object({settlement:repairBusinessSettlementSchema}).parse(call("repair-business-progress",h.pin));expect(call("repair-business-settle",observed)).toEqual({settled:true});expect(call("repair-business-settle",observed)).toEqual({settled:true});expect(call("repair-business-progress",h.pin)).toMatchObject({progress:{applied:true}});

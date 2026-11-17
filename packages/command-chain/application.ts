@@ -6,7 +6,7 @@ import {repairRecoveryFaultSchema} from "./repair-recovery-fault";
 import {assertRepairExecutionBinding,initializeRepairExecutions,prepareRepairExecutionHint,validateRepairExecutionHint,bindRepairExecutionHint,repairExecutionHintSchema} from "./repair-execution";
 import { initializeRepairHandoffs,prepareRepairHandoff } from "./repair-handoff-store";
 import {repairRootPayload, initializeRepairApplications, readStagedRepair, stagedPreparation, reservedRepairProposal, persistStagedRepair } from "./repair-stage-store";
-import {repairBusinessSettlementSchema} from "./repair-progress";
+import {repairBusinessSettlementSchema,type RepairBusinessSettlement} from "./repair-progress";
 import {initializeRepairProgress,readRepairProgress} from "./repair-progress-store";
 import { readyRepairDispatch,repairDispatchForTask,activateRepairDispatch,refreshRepairDispatchClaim } from "./repair-dispatch-store";
 import { repairHandoffTargetSchema, handoffReservationSchema, handoffApplicationSchema,handoffHash, type HandoffYamlCheckpoint, type HandoffRootChange } from "./repair-handoff";
@@ -216,6 +216,42 @@ export class EngineeringApplication {
     record.contract=verificationContractSchema.parse({...record.contract,sources,binding:{...record.contract.binding,contractVersion:createHash("sha256").update(JSON.stringify(conclusion)).digest("hex")}});
     if(record.development)record.development.implementationGuidance=conclusion.handoff.implementationGuidance;
     record.analysis.conclusion=JSON.parse(JSON.stringify(conclusion));record.analysis.handoff=true;this.save(record);
+  }
+
+  private async settleReclaimedReadonlyRecovery(witness: RepairBusinessSettlement) {
+    if (witness.chain !== "delivery-analysis" && witness.chain !== "verification") return false;
+    const record = this.revision(witness.workspace_id, witness.issue_id, witness.revision);
+    if (!record || this.current(witness.workspace_id, witness.issue_id)?.contract.binding.revision !== witness.revision) {
+      throw new DraftConflictError("Completed recovery revision changed before settlement");
+    }
+    const execution = this.execution(record, {kind: "task", workspaceId: witness.workspace_id,
+      issueId: witness.issue_id, agentId: witness.agent_id, attemptId: witness.attempt_id});
+    if (execution.mode !== "worktree" || existsSync(execution.repositoryPath)) return false;
+    const role = this.activeRole(record), draft = await this.drafts.read(witness.draft_id);
+    const binding = witness.chain === "delivery-analysis" ? record.analysis?.contract.binding : record.contract.binding;
+    if (!binding || !draft || draft.status !== "completed" || draft.phase !== null || draft.id !== role.draftId ||
+      role.agentId !== witness.agent_id || draft.attemptId !== witness.attempt_id || draft.definition.id !== witness.chain ||
+      JSON.stringify(draft.binding) !== JSON.stringify(binding)) {
+      throw new DraftConflictError("Reclaimed recovery no longer owns its completed readonly checkpoint");
+    }
+    const retained = () => this.assertRetainedReadonlyVersion(record, execution, binding.codeVersion);
+    retained();
+    if (witness.chain === "delivery-analysis") await this.settleAnalysis(record, draft);
+    else {
+      await this.validateDependencies(record);
+      compileVerificationConclusion(draft, record.contract);
+      record.verificationExecution = execution;
+      this.save(record);
+      this.settleFailure(record, draft);
+    }
+    retained();
+    return true;
+  }
+
+  private assertRetainedReadonlyVersion(record: Record, execution: Execution, codeVersion: string) {
+    if (!execution.branchRef || git(record.repositoryPath, ["rev-parse", "--verify", execution.branchRef]) !== codeVersion) {
+      throw new DraftConflictError("Retained readonly branch changed from the frozen commit");
+    }
   }
 
   private async invokeAnalysis(record:Record,actor:z.infer<typeof human>|z.infer<typeof task>,action:string,payload:unknown) {
@@ -650,7 +686,7 @@ export class EngineeringApplication {
           if(!result.settlement||JSON.stringify(result.settlement)!==encoded)throw new DraftConflictError("Completed recovery changed before owner settlement");
           const project=z.object({projectId:z.uuid()}).parse(JSON.parse(String(this.db.prepare("SELECT payload FROM engineering_process_binding WHERE workspace_id=? AND issue_id=? AND agent_id=? AND attempt_id=?").get(actor.workspaceId,actor.issueId,witness.agent_id,witness.attempt_id)!.payload)));
           // Reuse owner checks and settlement without recording an Agent read.
-          await this.invokeWorkflow({actor:{...actor,agentId:witness.agent_id,attemptId:witness.attempt_id,projectId:project.projectId,kind:"task"},action:"read"});
+          await this.invokeWorkflow({actor:{...actor,agentId:witness.agent_id,attemptId:witness.attempt_id,projectId:project.projectId,kind:"task"},action:"read"},undefined,witness);
           result=read(pin);if(!result.progress)throw new DraftConflictError("Ordinary owner did not apply the completed recovery result");
           this.db.prepare("INSERT INTO engineering_repair_business_settlement VALUES(?,?)").run(witness.target_hash,encoded);
         }else if(!result.progress)throw new DraftConflictError("Applied recovery settlement disappeared");
@@ -891,7 +927,7 @@ export class EngineeringApplication {
     });
   }
 
-  private async invokeWorkflow(input: ApplicationRequest,commitBinding?:NativeBindingCommit) {
+  private async invokeWorkflow(input: ApplicationRequest,commitBinding?:NativeBindingCommit,recoverySettlement?:RepairBusinessSettlement) {
     const request = applicationRequestSchema.parse(input);
     const { actor, action } = request;
     if(actor.kind==="team-manager")throw new Error("Team management cannot invoke task workflows");
@@ -1008,6 +1044,7 @@ export class EngineeringApplication {
         const tested = snapshot(record.verificationExecution.repositoryPath, true, record.verificationExecution.overlays);
         if (tested.codeVersion !== record.contract.binding.codeVersion) throw new DraftConflictError("Repository commit changed after verification; freeze and verify a new revision");
       } else if (record.verificationExecution.mode === "in_place") throw new DraftConflictError("Verified in-place repository is unavailable");
+      if(record.verificationExecution.mode==="worktree"&&record.verificationExecution.branchRef)this.assertRetainedReadonlyVersion(record,record.verificationExecution,record.contract.binding.codeVersion);
       if (record.delivery?.mode === "worktree") {
         if (git(record.repositoryPath, ["rev-parse", "--verify", record.delivery.branchRef]) !== record.contract.binding.codeVersion) throw new DraftConflictError("Delivered branch changed after verification; freeze and verify a new revision");
       } else {
@@ -1077,6 +1114,8 @@ export class EngineeringApplication {
       return { captured: receipt.id };
     }
     if (actor.kind === "daemon") throw new Error("Runtime credentials cannot edit chain state");
+    // Only private host settlement supplies this witness; task reads still need their runtime directory.
+    if(recoverySettlement&&await this.settleReclaimedReadonlyRecovery(recoverySettlement))return {settled:true};
     if(record.analysis && (actor.kind === "task" ? actor.agentId === record.analysis.agentId : !record.analysis.handoff)){
       if(actor.kind === "human" && !["read","answer","abandon"].includes(action))throw new Error("This operation requires the configured run credential");
       if(actor.kind === "task" && !["read","start","command"].includes(action))throw new Error("This operation requires a human actor");
