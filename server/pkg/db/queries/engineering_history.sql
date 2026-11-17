@@ -39,6 +39,26 @@ FROM issue i WHERE id=$1 AND workspace_id=$2 FOR UPDATE;
 UPDATE issue SET status='cancelled',revision=revision+1,updated_at=now(),last_activity_at=now()
 WHERE id=$1 AND workspace_id=$2 AND status='backlog' RETURNING *;
 
+-- name: DeactivateEngineeringHistoryCutover :one
+UPDATE engineering_history_cutover SET phase='deactivated',deactivation=$3,updated_at=now()
+WHERE id=$1 AND workspace_id=$2 AND phase='activated' AND deactivation IS NULL RETURNING *;
+
+-- name: DeactivateEngineeringHistoryAdoption :one
+UPDATE engineering_history_adoption SET phase='withdrawn',withdrawn_at=now()
+WHERE cutover_id=$1 AND workspace_id=$2 AND source_task_id=$3 AND phase='activated' RETURNING *;
+
+-- name: DeleteEngineeringHistoryActivationResource :one
+DELETE FROM project_resource WHERE id=$1 AND workspace_id=$2 AND project_id=$3
+AND resource_type='local_directory' AND resource_ref=$4 AND created_by=$5 AND position=0 AND label IS NULL
+RETURNING id;
+
+-- name: HasEngineeringHistoryExecution :one
+SELECT EXISTS(SELECT 1 FROM chat_session WHERE project_id=ANY(@project_ids::uuid[]))
+ OR EXISTS(SELECT 1 FROM engineering_run_guard WHERE project_id=ANY(@project_ids::uuid[]))
+ OR EXISTS(SELECT 1 FROM engineering_repair_fence WHERE project_id=ANY(@project_ids::uuid[]))
+ OR EXISTS(SELECT 1 FROM engineering_repair_handoff WHERE project_id=ANY(@project_ids::uuid[]))
+ OR EXISTS(SELECT 1 FROM agent_task_queue t JOIN issue i ON i.id=t.issue_id WHERE i.project_id=ANY(@project_ids::uuid[])) AS active;
+
 -- name: ListEngineeringHistoryProjectIssues :many
 SELECT i.* FROM issue i WHERE i.workspace_id=$1 AND i.project_id=ANY($2::uuid[])
 AND NOT EXISTS(SELECT 1 FROM engineering_history_adoption a WHERE a.issue_id=i.id AND a.phase='withdrawn' AND i.status='cancelled') ORDER BY i.id;

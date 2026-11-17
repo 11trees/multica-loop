@@ -4,6 +4,7 @@ import { browseArchive, verifyArchive } from "./loopwork-history-lib.mjs";
 import { changeSourceFence, cutoverDigest, inspectSourceFence, prepareSourceFence, sourceNamespace } from "./loopwork-source-fence.mjs";
 import { probeSourceProcesses } from "./loopwork-source-processes.mjs";
 import { captureWorkspace } from "./loopwork-workspace.mjs";
+import {inspectRecordedWorkspaces} from "./loopwork-workspace-inspection.mjs";
 
 export const cutoverWorkspace = "323d1db3-abcf-4890-a2ca-df15a057fdf7";
 export const cutoverHuman = "db20ef47-8076-41a0-af0d-2814950fbe42";
@@ -186,25 +187,37 @@ export async function freezeCutover(client, archive, id) {
     return { ...projection({ ...saved, phase: "source_frozen" }), source: receipt };
   });
 }
+async function recheckDeactivatedWorkspace(archive,saved){
+  if(!saved.deactivation)return;
+  const deactivation=saved.deactivation;
+  if(deactivation.format!=="loopwork-native-deactivation-v1"||deactivation.cutover_id!==saved.id||deactivation.scope_hash!==saved.scope_hash||deactivation.execution_started!==false||stableDigest(deactivation.activation)!==stableDigest(saved.activation)||deactivation.workspace_hash!==saved.activation?.workspace_hash)throw new Error("Deactivation authority requires reconciliation");
+  await inspectRecordedWorkspaces(archive,{record:saved,expected_hash:saved.archive_hash,expected_workspace_hash:deactivation.workspace_hash,workspace_observation:saved.receipt?.workspace_observations?.at(-1)});
+}
+
 export async function rollbackCutover(client, archive, id) {
   // Commit rollback intent before touching any SQLite file. Crash recovery
   // resumes this same record; no rollback phase can admit native execution.
   await transaction(client, async () => {
     const saved = await record(client, id, true);
     if (saved.phase === "cancelled") return;
+    if(!["held","source_frozen","deactivated","rollback_pending"].includes(saved.phase))throw new Error("Deactivate unused native ownership before source rollback; executed work requires reconciliation");
     await noAdoption(client, saved.project_ids);
+    await recheckDeactivatedWorkspace(archive,saved);
     await client.query("UPDATE engineering_history_cutover SET phase='rollback_pending',updated_at=now() WHERE id=$1", [id]);
   });
   return transaction(client, async () => {
     const saved = await record(client, id, true);
     if (saved.phase === "cancelled") return projection(saved);
     if (saved.phase !== "rollback_pending") throw new Error("Rollback intent is missing");
+    await recheckDeactivatedWorkspace(archive,saved);
     const receipt = await changeSourceFence(archive, identity(saved), "restore", async () => {
       if ((await record(client, id, true)).phase !== "rollback_pending") throw new Error("Native rollback barrier changed");
       await noAdoption(client, saved.project_ids);
+      await recheckDeactivatedWorkspace(archive,saved);
     });
     if (receipt.state !== "unfenced") throw new Error("Source cohort is still fenced");
     await noAdoption(client, saved.project_ids);
+    await recheckDeactivatedWorkspace(archive,saved);
     await client.query("UPDATE engineering_history_cutover SET phase='cancelled',receipt=$2,updated_at=now() WHERE id=$1", [id, { ...receipt, physical_observations: saved.receipt?.physical_observations ?? [], workspace_observations: saved.receipt?.workspace_observations ?? [] }]);
     return { ...projection({ ...saved, phase: "cancelled" }), source: receipt };
   });

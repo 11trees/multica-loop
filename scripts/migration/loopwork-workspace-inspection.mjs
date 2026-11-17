@@ -6,7 +6,7 @@ import { captureWorkspace } from "./loopwork-workspace.mjs";
 const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === "object" ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value;
 const digest = value => createHash("sha256").update(JSON.stringify(canonical(value))).digest("hex");
 
-export async function inspectActivationWorkspaces(archive, input) {
+export async function inspectRecordedWorkspaces(archive, input) {
   const saved = input.workspace_observation, record = input.record, payload = saved?.payload;
   if (saved?.hash !== input.expected_workspace_hash || digest(payload) !== saved.hash
     || payload?.format !== "loopwork-cutover-workspaces-v1" || payload.cutover_id !== record.id
@@ -25,6 +25,11 @@ export async function inspectActivationWorkspaces(archive, input) {
     projects.set(key, { project_id: preparation.project_id, source_project_id: packet.source_project.id, root: current.root, head: current.head, dirty: current.dirty, symlinks: current.files.filter(row => row.kind === "symlink").length });
   }
   if (projects.size === 0 || projects.size !== payload.workspaces.length) throw new Error("Workspace cohort changed");
+  return {workspace_hash:saved.hash,matches_saved_baseline:true,workspaces:[...projects.values()]};
+}
+
+export async function inspectActivationWorkspaces(archive, input) {
+  const workspace=await inspectRecordedWorkspaces(archive,input);
   const source = await inspectNativeSource(archive, input);
-  return { ...source, format: "loopwork-activation-source-inspection-v1", workspace_hash: saved.hash, matches_saved_baseline: true, workspaces: [...projects.values()] };
+  return { ...source, format: "loopwork-activation-source-inspection-v1", ...workspace };
 }

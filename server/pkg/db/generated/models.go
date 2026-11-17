@@ -828,6 +828,7 @@ type EngineeringHistoryCutover struct {
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 	Activation      []byte             `json:"activation"`
+	Deactivation    []byte             `json:"deactivation"`
 }
 
 type EngineeringHistoryPreparation struct {

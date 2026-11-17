@@ -42,7 +42,7 @@ func (q *Queries) ActivateEngineeringHistoryAdoption(ctx context.Context, arg Ac
 
 const activateEngineeringHistoryCutover = `-- name: ActivateEngineeringHistoryCutover :one
 UPDATE engineering_history_cutover SET phase='activated',activation=$3,updated_at=now()
-WHERE id=$1 AND workspace_id=$2 AND phase='source_frozen' RETURNING id, workspace_id, source_namespace, archive_hash, scope_hash, project_ids, phase, prepared_by, payload, receipt, created_at, updated_at, activation
+WHERE id=$1 AND workspace_id=$2 AND phase='source_frozen' RETURNING id, workspace_id, source_namespace, archive_hash, scope_hash, project_ids, phase, prepared_by, payload, receipt, created_at, updated_at, activation, deactivation
 `
 
 type ActivateEngineeringHistoryCutoverParams struct {
@@ -68,6 +68,7 @@ func (q *Queries) ActivateEngineeringHistoryCutover(ctx context.Context, arg Act
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Activation,
+		&i.Deactivation,
 	)
 	return i, err
 }
@@ -326,6 +327,95 @@ func (q *Queries) CreateEngineeringHistoryResource(ctx context.Context, arg Crea
 	return err
 }
 
+const deactivateEngineeringHistoryAdoption = `-- name: DeactivateEngineeringHistoryAdoption :one
+UPDATE engineering_history_adoption SET phase='withdrawn',withdrawn_at=now()
+WHERE cutover_id=$1 AND workspace_id=$2 AND source_task_id=$3 AND phase='activated' RETURNING cutover_id, workspace_id, source_namespace, source_task_id, preparation_id, issue_id, phase, payload, created_at, withdrawn_at
+`
+
+type DeactivateEngineeringHistoryAdoptionParams struct {
+	CutoverID    pgtype.UUID `json:"cutover_id"`
+	WorkspaceID  pgtype.UUID `json:"workspace_id"`
+	SourceTaskID string      `json:"source_task_id"`
+}
+
+func (q *Queries) DeactivateEngineeringHistoryAdoption(ctx context.Context, arg DeactivateEngineeringHistoryAdoptionParams) (EngineeringHistoryAdoption, error) {
+	row := q.db.QueryRow(ctx, deactivateEngineeringHistoryAdoption, arg.CutoverID, arg.WorkspaceID, arg.SourceTaskID)
+	var i EngineeringHistoryAdoption
+	err := row.Scan(
+		&i.CutoverID,
+		&i.WorkspaceID,
+		&i.SourceNamespace,
+		&i.SourceTaskID,
+		&i.PreparationID,
+		&i.IssueID,
+		&i.Phase,
+		&i.Payload,
+		&i.CreatedAt,
+		&i.WithdrawnAt,
+	)
+	return i, err
+}
+
+const deactivateEngineeringHistoryCutover = `-- name: DeactivateEngineeringHistoryCutover :one
+UPDATE engineering_history_cutover SET phase='deactivated',deactivation=$3,updated_at=now()
+WHERE id=$1 AND workspace_id=$2 AND phase='activated' AND deactivation IS NULL RETURNING id, workspace_id, source_namespace, archive_hash, scope_hash, project_ids, phase, prepared_by, payload, receipt, created_at, updated_at, activation, deactivation
+`
+
+type DeactivateEngineeringHistoryCutoverParams struct {
+	ID           pgtype.UUID `json:"id"`
+	WorkspaceID  pgtype.UUID `json:"workspace_id"`
+	Deactivation []byte      `json:"deactivation"`
+}
+
+func (q *Queries) DeactivateEngineeringHistoryCutover(ctx context.Context, arg DeactivateEngineeringHistoryCutoverParams) (EngineeringHistoryCutover, error) {
+	row := q.db.QueryRow(ctx, deactivateEngineeringHistoryCutover, arg.ID, arg.WorkspaceID, arg.Deactivation)
+	var i EngineeringHistoryCutover
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.SourceNamespace,
+		&i.ArchiveHash,
+		&i.ScopeHash,
+		&i.ProjectIds,
+		&i.Phase,
+		&i.PreparedBy,
+		&i.Payload,
+		&i.Receipt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Activation,
+		&i.Deactivation,
+	)
+	return i, err
+}
+
+const deleteEngineeringHistoryActivationResource = `-- name: DeleteEngineeringHistoryActivationResource :one
+DELETE FROM project_resource WHERE id=$1 AND workspace_id=$2 AND project_id=$3
+AND resource_type='local_directory' AND resource_ref=$4 AND created_by=$5 AND position=0 AND label IS NULL
+RETURNING id
+`
+
+type DeleteEngineeringHistoryActivationResourceParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ProjectID   pgtype.UUID `json:"project_id"`
+	ResourceRef []byte      `json:"resource_ref"`
+	CreatedBy   pgtype.UUID `json:"created_by"`
+}
+
+func (q *Queries) DeleteEngineeringHistoryActivationResource(ctx context.Context, arg DeleteEngineeringHistoryActivationResourceParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, deleteEngineeringHistoryActivationResource,
+		arg.ID,
+		arg.WorkspaceID,
+		arg.ProjectID,
+		arg.ResourceRef,
+		arg.CreatedBy,
+	)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const engineeringHistoryIssueHeld = `-- name: EngineeringHistoryIssueHeld :one
 SELECT engineering_history_issue_held($1::uuid)::boolean AS held
 `
@@ -434,6 +524,21 @@ func (q *Queries) GetEngineeringHistoryProject(ctx context.Context, arg GetEngin
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const hasEngineeringHistoryExecution = `-- name: HasEngineeringHistoryExecution :one
+SELECT EXISTS(SELECT 1 FROM chat_session WHERE project_id=ANY($1::uuid[]))
+ OR EXISTS(SELECT 1 FROM engineering_run_guard WHERE project_id=ANY($1::uuid[]))
+ OR EXISTS(SELECT 1 FROM engineering_repair_fence WHERE project_id=ANY($1::uuid[]))
+ OR EXISTS(SELECT 1 FROM engineering_repair_handoff WHERE project_id=ANY($1::uuid[]))
+ OR EXISTS(SELECT 1 FROM agent_task_queue t JOIN issue i ON i.id=t.issue_id WHERE i.project_id=ANY($1::uuid[])) AS active
+`
+
+func (q *Queries) HasEngineeringHistoryExecution(ctx context.Context, projectIds []pgtype.UUID) (pgtype.Bool, error) {
+	row := q.db.QueryRow(ctx, hasEngineeringHistoryExecution, projectIds)
+	var active pgtype.Bool
+	err := row.Scan(&active)
+	return active, err
 }
 
 const hasEngineeringHistoryProjectActivity = `-- name: HasEngineeringHistoryProjectActivity :one
@@ -696,7 +801,7 @@ func (q *Queries) LockEngineeringHistoryAdoptionProject(ctx context.Context, arg
 }
 
 const lockEngineeringHistoryCutover = `-- name: LockEngineeringHistoryCutover :one
-SELECT id, workspace_id, source_namespace, archive_hash, scope_hash, project_ids, phase, prepared_by, payload, receipt, created_at, updated_at, activation FROM engineering_history_cutover WHERE id=$1 AND workspace_id=$2 FOR UPDATE
+SELECT id, workspace_id, source_namespace, archive_hash, scope_hash, project_ids, phase, prepared_by, payload, receipt, created_at, updated_at, activation, deactivation FROM engineering_history_cutover WHERE id=$1 AND workspace_id=$2 FOR UPDATE
 `
 
 type LockEngineeringHistoryCutoverParams struct {
@@ -721,6 +826,7 @@ func (q *Queries) LockEngineeringHistoryCutover(ctx context.Context, arg LockEng
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Activation,
+		&i.Deactivation,
 	)
 	return i, err
 }

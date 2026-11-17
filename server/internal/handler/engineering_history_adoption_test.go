@@ -50,6 +50,13 @@ func newHistoryAdoptionFixture(t *testing.T) *historyAdoptionFixture {
 		if input["action"] == "overview" {
 			return json.RawMessage(`{"configured":false}`), nil
 		}
+		if input["action"] == "team-binding" {
+			actor, ok := input["actor"].(map[string]string)
+			if !ok || actor["kind"] != "human" || actor["workspaceId"] != localWorkspaceID || actor["userId"] != localUserID || actor["issueId"] == "" {
+				t.Error("unscoped readonly Team binding inspection")
+			}
+			return json.RawMessage(`{"binding":null}`), nil
+		}
 		return worker.Call(context.Background(), input)
 	}}
 	proposals := []map[string]any{}

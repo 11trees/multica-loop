@@ -377,7 +377,9 @@ arbitrary DDL, filesystem writers, unclassified databases or repository processe
 Stopped rows and frozen databases both retain
 `physical_quiescence_confirmed: false` and `execution_authorized: false`.
 Physical drain, native issue activation and application runtime migration remain
-separate prerequisites. There is intentionally no activation command or phase.
+separate prerequisites. Freeze/observation does not activate anything; use the
+explicit [native activation protocol](#native-team-activation) below for that
+separate ownership transition.
 
 Controlled validation uses temporary source repositories, real SQLite/WAL and an
 isolated PostgreSQL schema. It covers reopen/resume rejection, exact original
@@ -581,7 +583,11 @@ version and project; changing the Team requires reconciliation rather than
 silently starting a different workflow. Original source database guards stay
 installed. Activation never imports old evidence/reading as native authority,
 starts a model, or permits the pre-activation `withdraw`/`rollback` protocol.
-Post-activation rollback remains separate, incomplete work.
+An [unused-activation deactivation](history-deactivation.md) can now atomically
+retain both receipts, remove unchanged activation resources and cancel the
+unchanged never-started cohort before the separate source rollback. Recorded
+execution, workflow bindings or scope/workspace changes still require explicit
+reconciliation; rollback of performed work remains incomplete.
 
 Controlled native tests cover in-place and worktree activation, stale workspace,
 source/Team/task and runtime refusal, independent human authority, atomic

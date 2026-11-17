@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import pg from "pg";
 import test from "node:test";
@@ -14,6 +14,8 @@ import { main } from "./loopwork-cutover.mjs";
 test("operator arguments reject missing scope and nonlocal database before connecting", async () => {
   await assert.rejects(main(["freeze"]), /Usage/);
   await assert.rejects(main(["activate", "--id", randomUUID()]), /Usage/);
+  await assert.rejects(main(["deactivate", "--id", randomUUID()]), /Usage/);
+  await assert.rejects(main(["deactivate", "--id", randomUUID(),"--expected-workspace","wrong"]), /Usage/);
   await assert.rejects(main(["activate", "--id", randomUUID(), "--expected-workspace", "a".repeat(64), "--execution-mode", "unknown"]), /Usage/);
   await assert.rejects(main(["hold", "--expected-scope", "wrong"]), /Invalid/);
   await assert.rejects(main(["workspace-check", "--id", randomUUID()]), /Usage/);
@@ -21,7 +23,7 @@ test("operator arguments reject missing scope and nonlocal database before conne
   await assert.rejects(main(["plan"], { DATABASE_URL: "postgres://example.invalid/db", MULTICA_LOOPWORK_HISTORY_ARCHIVE: "/archive", MULTICA_LOOPWORK_HISTORY_HASH: "a".repeat(64) }), /local single-user/);
 });
 
-test("native barrier, source freeze and pre-adoption rollback survive retries in isolated PostgreSQL/SQLite", { skip: !process.env.MULTICA_CUTOVER_TEST_DATABASE_URL }, async t => {
+for(const postActivation of [false,true])test(`native barrier, source freeze and ${postActivation?"unused activated":"pre-adoption"} rollback survive retries in isolated PostgreSQL/SQLite`, { skip: !process.env.MULTICA_CUTOVER_TEST_DATABASE_URL }, async t => {
   const f = await cutoverFixture(t, { workspaceRoot: true }), schema = "cutover_" + randomUUID().replaceAll("-", ""), client = new pg.Client({ connectionString: process.env.MULTICA_CUTOVER_TEST_DATABASE_URL });
   await client.connect();
   t.after(async () => { await client.query("ROLLBACK"); await client.query("SET search_path=public"); await client.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`); await client.end(); });
@@ -39,7 +41,7 @@ test("native barrier, source freeze and pre-adoption rollback survive retries in
     CREATE TABLE engineering_repair_handoff(project_id UUID,phase TEXT);
     CREATE TABLE member(workspace_id UUID,user_id UUID,role TEXT);
     CREATE TABLE engineering_history_preparation(id UUID,workspace_id UUID,source_namespace TEXT,source_project_id TEXT,source_task_id TEXT,revision INTEGER,archive_hash TEXT,packet_hash TEXT,project_id UUID,team_id UUID,team_revision INTEGER,payload JSONB);`);
-  for (const file of ["663_engineering_ownership_guards.up.sql", "664_engineering_chat_project_guard.up.sql", "675_engineering_history_cutover.up.sql", "676_engineering_history_cutover_id.up.sql", "677_engineering_history_cutover_scope.up.sql", "678_engineering_history_adoption.up.sql", "679_engineering_history_adoption_cohort.up.sql", "680_engineering_history_adoption_issue.up.sql", "681_engineering_history_adoption_source.up.sql"]) await client.query(await readFile(new URL("../../server/migrations/" + file, import.meta.url), "utf8"));
+  for (const file of ["663_engineering_ownership_guards.up.sql", "664_engineering_chat_project_guard.up.sql", "675_engineering_history_cutover.up.sql", "676_engineering_history_cutover_id.up.sql", "677_engineering_history_cutover_scope.up.sql", "678_engineering_history_adoption.up.sql", "679_engineering_history_adoption_cohort.up.sql", "680_engineering_history_adoption_issue.up.sql", "681_engineering_history_adoption_source.up.sql","682_engineering_history_activation.up.sql","683_engineering_history_adoption_owner.up.sql","684_engineering_history_deactivation.up.sql"]) await client.query(await readFile(new URL("../../server/migrations/" + file, import.meta.url), "utf8"));
   await client.query("INSERT INTO member VALUES($1,$2,'owner')", [cutoverWorkspace, cutoverHuman]);
   const project = randomUUID(), preparation = randomUUID(), team = randomUUID(), namespace = sourceNamespace(await verifyArchive(f.archive));
   await client.query("INSERT INTO project VALUES($1,$2,'Prepared native project')", [project, cutoverWorkspace]);
@@ -133,9 +135,24 @@ test("native barrier, source freeze and pre-adoption rollback survive retries in
   await assert.rejects(client.query("INSERT INTO agent_task_queue(id,issue_id,status) VALUES($1,$2,'queued')",[randomUUID(),stagedIssue]),/migration task/);
   await assert.rejects(client.query("UPDATE issue SET status='done' WHERE id=$1",[stagedIssue]),/migration task/);
   await assert.rejects(client.query("UPDATE engineering_history_adoption SET source_task_id='replaced' WHERE issue_id=$1",[stagedIssue]),/immutable/);
+  if(postActivation){
+    const activation={format:"loopwork-native-activation-v1",cutover_id:held.id,scope_hash:held.scope_hash,workspace_hash:updatedWorkspace.workspace_hash,activated_by:cutoverHuman,tasks:[{issue_id:stagedIssue,preparation_id:preparation,source_task_id:"pending"}],resources:[],execution_started:false};
+    await client.query("UPDATE engineering_history_cutover SET phase='activated',activation=$2 WHERE id=$1",[held.id,activation]);
+    await client.query("UPDATE engineering_history_adoption SET phase='activated' WHERE issue_id=$1",[stagedIssue]);
+    await assert.rejects(rollbackCutover(client,f.archive,held.id),/Deactivate unused/);
+    const deactivation={format:"loopwork-native-deactivation-v1",cutover_id:held.id,scope_hash:held.scope_hash,workspace_hash:updatedWorkspace.workspace_hash,deactivated_by:cutoverHuman,activation,tasks:activation.tasks,execution_started:false};
+    await client.query("UPDATE engineering_history_cutover SET phase='deactivated',deactivation=$2 WHERE id=$1",[held.id,deactivation]);
+    await client.query("UPDATE engineering_history_adoption SET phase='withdrawn',withdrawn_at=now() WHERE issue_id=$1",[stagedIssue]);
+    await client.query("UPDATE issue SET status='cancelled' WHERE id=$1",[stagedIssue]);
+    await writeFile(join(f.workspaceRoot,"late-user.md"),"Preserve post-deactivation human work\n");
+    await assert.rejects(rollbackCutover(client,f.archive,held.id),/Workspace differs/);
+    assert.equal((await statusCutover(client,f.archive,held.id)).phase,"deactivated");
+    await rm(join(f.workspaceRoot,"late-user.md"));
+  }else{
   await assert.rejects(rollbackCutover(client,f.archive,held.id),/empty prepared/);
   await client.query("UPDATE engineering_history_adoption SET phase='withdrawn',withdrawn_at=now() WHERE issue_id=$1",[stagedIssue]);
   await client.query("UPDATE issue SET status='cancelled' WHERE id=$1",[stagedIssue]);
+  }
   assert.throws(() => f.business.exec("UPDATE loop_lifecycle_state SET desired_intent='running'"), /frozen/);
   const chat = randomUUID(); await client.query("INSERT INTO chat_session VALUES($1,$2)", [chat, project]);
   await assert.rejects(client.query("UPDATE chat_session SET project_id=NULL WHERE id=$1", [chat]), /cutover holds/);
@@ -167,6 +184,11 @@ test("native barrier, source freeze and pre-adoption rollback survive retries in
   // cannot be reused for another cutover after rollback.
   await assert.rejects(planCutover(client, f.archive, f.hash), /changed since capture/);
   assert.equal((await client.query("SELECT count(*)::int AS n FROM engineering_history_cutover")).rows[0].n, 1);
+  if(postActivation){
+    assert.equal((await client.query("SELECT deactivation->>'format' AS format FROM engineering_history_cutover WHERE id=$1",[held.id])).rows[0].format,"loopwork-native-deactivation-v1");
+    await assert.rejects(client.query(await readFile(new URL("../../server/migrations/684_engineering_history_deactivation.down.sql",import.meta.url),"utf8")),/retain deactivated/);
+    return; // Only the owned test schema is dropped; never downgrade an adopted cohort.
+  }
   await client.query("DELETE FROM engineering_history_adoption");
-  for (const file of ["681_engineering_history_adoption_source.down.sql", "680_engineering_history_adoption_issue.down.sql", "679_engineering_history_adoption_cohort.down.sql", "678_engineering_history_adoption.down.sql", "677_engineering_history_cutover_scope.down.sql", "676_engineering_history_cutover_id.down.sql", "675_engineering_history_cutover.down.sql"]) await client.query(await readFile(new URL("../../server/migrations/" + file, import.meta.url), "utf8"));
+  for (const file of ["684_engineering_history_deactivation.down.sql","683_engineering_history_adoption_owner.down.sql","682_engineering_history_activation.down.sql","681_engineering_history_adoption_source.down.sql", "680_engineering_history_adoption_issue.down.sql", "679_engineering_history_adoption_cohort.down.sql", "678_engineering_history_adoption.down.sql", "677_engineering_history_cutover_scope.down.sql", "676_engineering_history_cutover_id.down.sql", "675_engineering_history_cutover.down.sql"]) await client.query(await readFile(new URL("../../server/migrations/" + file, import.meta.url), "utf8"));
 });
