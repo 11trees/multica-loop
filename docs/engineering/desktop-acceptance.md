@@ -32,7 +32,7 @@ from the Desktop workspace with the local builder configuration:
 
 ```sh
 CSC_IDENTITY_AUTO_DISCOVERY=false pnpm -C apps/desktop package -- \
-  --mac --arm64 --dir --publish never --config electron-builder.local.json
+  --mac --arm64 --dir --publish never --config electron-builder.local.cjs
 codesign --force --deep --sign - "apps/desktop/dist/mac-arm64/Multica Loop.app"
 ```
 
